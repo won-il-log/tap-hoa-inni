@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Tạp Hóa Huy Hoàng - Tạp Hóa Thông Minh</title>
+    <title>Tạp Hóa Huy Hoàng - Hệ Thống Bán Sỉ POS & Kho</title>
     
-    <meta name="apple-mobile-web-app-title" content="Tạp Hóa Huy Hoàng">
+    <meta name="apple-mobile-web-app-title" content="Huy Hoàng POS">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     
@@ -16,6 +16,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- THƯ VIỆN QUÉT MÃ VẠCH BẰNG CAMERA ĐIỆN THOẠI / WEBCAM -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
     <!-- FIREBASE CLOUD LIBRARIES -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -24,1281 +27,1189 @@
         .bg-inni-blue { background-color: #1d4ed8; }
         .text-inni-blue { color: #1d4ed8; }
         .border-inni-blue { border-color: #1d4ed8; }
-        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         
-        .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 12px); }
+        .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 10px); }
         
-        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
         }
         
-        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px); }
-        
-        /* Hiệu ứng nảy mượt mà cho các mặt hàng và nút bấm */
-        .scale-active { transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s, border-color 0.15s; }
-        .scale-active:active { transform: scale(0.92); }
-        .item-added { border-color: #22c55e !important; box-shadow: 0 4px 6px -1px rgba(34, 197, 94, 0.3) !important; }
+        .modal-overlay { background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(3px); }
+        .scale-active { transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.12s, border-color 0.12s; }
+        .scale-active:active { transform: scale(0.95); }
+        .item-added { border-color: #22c55e !important; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25) !important; }
 
-        /* CSS Màn hình Loading Splash Screen */
+        /* Splash Screen */
         #splash-screen {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: #1d4ed8; z-index: 9999;
+            background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%); z-index: 9999;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+            transition: opacity 0.4s ease-out, transform 0.4s ease-out;
         }
         .splash-fade-out { opacity: 0; transform: scale(1.05); pointer-events: none; }
-        .pulse-logo { animation: pulseLogo 1.5s infinite; }
-        @keyframes pulseLogo {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
 
+        /* Cấu hình In Ấn Linh Hoạt: Khổ A5 (AirPrint iPhone) vs Khổ 80mm (Máy in nhiệt) */
         @media print {
-            body * { visibility: hidden; }
-            #printable-bill, #printable-bill * { visibility: visible; }
-            #printable-bill { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 10px; background: white; box-shadow: none; }
-            .modal-overlay { background: transparent !important; }
-            #bill-detail-modal { box-shadow: none; border: none; }
-            button { display: none !important; }
+            body, html { background: white !important; height: auto !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; }
+            aside, main, nav, .print-hidden, #splash-screen { display: none !important; }
+            
+            #bill-detail-modal { 
+                position: static !important; 
+                display: block !important; 
+                background: white !important; 
+                padding: 0 !important; 
+                margin: 0 !important;
+            }
+            #bill-detail-modal > div { 
+                box-shadow: none !important; 
+                border: none !important; 
+                max-width: 100% !important; 
+                width: 100% !important; 
+                height: auto !important; 
+                max-height: none !important; 
+                border-radius: 0 !important;
+            }
+            
+            /* Chế độ in 80mm */
+            body.print-mode-80mm #printable-bill { 
+                width: 78mm !important; 
+                margin: 0 auto !important; 
+                padding: 2mm !important; 
+                font-size: 11px !important; 
+            }
+            body.print-mode-80mm .a5-only-col { display: none !important; }
+            body.print-mode-80mm .vietqr-img { max-width: 42mm !important; }
+
+            /* Chế độ in A5 (AirPrint trên iPhone / Máy in văn phòng) */
+            body.print-mode-A5 #printable-bill { 
+                width: 100% !important; 
+                max-width: 210mm !important;
+                padding: 8mm 10mm !important; 
+                font-size: 12.5px !important; 
+            }
+            body.print-mode-A5 .vietqr-img { max-width: 48mm !important; }
         }
     </style>
 </head>
-<body class="bg-gray-100 font-sans text-gray-800 flex flex-col md:flex-row h-[100dvh] overflow-hidden">
+<body class="bg-slate-100 font-sans text-slate-800 flex flex-col md:flex-row h-[100dvh] overflow-hidden print-mode-A5">
 
-    <!-- MÀN HÌNH CHỜ LOADING (SPLASH SCREEN) -->
+    <!-- SPLASH SCREEN -->
     <div id="splash-screen">
-        <div class="w-24 h-24 bg-white rounded-2xl flex items-center justify-center pulse-logo shadow-2xl mb-6">
-            <i class="fa-solid fa-cart-shopping text-5xl text-inni-blue"></i>
+        <div class="w-20 h-20 bg-white rounded-2xl flex items-center justify-center shadow-2xl mb-4 animate-bounce">
+            <i class="fa-solid fa-boxes-stacked text-4xl text-inni-blue"></i>
         </div>
-        <h1 class="text-3xl font-black text-white tracking-wider mb-2">HUY HOÀNG</h1>
-        <p class="text-blue-200 text-sm font-medium flex items-center gap-2">
-            <i class="fa-solid fa-circle-notch fa-spin"></i> Đang tải dữ liệu...
+        <h1 class="text-2xl md:text-3xl font-black text-white tracking-wider mb-1">TẠP HÓA HUY HOÀNG</h1>
+        <p class="text-blue-200 text-xs font-semibold uppercase tracking-widest mb-4">Hệ Thống Bán Sỉ & Quản Lý Kho Pro</p>
+        <p class="text-white/80 text-xs flex items-center gap-2 bg-white/10 px-4 py-1.5 rounded-full">
+            <i class="fa-solid fa-circle-notch fa-spin"></i> Đang đồng bộ dữ liệu...
         </p>
     </div>
 
-    <!-- SIDEBAR CHO MÁY TÍNH -->
-    <aside class="w-64 bg-inni-blue text-white flex flex-col shadow-xl z-10 hidden md:flex shrink-0">
-        <div class="p-6 text-center border-b border-blue-600 shrink-0">
-            <h1 class="text-3xl font-bold"><i class="fa-solid fa-store mr-2"></i>Tạp Hóa Huy Hoàng</h1>
+    <!-- SIDEBAR CHO PC -->
+    <aside class="w-60 bg-slate-900 text-white flex flex-col shadow-xl z-20 hidden md:flex shrink-0">
+        <div class="p-4 border-b border-slate-800 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white text-lg shadow shrink-0">
+    <i class="fa-solid fa-boxes-stacked"></i>
+</div>
+            <div class="overflow-hidden">
+                <h1 class="text-base font-black truncate" id="sidebar-store-name">Tạp Hóa Huy Hoàng</h1>
+                <span class="text-[10px] text-emerald-400 font-bold flex items-center gap-1"><i class="fa-solid fa-circle text-[6px]"></i> Trực tuyến (Cloud)</span>
+            </div>
         </div>
-        <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
-            <button onclick="switchTab('tab-sell')" id="btn-tab-sell" class="w-full flex items-center gap-3 p-3 rounded text-left hover:bg-blue-700 transition bg-blue-800 scale-active">
-                <i class="fa-solid fa-cash-register text-xl w-6 text-center"></i> Bán Hàng
+        
+        <nav class="flex-1 p-3 space-y-1 overflow-y-auto text-sm font-medium">
+            <button onclick="switchTab('tab-sell')" id="btn-tab-sell" class="desktop-nav-btn w-full flex items-center justify-between p-2.5 rounded-lg text-left hover:bg-slate-800 transition bg-blue-600 text-white scale-active">
+                <span class="flex items-center gap-3"><i class="fa-solid fa-cash-register w-5 text-center"></i> 1. Bán Hàng (POS)</span>
+                <span class="text-[10px] bg-black/20 px-1.5 py-0.5 rounded">F1</span>
             </button>
-            <button onclick="switchTab('tab-history')" id="btn-tab-history" class="w-full flex items-center gap-3 p-3 rounded text-left hover:bg-blue-700 transition scale-active">
-                <i class="fa-solid fa-receipt text-xl w-6 text-center"></i> Lịch Sử Bán
+            <button onclick="switchTab('tab-orders'); loadOrdersModule();" id="btn-tab-orders" class="desktop-nav-btn w-full flex items-center justify-between p-2.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 transition scale-active">
+                <span class="flex items-center gap-3"><i class="fa-solid fa-file-invoice-dollar w-5 text-center"></i> 2. Hóa Đơn & Hoàn</span>
             </button>
-            <button onclick="switchTab('tab-inventory')" id="btn-tab-inventory" class="w-full flex items-center gap-3 p-3 rounded text-left hover:bg-blue-700 transition scale-active">
-                <i class="fa-solid fa-boxes-stacked text-xl w-6 text-center"></i> Kho Hàng
+            <button onclick="switchTab('tab-inventory')" id="btn-tab-inventory" class="desktop-nav-btn w-full flex items-center justify-between p-2.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 transition scale-active">
+                <span class="flex items-center gap-3"><i class="fa-solid fa-boxes-stacked w-5 text-center"></i> 3. Kho & Thẻ Kho</span>
+                <span id="badge-low-stock" class="hidden text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold">0</span>
             </button>
-            <button onclick="switchTab('tab-add')" id="btn-tab-add" class="w-full flex items-center gap-3 p-3 rounded text-left hover:bg-blue-700 transition scale-active">
-                <i class="fa-solid fa-circle-plus text-xl w-6 text-center"></i> Thêm Mới
+            <button onclick="switchTab('tab-crm'); renderCrmModule();" id="btn-tab-crm" class="desktop-nav-btn w-full flex items-center justify-between p-2.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 transition scale-active">
+                <span class="flex items-center gap-3"><i class="fa-solid fa-users-gear w-5 text-center"></i> 4. Khách & Công Nợ</span>
             </button>
-            <button onclick="switchTab('tab-stats')" id="btn-tab-stats" class="w-full flex items-center gap-3 p-3 rounded text-left hover:bg-blue-700 transition scale-active">
-                <i class="fa-solid fa-chart-pie text-xl w-6 text-center"></i> Thống Kê
+            <button onclick="switchTab('tab-cashbook')" id="btn-tab-cashbook" class="desktop-nav-btn w-full flex items-center justify-between p-2.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 transition scale-active">
+                <span class="flex items-center gap-3"><i class="fa-solid fa-vault w-5 text-center"></i> 5. Sổ Quỹ & Chốt Ca</span>
+            </button>
+            <button onclick="switchTab('tab-reports')" id="btn-tab-reports" class="desktop-nav-btn w-full flex items-center justify-between p-2.5 rounded-lg text-left text-slate-300 hover:bg-slate-800 transition scale-active">
+                <span class="flex items-center gap-3"><i class="fa-solid fa-chart-line w-5 text-center"></i> 6. Báo Cáo Lãi/Lỗ</span>
             </button>
         </nav>
+
+        <div class="p-3 border-t border-slate-800">
+            <button onclick="openSettingsModal()" class="w-full flex items-center gap-3 p-2.5 rounded-lg text-xs font-bold text-slate-300 hover:bg-slate-800 transition scale-active">
+                <i class="fa-solid fa-sliders text-blue-400"></i> Cài đặt Bill & VietQR
+            </button>
+        </div>
     </aside>
 
     <!-- NỘI DUNG CHÍNH -->
-    <main class="flex-1 relative overflow-y-auto p-4 md:p-6 pb-32 md:pb-6">
+    <main class="flex-1 relative overflow-y-auto p-2.5 md:p-4 pb-28 md:pb-4">
 
-        <!-- TAB 1: BÁN HÀNG VÀ GIỎ HÀNG -->
+        <!-- ========================================== -->
+        <!-- TAB 1: BÁN HÀNG POS BÁN SỈ & LÊN ĐƠN TỰ ĐỘNG TỪ ZALO (MODULE 1 & 2) -->
+        <!-- ========================================== -->
         <section id="tab-sell" class="tab-content animate-fade-in md:h-full flex flex-col">
-            <h2 class="text-2xl font-bold mb-4 text-inni-blue"><i class="fa-solid fa-cash-register mr-2"></i>Bán Hàng</h2>
-            
-            <div class="flex flex-col lg:flex-row gap-6 flex-1 lg:overflow-hidden">
-                <div class="lg:w-2/3 flex flex-col lg:h-full bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                    <div class="flex flex-col sm:flex-row gap-3 mb-4 shrink-0">
-                        <div class="relative flex-1">
-                            <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
-                            <input type="text" id="sell-search-name" oninput="renderSellGrid()" placeholder="Nhập tên hàng..." class="w-full border border-gray-300 p-2 pl-10 rounded focus:outline-none focus:border-inni-blue bg-gray-50">
+            <div class="flex flex-col lg:flex-row gap-3 flex-1 lg:overflow-hidden">
+                
+                <!-- CỘT TRÁI (58%): TÌM KIẾM, QUÉT MÃ, LÊN ĐƠN ZALO & LƯỚI HÀNG HÓA -->
+                <div class="lg:w-[58%] flex flex-col lg:h-full bg-white rounded-xl shadow-sm border border-slate-200 p-3">
+                    
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100 shrink-0">
+                        <div class="flex items-center gap-2">
+                            <button onclick="openZaloModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-lg text-xs shadow-sm flex items-center gap-1.5 scale-active">
+                                <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> Lên Đơn Zalo Tự Động (F3)
+                            </button>
+                            <button onclick="openHoldOrdersModal()" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold px-3 py-2 rounded-lg text-xs flex items-center gap-1.5 scale-active relative">
+                                <i class="fa-solid fa-pause-circle text-amber-600"></i> Đơn Lưu Tạm
+                                <span id="hold-count-badge" class="bg-amber-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">0</span>
+                            </button>
                         </div>
-                        <select id="sell-search-cat" onchange="renderSellGrid()" class="border border-gray-300 p-2 rounded focus:outline-none focus:border-inni-blue bg-gray-50 shrink-0">
+                        <div class="text-[11px] text-slate-400 hidden xl:block font-medium">
+                            Phím tắt: <b>F2</b> Tìm/Quét • <b>F3</b> Zalo • <b>F8</b> Lưu tạm • <b>F9</b> Thanh toán
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row gap-2 mb-3 shrink-0">
+                        <div class="flex flex-1 gap-1.5">
+                            <div class="relative flex-1">
+                                <i class="fa-solid fa-barcode absolute left-3 top-2.5 text-slate-400"></i>
+                                <input type="text" id="sell-search-name" oninput="renderSellGrid()" onkeydown="handlePosSearchEnter(event)" placeholder="Tìm tên hàng, gõ từ khóa hoặc Bắn Mã Vạch (F2)..." class="w-full border border-slate-300 p-2 pl-9 rounded-lg focus:outline-none focus:border-inni-blue bg-slate-50 text-sm font-medium">
+                            </div>
+                            <button onclick="startPosBarcodeScanner()" title="Quét mã vạch bằng Camera thêm thẳng vào Giỏ" class="bg-slate-800 hover:bg-slate-900 text-white px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0 scale-active shadow-sm">
+                                <i class="fa-solid fa-camera text-amber-400"></i> <span class="hidden sm:inline">Quét Mua</span>
+                            </button>
+                        </div>
+                        <select id="sell-search-cat" onchange="renderSellGrid()" class="border border-slate-300 p-2 rounded-lg focus:outline-none focus:border-inni-blue bg-white text-xs font-bold shrink-0">
                             <option value="all">Tất cả phân loại</option>
-                            <option value="Gia vị & Nước chấm">Gia vị & Nước chấm</option>
-                            <option value="Mì & Đồ ăn liền">Mì & Đồ ăn liền</option>
-                            <option value="Snack & Bim bim">Snack & Bim bim</option>
-                            <option value="Bánh kẹo & Socola">Bánh kẹo & Socola</option>
-                            <option value="Sữa & Chế phẩm sữa">Sữa & Chế phẩm sữa</option>
-                            <option value="Trà & Cà phê">Trà & Cà phê</option>
-                            <option value="Nước giải khát & Nước lọc">Nước giải khát & Nước lọc</option>
-                            <option value="Bia & Rượu">Bia & Rượu</option>
-                            <option value="Kem & Đông lạnh">Kem & Đông lạnh</option>
-                            <option value="Đồ khô & Đóng gói">Đồ khô & Đóng gói</option>
-                            <option value="Thuốc lá & Phụ kiện">Thuốc lá & Phụ kiện</option>
-                            <option value="Chăm sóc cá nhân">Chăm sóc cá nhân</option>
-                            <option value="Vệ sinh nhà cửa">Vệ sinh nhà cửa</option>
-                            <option value="Đồ dùng gia đình & Tiện ích">Đồ dùng gia đình & Tiện ích</option>
-                            <option value="Khác">Khác</option>
                         </select>
                     </div>
 
-                    <div id="sell-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto flex-1 content-start pr-1 pb-4 max-h-[60vh] lg:max-h-full"></div>
-                    <div id="sell-no-result" class="hidden text-center p-8 text-gray-400 italic">Không tìm thấy sản phẩm!</div>
+                    <div id="sell-grid" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 overflow-y-auto flex-1 content-start pr-1 pb-2 max-h-[55vh] lg:max-h-full"></div>
+                    <div id="sell-no-result" class="hidden text-center p-10 text-slate-400 italic text-sm">
+                        <i class="fa-solid fa-box-open text-3xl mb-2 block text-slate-300"></i> Không tìm thấy sản phẩm khớp từ khóa!
+                    </div>
                 </div>
 
-                <div class="lg:w-1/3 flex flex-col bg-white rounded-xl shadow-sm border-t-4 border-green-500 p-4 h-[450px] lg:h-full shrink-0">
-                    <h3 class="font-bold text-lg text-green-600 mb-3 border-b pb-2"><i class="fa-solid fa-cart-shopping mr-2"></i>Giỏ Hàng</h3>
+                <!-- CỘT PHẢI (42%): GIỎ HÀNG BÁN SỈ ĐA ĐƠN VỊ & SỬA GIÁ TRỰC TIẾP -->
+                <div class="lg:w-[42%] flex flex-col bg-white rounded-xl shadow-sm border-t-4 border-inni-blue p-3 lg:h-full shrink-0">
                     
-                    <div class="mb-3 shrink-0">
-                        <label class="text-xs font-bold text-gray-500">Tên Thu Ngân:</label>
-                        <input type="text" id="seller-name" placeholder="Ví dụ: Nhi, Tuấn..." value="Chủ Quán" class="w-full border-b border-gray-300 py-1 focus:outline-none focus:border-green-500 font-bold text-inni-blue">
+                    <div class="grid grid-cols-12 gap-2 mb-2.5 pb-2.5 border-b border-slate-100 shrink-0">
+                        <div class="col-span-7">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase flex justify-between">
+                                <span>Khách hàng (F4):</span>
+                                <span id="pos-customer-debt-badge" class="text-red-600 font-black hidden">Nợ cũ: 0đ</span>
+                            </label>
+                            <div class="flex gap-1 mt-0.5">
+                                <select id="pos-customer-select" onchange="onSelectPosCustomer()" class="w-full border border-slate-300 rounded-lg p-1.5 text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:border-inni-blue">
+                                    <option value="GUEST">👤 Khách Lẻ (Vãng lai)</option>
+                                </select>
+                                <button onclick="quickAddCustomerPrompt()" title="Thêm nhanh khách sỉ mới" class="bg-blue-50 hover:bg-blue-100 text-inni-blue border border-blue-200 px-2.5 rounded-lg text-xs font-bold scale-active">
+                                    <i class="fa-solid fa-user-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-span-5">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase">Thu ngân:</label>
+                            <input type="text" id="seller-name" value="Chủ Quán" class="w-full border border-slate-300 rounded-lg p-1.5 mt-0.5 text-xs font-bold text-inni-blue focus:outline-none">
+                        </div>
                     </div>
 
-                    <ul id="cart-list" class="flex-1 overflow-y-auto space-y-2 pr-1 mb-4">
-                        <li class="text-center text-gray-400 text-sm italic mt-10">Giỏ hàng trống</li>
+                    <div class="flex justify-between items-center text-[11px] font-bold text-slate-500 uppercase px-1 mb-1.5 shrink-0">
+                        <span>Danh sách món (<b id="cart-item-count" class="text-inni-blue">0</b>)</span>
+                        <div class="flex gap-3">
+                            <button onclick="clearCart()" class="text-red-500 hover:underline text-[11px] font-semibold"><i class="fa-solid fa-trash-can mr-0.5"></i>Xóa giỏ</button>
+                        </div>
+                    </div>
+
+                    <ul id="cart-list" class="flex-1 overflow-y-auto space-y-2 pr-1 mb-3 min-h-[240px] max-h-[420px] lg:max-h-full">
+                        <li class="text-center text-slate-400 text-xs italic mt-12">Giỏ hàng trống. Hãy bấm chọn món, quét mã vạch hoặc dán đơn Zalo!</li>
                     </ul>
 
-                    <div class="shrink-0 border-t pt-3">
-                        <div class="flex justify-between items-center mb-4">
-                            <span class="font-bold text-gray-600">Tổng Tiền:</span>
-                            <span id="cart-total" class="font-bold text-2xl text-red-500">0 đ</span>
+                    <div class="shrink-0 border-t border-slate-200 pt-2.5 bg-slate-50/60 -mx-3 -mb-3 p-3 rounded-b-xl">
+                        <div class="flex justify-between items-center text-xs text-slate-600 mb-1">
+                            <span>Tổng tiền hàng:</span>
+                            <span id="cart-subtotal" class="font-bold text-slate-800">0 đ</span>
                         </div>
-                        <button onclick="checkoutCart()" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl shadow-md transition scale-active flex items-center justify-center gap-2">
-                            <i class="fa-solid fa-check-double"></i> Xác Nhận Bán
-                        </button>
+                        <div id="cart-old-debt-row" class="hidden flex justify-between items-center text-xs text-slate-600 mb-1">
+                            <span>Cộng nợ cũ của khách:</span>
+                            <span id="cart-old-debt" class="font-bold text-amber-700">0 đ</span>
+                        </div>
+                        <div class="flex justify-between items-center mb-3 pt-1 border-t border-dashed border-slate-200">
+                            <span class="font-black text-slate-800 text-sm uppercase">Tổng Thanh Toán:</span>
+                            <span id="cart-total" class="font-black text-2xl text-red-600">0 đ</span>
+                        </div>
+
+                        <div class="grid grid-cols-12 gap-2">
+                            <button onclick="holdCurrentOrder()" class="col-span-4 bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-xl shadow-sm transition scale-active flex items-center justify-center gap-1.5 text-xs">
+                                <i class="fa-solid fa-pause"></i> Lưu Tạm (F8)
+                            </button>
+                            <button onclick="openCheckoutModal()" class="col-span-8 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-xl shadow-md transition scale-active flex items-center justify-center gap-2 text-sm uppercase tracking-wide">
+                                <i class="fa-solid fa-check-double"></i> Thanh Toán / Ghi Nợ (F9)
+                            </button>
+                        </div>
                     </div>
+
                 </div>
             </div>
         </section>
 
-        <!-- TAB LỊCH SỬ BÁN -->
-        <section id="tab-history" class="tab-content hidden animate-fade-in md:h-full flex flex-col">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
-                <h2 class="text-2xl font-bold text-inni-blue"><i class="fa-solid fa-receipt mr-2"></i>Lịch Sử Giao Dịch</h2>
-                <button onclick="exportToCSV()" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded shadow transition scale-active flex items-center gap-2 text-sm">
-                    <i class="fa-solid fa-file-excel"></i> Xuất Excel (CSV)
-                </button>
-            </div>
-
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 flex-1 overflow-hidden flex flex-col min-h-[500px] lg:min-h-0">
-                <div class="overflow-y-auto p-4 flex-1">
-                    <div id="history-list" class="space-y-4"></div>
-                    <div id="history-empty" class="hidden text-center p-10 text-gray-400 italic">Chưa có giao dịch nào được ghi nhận.</div>
+        <!-- ========================================== -->
+        <!-- TAB 2: QUẢN LÝ HÓA ĐƠN, IN A5/80MM & HOÀN HÀNG (MODULE 3 & 4) -->
+        <!-- ========================================== -->
+        <section id="tab-orders" class="tab-content hidden animate-fade-in">
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-4 gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <div>
+                    <h2 class="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-file-invoice-dollar text-inni-blue"></i> Lịch Sử Hóa Đơn & Xử Lý Hoàn Hàng
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Xem lại hóa đơn • In khổ A5 / 80mm kèm VietQR • Hoàn trả hàng lỗi tự động cộng kho & cấn trừ nợ</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                    <input type="date" id="ord-date-from" onchange="loadOrdersModule()" class="border border-slate-300 rounded-lg p-2 text-xs font-bold bg-white">
+                    <span class="text-xs text-slate-400">đến</span>
+                    <input type="date" id="ord-date-to" onchange="loadOrdersModule()" class="border border-slate-300 rounded-lg p-2 text-xs font-bold bg-white">
+                    <button onclick="exportOrdersToCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center gap-1.5 shadow-sm scale-active">
+                        <i class="fa-solid fa-file-excel"></i> Xuất Excel
+                    </button>
                 </div>
             </div>
-        </section>
 
-        <!-- TAB KHO HÀNG -->
-        <section id="tab-inventory" class="tab-content hidden">
-            <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
-                    <h2 class="text-2xl font-bold text-inni-blue"><i class="fa-solid fa-boxes-packing mr-2"></i>Quản Lý Kho</h2>
-                    <span class="bg-blue-100 text-inni-blue py-1 px-3 rounded-full text-sm font-bold shadow-sm" id="total-inventory-count">Tổng: 0 món</span>
+            <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 mb-4 flex flex-col sm:flex-row gap-3">
+                <div class="relative flex-1">
+                    <i class="fa-solid fa-search absolute left-3 top-2.5 text-slate-400"></i>
+                    <input type="text" id="ord-search-text" oninput="renderOrdersList()" placeholder="Tìm theo Mã hóa đơn (BH-...), Tên khách hàng, SĐT..." class="w-full border border-slate-300 p-2 pl-9 rounded-lg text-sm focus:outline-none focus:border-inni-blue">
                 </div>
+                <select id="ord-filter-type" onchange="renderOrdersList()" class="border border-slate-300 p-2 rounded-lg text-xs font-bold bg-white">
+                    <option value="all">Tất cả loại đơn</option>
+                    <option value="SALE">✅ Hóa đơn xuất bán</option>
+                    <option value="RETURN">🔄 Đơn khách hoàn hàng</option>
+                </select>
+            </div>
 
-                <div class="flex flex-col md:flex-row gap-4 mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <div class="relative flex-1">
-                        <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
-                        <input type="text" id="search-name" oninput="renderInventory()" placeholder="Nhập tên hàng để tìm..." class="w-full border border-gray-300 p-2 pl-10 rounded focus:outline-none focus:border-inni-blue shadow-inner">
-                    </div>
-                    <div class="relative">
-                        <i class="fa-solid fa-filter absolute left-3 top-3 text-gray-400"></i>
-                        <select id="search-cat" onchange="renderInventory()" class="border border-gray-300 p-2 pl-10 rounded focus:outline-none focus:border-inni-blue bg-white w-full md:w-auto shadow-inner">
-                            <option value="all">Tất cả phân loại</option>
-                            <option value="Gia vị & Nước chấm">Gia vị & Nước chấm</option>
-                            <option value="Mì & Đồ ăn liền">Mì & Đồ ăn liền</option>
-                            <option value="Snack & Bim bim">Snack & Bim bim</option>
-                            <option value="Bánh kẹo & Socola">Bánh kẹo & Socola</option>
-                            <option value="Sữa & Chế phẩm sữa">Sữa & Chế phẩm sữa</option>
-                            <option value="Trà & Cà phê">Trà & Cà phê</option>
-                            <option value="Nước giải khát & Nước lọc">Nước giải khát & Nước lọc</option>
-                            <option value="Bia & Rượu">Bia & Rượu</option>
-                            <option value="Kem & Đông lạnh">Kem & Đông lạnh</option>
-                            <option value="Đồ khô & Đóng gói">Đồ khô & Đóng gói</option>
-                            <option value="Thuốc lá & Phụ kiện">Thuốc lá & Phụ kiện</option>
-                            <option value="Chăm sóc cá nhân">Chăm sóc cá nhân</option>
-                            <option value="Vệ sinh nhà cửa">Vệ sinh nhà cửa</option>
-                            <option value="Đồ dùng gia đình & Tiện ích">Đồ dùng gia đình & Tiện ích</option>
-                            <option value="Khác">Khác</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="overflow-x-auto rounded-lg border border-gray-200">
-                    <table class="w-full text-left border-collapse min-w-[500px]">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[800px]">
                         <thead>
-                            <tr class="bg-gray-100 text-gray-700 text-sm uppercase tracking-wider">
-                                <th class="p-3 border-b w-16 md:w-24">Hình ảnh</th>
-                                <th class="p-3 border-b">Tên Hàng</th>
-                                <th class="p-3 border-b">Giá Bán</th>
-                                <th class="p-3 border-b text-center">Kho</th>
-                                <th class="p-3 border-b text-center">Thao tác</th>
+                            <tr class="bg-slate-100 text-slate-600 text-xs uppercase border-b border-slate-200">
+                                <th class="p-3">Mã Đơn / Ngày Giờ</th>
+                                <th class="p-3">Khách Hàng</th>
+                                <th class="p-3">Tóm Tắt Mặt Hàng</th>
+                                <th class="p-3 text-right">Tổng Đơn</th>
+                                <th class="p-3 text-right">Đã Trả</th>
+                                <th class="p-3 text-right">Còn Nợ</th>
+                                <th class="p-3 text-center">Thao Tác</th>
                             </tr>
                         </thead>
-                        <tbody id="inventory-list" class="divide-y divide-gray-100"></tbody>
+                        <tbody id="orders-tbody" class="divide-y divide-slate-100 text-sm"></tbody>
                     </table>
-                    <div id="no-result-msg" class="hidden text-center p-8 text-gray-500 italic animate-fade-in"><i class="fa-solid fa-box-open text-4xl mb-3 text-gray-300 block"></i> Không tìm thấy mặt hàng nào!</div>
                 </div>
+                <div id="orders-empty" class="hidden text-center p-10 text-slate-400 italic">Chưa có hóa đơn nào trong khoảng thời gian này.</div>
             </div>
         </section>
 
-        <!-- TAB THÊM HÀNG MỚI -->
-        <section id="tab-add" class="tab-content hidden">
-            <div class="max-w-3xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-sm border-t-4 border-inni-blue">
-                <h2 class="text-2xl font-bold mb-6 text-inni-blue"><i class="fa-solid fa-cart-plus mr-2"></i>Nhập Hàng Mới</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                    <div>
-                        <label class="block text-sm font-bold text-gray-700 mb-1">Tên sản phẩm</label>
-                        <input type="text" id="prod-name" placeholder="VD: Tương ớt Chinsu" class="w-full border border-gray-300 p-3 rounded focus:outline-none focus:border-inni-blue focus:ring-1 focus:ring-inni-blue transition">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-bold text-gray-700 mb-1">Phân loại hàng</label>
-                        <select id="prod-category" class="w-full border border-gray-300 p-3 rounded focus:outline-none focus:border-inni-blue focus:ring-1 focus:ring-inni-blue transition bg-white">
-                            <option value="Gia vị & Nước chấm">Gia vị & Nước chấm</option>
-                            <option value="Mì & Đồ ăn liền">Mì & Đồ ăn liền</option>
-                            <option value="Snack & Bim bim">Snack & Bim bim</option>
-                            <option value="Bánh kẹo & Socola">Bánh kẹo & Socola</option>
-                            <option value="Sữa & Chế phẩm sữa">Sữa & Chế phẩm sữa</option>
-                            <option value="Trà & Cà phê">Trà & Cà phê</option>
-                            <option value="Nước giải khát & Nước lọc">Nước giải khát & Nước lọc</option>
-                            <option value="Bia & Rượu">Bia & Rượu</option>
-                            <option value="Kem & Đông lạnh">Kem & Đông lạnh</option>
-                            <option value="Đồ khô & Đóng gói">Đồ khô & Đóng gói</option>
-                            <option value="Thuốc lá & Phụ kiện">Thuốc lá & Phụ kiện</option>
-                            <option value="Chăm sóc cá nhân">Chăm sóc cá nhân</option>
-                            <option value="Vệ sinh nhà cửa">Vệ sinh nhà cửa</option>
-                            <option value="Đồ dùng gia đình & Tiện ích">Đồ dùng gia đình & Tiện ích</option>
-                            <option value="Khác">Khác</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-bold text-gray-700 mb-1">Giá bán lẻ (VNĐ)</label>
-                        <input type="text" id="prod-price-input" oninput="formatCurrencyInput(this)" placeholder="Ví dụ: 15.000" class="w-full border border-gray-300 p-3 rounded focus:outline-none focus:border-inni-blue focus:ring-1 focus:ring-inni-blue transition">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-bold text-gray-700 mb-1">Số lượng nhập kho</label>
-                        <input type="number" id="prod-stock" placeholder="Ví dụ: 50" class="w-full border border-gray-300 p-3 rounded focus:outline-none focus:border-inni-blue focus:ring-1 focus:ring-inni-blue transition">
-                    </div>
-                    <div class="md:col-span-2 bg-blue-50 p-4 border border-blue-200 rounded-lg mt-2 relative overflow-hidden group">
-                        <label class="block text-sm font-bold text-gray-700 mb-2"><i class="fa-solid fa-image text-blue-500 mr-2"></i>Ảnh Sản Phẩm</label>
-                        <p class="text-xs text-gray-500 mb-3">Mẹo: Thêm hình ảnh giúp bạn nhận diện nhanh khi chọn vào Giỏ hàng.</p>
-                        <input type="file" id="prod-image" accept="image/*" class="w-full border border-gray-300 p-2 rounded bg-white text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-inni-blue hover:file:bg-blue-100">
-                    </div>
+        <!-- ========================================== -->
+        <!-- TAB 3: QUẢN LÝ KHO BÁN SỈ, ĐA ĐƠN VỊ & THẺ KHO (GIỮ NGUYÊN 100%) -->
+        <!-- ========================================== -->
+        <section id="tab-inventory" class="tab-content hidden animate-fade-in">
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-4 gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <div>
+                    <h2 class="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-boxes-stacked text-inni-blue"></i> Quản Lý Kho Bán Sỉ & Đa Đơn Vị
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Tách cột Giá Lẻ & Giá Sỉ • Quét mã vạch bằng Camera/Súng • Sửa/Xóa Thẻ kho linh hoạt</p>
                 </div>
-                <button onclick="addProduct()" id="btn-add-product" class="mt-6 w-full bg-inni-blue hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg shadow-md transition transform active:scale-95 text-lg flex justify-center items-center gap-2">
-                    <i class="fa-solid fa-cloud-arrow-up"></i> Lưu Món Hàng Lên Đám Mây
-                </button>
-            </div>
-        </section>
-
-        <!-- TAB THỐNG KÊ -->
-        <section id="tab-stats" class="tab-content hidden">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
-                <h2 class="text-2xl font-bold text-inni-blue"><i class="fa-solid fa-chart-pie mr-2"></i>Thống Kê Doanh Thu</h2>
-                <button onclick="exportStatsToCSV()" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded shadow transition scale-active flex items-center gap-2 text-sm">
-                    <i class="fa-solid fa-file-excel"></i> Xuất Báo Cáo Tổng (CSV)
-                </button>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div class="bg-white p-5 rounded-xl shadow-sm border-t-4 border-green-500 flex items-center justify-between hover:shadow-md transition">
-                    <div>
-                        <h3 class="text-gray-500 font-bold mb-1 text-sm">Hôm Nay</h3>
-                        <div class="text-xl md:text-2xl font-bold text-green-600" id="rev-1-day">0 đ</div>
-                    </div>
-                    <div class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center"><i class="fa-solid fa-sack-dollar text-2xl text-green-500"></i></div>
-                </div>
-                <div class="bg-white p-5 rounded-xl shadow-sm border-t-4 border-blue-500 flex items-center justify-between hover:shadow-md transition">
-                    <div>
-                        <h3 class="text-gray-500 font-bold mb-1 text-sm">3 Ngày Qua</h3>
-                        <div class="text-xl md:text-2xl font-bold text-blue-600" id="rev-3-days">0 đ</div>
-                    </div>
-                    <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center"><i class="fa-solid fa-wallet text-2xl text-blue-500"></i></div>
-                </div>
-                <div class="bg-white p-5 rounded-xl shadow-sm border-t-4 border-purple-500 flex items-center justify-between hover:shadow-md transition">
-                    <div>
-                        <h3 class="text-gray-500 font-bold mb-1 text-sm">1 Tuần Qua</h3>
-                        <div class="text-xl md:text-2xl font-bold text-purple-600" id="rev-7-days">0 đ</div>
-                    </div>
-                    <div class="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center"><i class="fa-solid fa-vault text-2xl text-purple-500"></i></div>
+                <div class="flex flex-wrap gap-2 w-full lg:w-auto">
+                    <button onclick="openProductModal()" class="flex-1 sm:flex-none bg-inni-blue hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-lg shadow-sm text-xs flex items-center justify-center gap-1.5 scale-active">
+                        <i class="fa-solid fa-plus"></i> Thêm Mặt Hàng Mới
+                    </button>
+                    <button onclick="openPurchaseOrderModal()" class="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-lg shadow-sm text-xs flex items-center justify-center gap-1.5 scale-active">
+                        <i class="fa-solid fa-truck-ramp-box"></i> Nhập Hàng NCC (Tính Giá Vốn)
+                    </button>
+                    <button onclick="openSettingsModal()" class="md:hidden bg-slate-200 text-slate-700 font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1 scale-active">
+                        <i class="fa-solid fa-gear"></i>
+                    </button>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                        <h2 class="text-xl md:text-2xl font-bold text-inni-blue flex items-center gap-2"><i class="fa-regular fa-calendar-days"></i>Lịch Bán Hàng</h2>
-                        <div class="flex gap-2 w-full sm:w-auto">
-                            <select id="filter-month" onchange="changeCalendarMonth()" class="flex-1 sm:flex-none border border-gray-300 rounded p-2 text-sm font-bold text-gray-700 bg-gray-50 focus:outline-none focus:border-inni-blue cursor-pointer"></select>
-                            <select id="filter-year" onchange="changeCalendarMonth()" class="flex-1 sm:flex-none border border-gray-300 rounded p-2 text-sm font-bold text-gray-700 bg-gray-50 focus:outline-none focus:border-inni-blue cursor-pointer"></select>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+                    <div class="text-xs text-slate-500 font-semibold">Tổng mặt hàng</div>
+                    <div class="text-xl font-black text-slate-800 mt-1" id="inv-stat-total">0</div>
+                </div>
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+                    <div class="text-xs text-slate-500 font-semibold">Tổng vốn tồn kho</div>
+                    <div class="text-xl font-black text-blue-600 mt-1" id="inv-stat-capital">0 đ</div>
+                </div>
+                <div class="bg-white p-3.5 rounded-xl border border-red-200 shadow-sm bg-red-50/30 cursor-pointer" onclick="toggleLowStockFilter()">
+                    <div class="text-xs text-red-600 font-bold flex items-center justify-between">
+                        <span>Sắp hết / Hết hàng</span>
+                        <i class="fa-solid fa-filter text-[10px]"></i>
+                    </div>
+                    <div class="text-xl font-black text-red-600 mt-1" id="inv-stat-low">0 món</div>
+                </div>
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+                    <div class="text-xs text-slate-500 font-semibold">Giá trị bán lẻ ước tính</div>
+                    <div class="text-xl font-black text-emerald-600 mt-1" id="inv-stat-retail">0 đ</div>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4">
+                <div class="flex flex-col md:flex-row gap-3">
+                    <div class="flex flex-1 gap-2">
+                        <div class="relative flex-1">
+                            <i class="fa-solid fa-search absolute left-3 top-3 text-slate-400"></i>
+                            <input type="text" id="inv-search-name" oninput="renderInventory()" placeholder="Nhập tên hàng, từ khóa Zalo hoặc bắn mã vạch..." class="w-full border border-slate-300 p-2 pl-9 rounded-lg focus:outline-none focus:border-inni-blue text-sm">
                         </div>
+                        <button onclick="startBarcodeScanner('inv-search-name')" title="Mở Camera quét mã vạch" class="bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0 scale-active shadow-sm">
+                            <i class="fa-solid fa-camera text-amber-400 text-sm"></i> <span class="hidden sm:inline">Quét Mã</span>
+                        </button>
                     </div>
-                    
-                    <div class="grid grid-cols-7 gap-1 md:gap-2 text-center font-bold text-gray-500 text-xs md:text-sm mb-2 bg-gray-50 py-2 rounded">
-                        <div>CN</div><div>T2</div><div>T3</div><div>T4</div><div>T5</div><div>T6</div><div>T7</div>
-                    </div>
-                    <div id="calendar-grid" class="grid grid-cols-7 gap-1 md:gap-2"></div>
+                    <select id="inv-search-cat" onchange="renderInventory()" class="border border-slate-300 p-2 rounded-lg focus:outline-none focus:border-inni-blue bg-white text-sm">
+                        <option value="all">Tất cả phân loại</option>
+                    </select>
+                    <select id="inv-filter-stock" onchange="renderInventory()" class="border border-slate-300 p-2 rounded-lg focus:outline-none focus:border-inni-blue bg-white text-sm font-semibold">
+                        <option value="all">Tất cả trạng thái tồn</option>
+                        <option value="low" class="text-red-600 font-bold">⚠️ Dưới định mức tồn (Cần nhập)</option>
+                        <option value="out">❌ Đã hết hàng (Tồn <= 0)</option>
+                    </select>
                 </div>
+            </div>
 
-                <div class="lg:col-span-1 bg-white p-4 md:p-6 rounded-xl shadow-sm border-t-4 border-yellow-500 flex flex-col h-full min-h-[400px]">
-                    <h3 class="text-lg font-bold text-yellow-600 border-b pb-2 mb-4"><i class="fa-solid fa-chart-bar mr-2"></i>Tổng số lượng <span id="detail-date" class="text-gray-800">...</span></h3>
-                    
-                    <div class="flex justify-between font-bold text-base mb-4 bg-gray-50 p-3 rounded">
-                        <span>Tổng doanh thu:</span>
-                        <span id="detail-revenue" class="text-green-600 text-xl">0 đ</span>
-                    </div>
-                    
-                    <ul id="detail-items-list" class="space-y-2 overflow-y-auto max-h-[300px] text-sm flex-1 mb-4 pr-1"></ul>
-                    
-                    <div class="mt-auto text-xs text-gray-400 italic text-center">
-                        *Đây là bảng tổng hợp. Để hoàn hàng, vui lòng qua tab "Lịch Sử Bán" để hủy nguyên hóa đơn.
-                    </div>
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[850px]">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
+                                <th class="p-3 w-14">Ảnh</th>
+                                <th class="p-3">Tên Mặt Hàng / Mã Vạch</th>
+                                <th class="p-3 text-right">Giá Vốn (ĐV nhỏ)</th>
+                                <th class="p-3 text-right bg-red-50/50 text-red-700 font-bold">Giá Bán Lẻ</th>
+                                <th class="p-3 bg-blue-50/50 text-inni-blue font-bold">Giá Bán Sỉ (Thùng / Lốc)</th>
+                                <th class="p-3 text-center">Tồn Kho Thực Tế</th>
+                                <th class="p-3 text-center">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-list" class="divide-y divide-slate-100 text-sm"></tbody>
+                    </table>
+                </div>
+                <div id="inv-no-result" class="hidden text-center p-10 text-slate-400 italic">
+                    <i class="fa-solid fa-box-open text-4xl mb-2 block text-slate-300"></i> Không tìm thấy sản phẩm phù hợp!
                 </div>
             </div>
         </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 4: KHÁCH HÀNG CRM, SỔ GHI NỢ & HOÀN HÀNG (MODULE 3) -->
+        <!-- ========================================== -->
+        <section id="tab-crm" class="tab-content hidden animate-fade-in">
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-4 gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <div>
+                    <h2 class="text-xl md:text-2xl font-black text-slate-800 flex items-center gap-2">
+                        <i class="fa-solid fa-users-gear text-inni-blue"></i> Quản Lý Khách Hàng (CRM) & Sổ Công Nợ
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Thêm/Sửa/Xóa Khách sỉ & Nhà cung cấp • Theo dõi Sổ nợ chi tiết • Thu nợ & Hoàn hàng cấn trừ nợ</p>
+                </div>
+                <div class="flex gap-2 w-full lg:w-auto">
+                    <button onclick="openCustomerModal()" class="flex-1 sm:flex-none bg-inni-blue hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-lg shadow-sm text-xs flex items-center justify-center gap-1.5 scale-active">
+                        <i class="fa-solid fa-user-plus"></i> Thêm Khách Hàng / NCC Mới
+                    </button>
+                </div>
+            </div>
+
+            <!-- Thống kê Công nợ -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                    <div>
+                        <div class="text-xs text-slate-500 font-bold uppercase">Tổng Khách Hàng & NCC</div>
+                        <div class="text-2xl font-black text-slate-800 mt-1" id="crm-stat-count">0</div>
+                    </div>
+                    <div class="w-11 h-11 rounded-full bg-blue-50 text-inni-blue flex items-center justify-center text-xl"><i class="fa-solid fa-users"></i></div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-red-200 shadow-sm flex justify-between items-center bg-red-50/20">
+                    <div>
+                        <div class="text-xs text-red-600 font-bold uppercase">Nợ Phải Thu (Khách nợ mình)</div>
+                        <div class="text-2xl font-black text-red-600 mt-1" id="crm-stat-receivable">0 đ</div>
+                    </div>
+                    <div class="w-11 h-11 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xl"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex justify-between items-center bg-amber-50/20">
+                    <div>
+                        <div class="text-xs text-amber-700 font-bold uppercase">Nợ Phải Trả (Mình nợ NCC)</div>
+                        <div class="text-2xl font-black text-amber-700 mt-1" id="crm-stat-payable">0 đ</div>
+                    </div>
+                    <div class="w-11 h-11 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xl"><i class="fa-solid fa-truck-field"></i></div>
+                </div>
+            </div>
+
+            <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 mb-4 flex flex-col sm:flex-row gap-3">
+                <div class="relative flex-1">
+                    <i class="fa-solid fa-search absolute left-3 top-2.5 text-slate-400"></i>
+                    <input type="text" id="crm-search-text" oninput="renderCrmModule()" placeholder="Tìm theo Tên khách hàng, Số điện thoại, Địa chỉ..." class="w-full border border-slate-300 p-2 pl-9 rounded-lg text-sm focus:outline-none focus:border-inni-blue">
+                </div>
+                <select id="crm-filter-type" onchange="renderCrmModule()" class="border border-slate-300 p-2 rounded-lg text-xs font-bold bg-white">
+                    <option value="all">Tất cả đối tượng</option>
+                    <option value="CUSTOMER">🏪 Khách hàng mua sỉ/lẻ</option>
+                    <option value="SUPPLIER">🚛 Nhà cung cấp hàng</option>
+                    <option value="DEBT_ONLY">⚠️ Đang có dư nợ (> 0đ)</option>
+                </select>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[750px]">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs uppercase border-b border-slate-200">
+                                <th class="p-3">Tên Khách Hàng / NCC</th>
+                                <th class="p-3">Phân Loại</th>
+                                <th class="p-3">Số Điện Thoại</th>
+                                <th class="p-3">Địa Chỉ Giao Hàng</th>
+                                <th class="p-3 text-right">Dư Nợ Hiện Tại</th>
+                                <th class="p-3 text-center">Sổ Nợ / Sửa / Xóa</th>
+                            </tr>
+                        </thead>
+                        <tbody id="crm-tbody" class="divide-y divide-slate-100 text-sm"></tbody>
+                    </table>
+                </div>
+                <div id="crm-empty" class="hidden text-center p-10 text-slate-400 italic">Chưa có khách hàng nào. Hãy bấm "Thêm Khách Hàng" để tạo mới!</div>
+            </div>
+        </section>
+
+        <!-- CÁC TAB CÒN LẠI (SẼ HOÀN THIỆN Ở BƯỚC 5) -->
+        <section id="tab-cashbook" class="tab-content hidden animate-fade-in">
+            <div class="bg-white p-8 rounded-xl border text-center text-slate-500">Module Sổ quỹ Tiền mặt/Ngân hàng & Chốt ca sẽ được kích hoạt ở Bước 5.</div>
+        </section>
+        <section id="tab-reports" class="tab-content hidden animate-fade-in">
+            <div class="bg-white p-8 rounded-xl border text-center text-slate-500">Module Báo cáo Lãi/Lỗ & Thống kê sẽ được kích hoạt ở Bước 5.</div>
+        </section>
+
     </main>
 
     <!-- THANH MENU ĐIỀU HƯỚNG ĐIỆN THOẠI -->
-    <nav class="w-full bg-white border-t border-gray-200 flex justify-between pt-2 pb-safe z-40 md:hidden shadow-[0_-10px_20px_rgba(0,0,0,0.05)] px-1 shrink-0">
+    <nav class="w-full bg-white border-t border-slate-200 flex justify-between pt-2 pb-safe z-40 md:hidden shadow-[0_-8px_15px_rgba(0,0,0,0.04)] px-1 shrink-0">
         <button onclick="switchTab('tab-sell')" id="btn-mobile-tab-sell" class="mobile-nav-btn flex flex-col items-center px-1 text-inni-blue font-bold flex-1 scale-active">
-            <i class="fa-solid fa-cash-register text-[18px] mb-1"></i>
-            <span class="text-[9px] whitespace-nowrap mt-1">Bán Hàng</span>
+            <i class="fa-solid fa-cash-register text-[17px]"></i>
+            <span class="text-[9px] mt-1">Bán Hàng</span>
         </button>
-        <button onclick="switchTab('tab-history')" id="btn-mobile-tab-history" class="mobile-nav-btn flex flex-col items-center px-1 text-gray-400 hover:text-inni-blue transition flex-1 scale-active">
-            <i class="fa-solid fa-receipt text-[18px] mb-1"></i>
-            <span class="text-[9px] whitespace-nowrap mt-1">Lịch Sử</span>
+        <button onclick="switchTab('tab-orders'); loadOrdersModule();" id="btn-mobile-tab-orders" class="mobile-nav-btn flex flex-col items-center px-1 text-slate-400 flex-1 scale-active">
+            <i class="fa-solid fa-file-invoice-dollar text-[17px]"></i>
+            <span class="text-[9px] mt-1">Hóa Đơn</span>
         </button>
-        <button onclick="switchTab('tab-inventory')" id="btn-mobile-tab-inventory" class="mobile-nav-btn flex flex-col items-center px-1 text-gray-400 hover:text-inni-blue transition flex-1 scale-active">
-            <i class="fa-solid fa-boxes-stacked text-[18px] mb-1"></i>
-            <span class="text-[9px] whitespace-nowrap mt-1">Kho</span>
+        <button onclick="switchTab('tab-inventory')" id="btn-mobile-tab-inventory" class="mobile-nav-btn flex flex-col items-center px-1 text-slate-400 flex-1 scale-active relative">
+            <i class="fa-solid fa-boxes-stacked text-[17px]"></i>
+            <span class="text-[9px] mt-1">Kho Sỉ</span>
+            <span id="badge-mobile-low-stock" class="hidden absolute top-0 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
         </button>
-        <button onclick="switchTab('tab-add')" id="btn-mobile-tab-add" class="mobile-nav-btn flex flex-col items-center px-1 text-gray-400 hover:text-inni-blue transition flex-1 scale-active">
-            <i class="fa-solid fa-circle-plus text-[18px] mb-1"></i>
-            <span class="text-[9px] whitespace-nowrap mt-1">Thêm Mới</span>
+        <button onclick="switchTab('tab-crm'); renderCrmModule();" id="btn-mobile-tab-crm" class="mobile-nav-btn flex flex-col items-center px-1 text-slate-400 flex-1 scale-active">
+            <i class="fa-solid fa-users text-[17px]"></i>
+            <span class="text-[9px] mt-1">Công Nợ</span>
         </button>
-        <button onclick="switchTab('tab-stats')" id="btn-mobile-tab-stats" class="mobile-nav-btn flex flex-col items-center px-1 text-gray-400 hover:text-inni-blue transition flex-1 scale-active">
-            <i class="fa-solid fa-chart-pie text-[18px] mb-1"></i>
-            <span class="text-[9px] whitespace-nowrap mt-1">Thống Kê</span>
+        <button onclick="switchTab('tab-cashbook')" id="btn-mobile-tab-cashbook" class="mobile-nav-btn flex flex-col items-center px-1 text-slate-400 flex-1 scale-active">
+            <i class="fa-solid fa-vault text-[17px]"></i>
+            <span class="text-[9px] mt-1">Sổ Quỹ</span>
+        </button>
+        <button onclick="switchTab('tab-reports')" id="btn-mobile-tab-reports" class="mobile-nav-btn flex flex-col items-center px-1 text-slate-400 flex-1 scale-active">
+            <i class="fa-solid fa-chart-pie text-[17px]"></i>
+            <span class="text-[9px] mt-1">Lãi/Lỗ</span>
         </button>
     </nav>
 
-    <!-- MODAL THANH TOÁN -->
-    <div id="payment-modal" class="fixed inset-0 modal-overlay z-[60] hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full animate-fade-in flex flex-col">
-            <div class="flex justify-between items-center mb-4 border-b pb-2">
-                <h3 class="font-bold text-lg text-inni-blue"><i class="fa-solid fa-wallet mr-2"></i>Thanh Toán</h3>
-                <button onclick="closePaymentModal()" class="text-gray-400 hover:text-red-500 text-xl"><i class="fa-solid fa-xmark"></i></button>
-            </div>
+    <!-- ========================================== -->
+    <!-- MODAL MODULE 4: HÓA ĐƠN BÁN SỈ CHUẨN (CHUYỂN ĐỔI A5 / 80MM + VIETQR) -->
+    <!-- ========================================== -->
+    <div id="bill-detail-modal" class="fixed inset-0 modal-overlay z-[85] hidden flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white sm:rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-fade-in flex flex-col max-h-[94vh]">
             
-            <div class="mb-4">
-                <div class="flex justify-between text-gray-600 mb-1">
-                    <span>Tổng hóa đơn:</span>
-                    <span id="payment-total" class="font-bold text-red-500 text-lg">0 đ</span>
+            <!-- Thanh điều khiển trên cùng (Ẩn khi in) -->
+            <div class="bg-slate-900 text-white px-4 py-3 flex flex-wrap justify-between items-center gap-2 shrink-0 print-hidden">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-300">Chế độ khổ in:</span>
+                    <button type="button" onclick="setInvoicePrintMode('A5')" id="btn-mode-A5" class="px-2.5 py-1 rounded text-xs font-bold bg-blue-600 text-white">
+                        Khổ A5 (AirPrint / Sỉ)
+                    </button>
+                    <button type="button" onclick="setInvoicePrintMode('80mm')" id="btn-mode-80mm" class="px-2.5 py-1 rounded text-xs font-bold bg-slate-700 text-slate-300">
+                        Khổ 80mm (In nhiệt)
+                    </button>
                 </div>
+                <button onclick="closeBillModal()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
             </div>
 
-            <div class="mb-4">
-                <label class="block text-sm font-bold text-gray-700 mb-2">Khách đưa (VNĐ):</label>
-                <input type="text" id="customer-paid-input" oninput="formatCurrencyInput(this); calculateChange()" class="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:border-green-500 font-bold text-lg" placeholder="Nhập số tiền...">
-            </div>
-
-            <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-6">
-                <div class="flex justify-between text-gray-700">
-                    <span class="font-bold">Tiền thừa trả khách:</span>
-                    <span id="payment-change" class="font-bold text-blue-600 text-xl">0 đ</span>
+            <!-- Vùng Hóa Đơn Sẽ Được In Ra Giấy -->
+            <div class="flex-1 overflow-y-auto bg-white p-5 text-slate-900" id="printable-bill">
+                <!-- Header Cửa hàng -->
+                <div class="flex flex-col sm:flex-row justify-between items-center sm:items-start border-b-2 border-slate-800 pb-3 mb-3 gap-2 text-center sm:text-left">
+                    <div>
+                        <h2 class="text-xl font-black uppercase tracking-wide" id="bill-store-name">TẠP HÓA HUY HOÀNG</h2>
+                        <p class="text-xs text-slate-700 font-semibold mt-0.5">SĐT: <span id="bill-store-phone">...</span></p>
+                        <p class="text-xs text-slate-600" id="bill-store-address">...</p>
+                    </div>
+                    <div class="sm:text-right">
+                        <div class="text-base font-black uppercase" id="bill-title-type">HÓA ĐƠN BÁN HÀNG</div>
+                        <div class="text-xs font-bold text-slate-700">Mã: <span id="bill-detail-id">...</span></div>
+                        <div class="text-xs text-slate-600">Ngày: <span id="bill-detail-date">...</span></div>
+                    </div>
                 </div>
-            </div>
 
-            <button onclick="confirmCheckout()" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl shadow-md transition scale-active flex justify-center items-center gap-2">
-                <i class="fa-solid fa-check"></i> Hoàn Tất Bán Hàng
-            </button>
-        </div>
-    </div>
+                <!-- Thông tin Khách hàng -->
+                <div class="mb-3 text-xs bg-slate-50 p-2.5 rounded border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                    <div><b>Khách hàng:</b> <span id="bill-cust-name" class="font-bold uppercase">...</span></div>
+                    <div><b>SĐT khách:</b> <span id="bill-cust-phone">...</span></div>
+                    <div class="sm:col-span-2"><b>Địa chỉ:</b> <span id="bill-cust-address">...</span></div>
+                </div>
 
-    <!-- MODAL CHI TIẾT BILL -->
-    <div id="bill-detail-modal" class="fixed inset-0 modal-overlay z-[60] hidden flex items-center justify-center sm:p-4">
-        <div class="bg-white sm:rounded-xl shadow-2xl w-full h-full sm:h-auto sm:max-h-[90vh] max-w-sm overflow-hidden animate-fade-in flex flex-col">
-            
-            <div class="flex justify-between items-center bg-gray-100 px-4 py-3 border-b shrink-0 print-hidden">
-                <h3 class="font-bold text-gray-700"><i class="fa-solid fa-receipt mr-2"></i>Chi tiết hóa đơn</h3>
-                <button onclick="closeBillModal()" class="text-gray-400 hover:text-red-500 text-xl w-8 h-8 flex justify-center items-center rounded-full hover:bg-gray-200 transition"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            
-            <div class="flex-1 overflow-y-auto bg-white p-5" id="printable-bill">
-                <div class="text-center mb-4">
-                    <h2 class="text-2xl font-black text-gray-800 uppercase">TẠP HÓA HUY HOÀNG</h2>
-                    <p class="text-xs text-gray-500 mt-1">HÓA ĐƠN BÁN LẺ</p>
-                </div>
-                
-                <div class="border-b-2 border-dashed border-gray-300 pb-3 mb-3 text-sm text-gray-600 space-y-1">
-                    <div class="flex justify-between"><span>Ngày:</span> <span id="bill-detail-date" class="font-semibold text-gray-800">...</span></div>
-                    <div class="flex justify-between"><span>Mã đơn:</span> <span id="bill-detail-id" class="font-semibold text-gray-800">...</span></div>
-                    <div class="flex justify-between"><span>Thu ngân:</span> <span id="bill-detail-seller" class="font-semibold text-gray-800">...</span></div>
-                </div>
-                
-                <table class="w-full text-sm mb-4">
+                <!-- Bảng chi tiết 6 cột: STT, Tên hàng, ĐVT, SL, Đơn giá, Thành tiền -->
+                <table class="w-full text-xs border-collapse border border-slate-400 mb-3">
                     <thead>
-                        <tr class="border-b border-gray-200 text-gray-500 text-xs">
-                            <th class="text-left pb-2 font-medium w-3/5">Tên món</th>
-                            <th class="text-center pb-2 font-medium w-1/5">SL</th>
-                            <th class="text-right pb-2 font-medium w-1/5">T.Tiền</th>
+                        <tr class="bg-slate-100 text-slate-800 font-bold">
+                            <th class="border border-slate-400 p-1.5 text-center w-8 a5-only-col">STT</th>
+                            <th class="border border-slate-400 p-1.5 text-left">Tên hàng hóa</th>
+                            <th class="border border-slate-400 p-1.5 text-center w-14">ĐVT</th>
+                            <th class="border border-slate-400 p-1.5 text-center w-12">SL</th>
+                            <th class="border border-slate-400 p-1.5 text-right w-20">Đơn giá</th>
+                            <th class="border border-slate-400 p-1.5 text-right w-24">Thành tiền</th>
                         </tr>
                     </thead>
-                    <tbody id="bill-detail-items" class="text-gray-800">
-                    </tbody>
+                    <tbody id="bill-detail-items"></tbody>
                 </table>
-                
-                <div class="border-t-2 border-dashed border-gray-300 pt-3 flex justify-between items-center mb-6">
-                    <span class="font-bold text-gray-800 text-lg">TỔNG CỘNG:</span>
-                    <span id="bill-detail-total" class="font-black text-2xl text-red-600">0 đ</span>
+
+                <!-- Khu vực Tổng kết (Bắt buộc 3 dòng: Nợ cũ, Đã thanh toán, Còn nợ) & Mã VietQR -->
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-start mb-4">
+                    <!-- Cột Mã VietQR tự động -->
+                    <div class="sm:col-span-5 flex flex-col items-center justify-center text-center" id="bill-vietqr-box">
+                        <div class="text-[10px] font-bold uppercase text-slate-600 mb-1">Quét VietQR Chuyển Khoản</div>
+                        <img id="bill-vietqr-img" src="" alt="VietQR" class="vietqr-img border border-slate-300 rounded p-1 bg-white">
+                        <div class="text-[10px] font-semibold text-slate-700 mt-1" id="bill-bank-info"></div>
+                    </div>
+
+                    <!-- Cột Tổng kết công nợ -->
+                    <div class="sm:col-span-7 space-y-1.5 text-xs border-t sm:border-t-0 pt-2 sm:pt-0">
+                        <div class="flex justify-between py-1 border-b border-dashed border-slate-300">
+                            <span class="font-bold">Tổng tiền hàng đơn này:</span>
+                            <span class="font-black text-sm" id="bill-detail-total">0 đ</span>
+                        </div>
+                        <div class="flex justify-between py-1 border-b border-dashed border-slate-300 text-slate-700">
+                            <span class="font-bold">1. Nợ cũ:</span>
+                            <span class="font-bold" id="bill-old-debt">0 đ</span>
+                        </div>
+                        <div class="flex justify-between py-1 border-b border-dashed border-slate-300 text-emerald-800">
+                            <span class="font-bold">2. Đã thanh toán:</span>
+                            <span class="font-bold" id="bill-paid-amount">0 đ</span>
+                        </div>
+                        <div class="flex justify-between py-1.5 bg-slate-100 px-2 rounded font-black text-sm text-red-600 border border-slate-300">
+                            <span>3. TỔNG CÒN NỢ:</span>
+                            <span id="bill-new-debt">0 đ</span>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="text-center text-xs text-gray-400 italic">Cảm ơn quý khách & Hẹn gặp lại!</div>
+                <!-- Phần Footer: Chừa khoảng trống cho Người mua & Người bán ký tên -->
+                <div class="grid grid-cols-2 text-center text-xs mt-4 pt-2 border-t border-dashed border-slate-300">
+                    <div>
+                        <b class="uppercase">Người Mua Hàng</b>
+                        <p class="text-[10px] italic text-slate-500">(Ký, ghi rõ họ tên)</p>
+                        <div class="h-16"></div>
+                    </div>
+                    <div>
+                        <b class="uppercase">Người Bán Hàng</b>
+                        <p class="text-[10px] italic text-slate-500">(Ký, ghi rõ họ tên)</p>
+                        <div class="h-16"></div>
+                        <div class="font-bold text-slate-700" id="bill-detail-seller"></div>
+                    </div>
+                </div>
+                <div class="text-center text-[10px] italic text-slate-400 mt-2">Cảm ơn quý khách đã ủng hộ Tạp Hóa Huy Hoàng!</div>
             </div>
-            
-            <div class="bg-gray-50 p-3 border-t flex gap-2 shrink-0 print-hidden">
-                <button onclick="window.print()" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg shadow-sm transition scale-active flex justify-center items-center gap-2 text-sm">
-                    <i class="fa-solid fa-print"></i> In Bill
+
+            <!-- Thanh nút thao tác dưới cùng (Ẩn khi in) -->
+            <div class="bg-slate-100 p-3 border-t flex flex-wrap gap-2 shrink-0 print-hidden">
+                <button onclick="window.print()" class="flex-1 bg-inni-blue hover:bg-blue-700 text-white font-black py-2.5 px-4 rounded-xl shadow transition scale-active flex justify-center items-center gap-2 text-sm">
+                    <i class="fa-solid fa-print"></i> In Hóa Đơn Ngay
                 </button>
-                <button onclick="deleteBill()" class="flex-1 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white font-bold py-3 rounded-lg shadow-sm transition border border-red-200 scale-active flex justify-center items-center gap-2 text-sm">
-                    <i class="fa-solid fa-trash-can"></i> Xóa & Hoàn Kho
+                <button id="btn-open-return-from-bill" onclick="openReturnOrderModalFromBill()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-4 rounded-xl shadow transition scale-active flex justify-center items-center gap-1.5 text-xs">
+                    <i class="fa-solid fa-rotate-left"></i> Khách Hoàn Hàng Lỗi
+                </button>
+                <button id="btn-void-bill" onclick="deleteEntireOrder()" class="bg-red-50 text-red-600 hover:bg-red-600 hover:text-white font-bold py-2.5 px-3 rounded-xl border border-red-200 transition scale-active text-xs">
+                    <i class="fa-solid fa-trash-can"></i> Hủy Đơn
                 </button>
             </div>
-            
-            <input type="hidden" id="bill-delete-date">
-            <input type="hidden" id="bill-delete-index">
         </div>
     </div>
 
-    <!-- MODAL CHỈNH SỬA KHO -->
-    <div id="edit-modal" class="fixed inset-0 modal-overlay z-[60] hidden flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in flex flex-col max-h-full">
-            <div class="p-4 bg-inni-blue text-white flex justify-between items-center shrink-0">
-                <h3 class="font-bold text-lg"><i class="fa-solid fa-pen-to-square mr-2"></i>Sửa Thôngุ Tin</h3>
-                <button onclick="closeEditModal()" class="text-blue-200 hover:text-white transition text-xl"><i class="fa-solid fa-xmark"></i></button>
+    <!-- ========================================== -->
+    <!-- MODAL MODULE 3: THÊM / SỬA KHÁCH HÀNG & NHÀ CUNG CẤP (CRM) -->
+    <!-- ========================================== -->
+    <div id="customer-modal" class="fixed inset-0 modal-overlay z-[80] hidden flex items-center justify-center p-3">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in flex flex-col">
+            <div class="p-4 bg-inni-blue text-white flex justify-between items-center">
+                <h3 class="font-bold text-base" id="cust-modal-title"><i class="fa-solid fa-user-plus mr-2"></i>Thêm Khách Hàng / Nhà Cung Cấp</h3>
+                <button onclick="closeCustomerModal()" class="text-blue-200 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <div class="p-5 space-y-4 overflow-y-auto">
-                <input type="hidden" id="edit-index">
+            <div class="p-4 space-y-3 text-sm">
+                <input type="hidden" id="cust-id">
                 <div>
-                    <label class="block text-xs font-bold text-gray-600 mb-1">Tên mặt hàng</label>
-                    <input type="text" id="edit-name" class="w-full border border-gray-300 p-2 rounded outline-none">
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-gray-600 mb-1">Phân loại</label>
-                    <select id="edit-category" class="w-full border border-gray-300 p-2 rounded outline-none bg-white">
-                        <option value="Gia vị & Nước chấm">Gia vị & Nước chấm</option>
-                        <option value="Mì & Đồ ăn liền">Mì & Đồ ăn liền</option>
-                        <option value="Snack & Bim bim">Snack & Bim bim</option>
-                        <option value="Bánh kẹo & Socola">Bánh kẹo & Socola</option>
-                        <option value="Sữa & Chế phẩm sữa">Sữa & Chế phẩm sữa</option>
-                        <option value="Trà & Cà phê">Trà & Cà phê</option>
-                        <option value="Nước giải khát & Nước lọc">Nước giải khát & Nước lọc</option>
-                        <option value="Bia & Rượu">Bia & Rượu</option>
-                        <option value="Kem & Đông lạnh">Kem & Đông lạnh</option>
-                        <option value="Đồ khô & Đóng gói">Đồ khô & Đóng gói</option>
-                        <option value="Thuốc lá & Phụ kiện">Thuốc lá & Phụ kiện</option>
-                        <option value="Chăm sóc cá nhân">Chăm sóc cá nhân</option>
-                        <option value="Vệ sinh nhà cửa">Vệ sinh nhà cửa</option>
-                        <option value="Đồ dùng gia đình & Tiện ích">Đồ dùng gia đình & Tiện ích</option>
-                        <option value="Khác">Khác</option>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Phân loại đối tượng *</label>
+                    <select id="cust-type" class="w-full border border-slate-300 p-2.5 rounded-lg font-bold bg-white">
+                        <option value="CUSTOMER">🏪 Khách hàng mua sỉ / lẻ (Nợ phải thu)</option>
+                        <option value="SUPPLIER">🚛 Nhà cung cấp hàng hóa (Nợ phải trả)</option>
                     </select>
                 </div>
-                <div class="flex gap-4">
-                    <div class="flex-1">
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Giá bán</label>
-                        <input type="text" id="edit-price-input" oninput="formatCurrencyInput(this)" class="w-full border border-gray-300 p-2 rounded outline-none">
-                    </div>
-                    <div class="flex-1">
-                        <label class="block text-xs font-bold text-gray-600 mb-1">Tồn kho</label>
-                        <input type="number" id="edit-stock" class="w-full border border-gray-300 p-2 rounded outline-none">
-                    </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Tên khách hàng / Chủ tiệm *</label>
+                    <input type="text" id="cust-name" placeholder="VD: Tạp hóa Cô Tư, Anh Hùng..." class="w-full border border-slate-300 p-2.5 rounded-lg font-bold">
                 </div>
-                <div class="bg-gray-50 p-3 rounded border border-gray-200">
-                    <label class="block text-xs font-bold text-gray-600 mb-2">Đổi hình ảnh mới (Bỏ trống nếu giữ ảnh cũ)</label>
-                    <input type="file" id="edit-image" accept="image/*" class="w-full text-xs file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:bg-gray-200 file:text-gray-700">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Số điện thoại</label>
+                    <input type="text" id="cust-phone" placeholder="VD: 0908123456" class="w-full border border-slate-300 p-2.5 rounded-lg">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Địa chỉ giao hàng (In lên Bill)</label>
+                    <input type="text" id="cust-address" placeholder="Số nhà, đường, ấp/khu phố..." class="w-full border border-slate-300 p-2.5 rounded-lg">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-red-600 mb-1">Dư nợ đầu kỳ / Hiện tại (VNĐ)</label>
+                    <input type="text" id="cust-debt" oninput="formatCurrencyInput(this)" placeholder="0" class="w-full border border-red-300 p-2.5 rounded-lg font-black text-red-600 bg-red-50/30">
                 </div>
             </div>
-            <div class="p-4 border-t border-gray-100 flex justify-end gap-3 shrink-0">
-                <button onclick="closeEditModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded font-bold transition">Hủy</button>
-                <button onclick="saveEditItem()" id="btn-save-edit" class="px-4 py-2 bg-inni-blue text-white rounded font-bold transition">
-                    <i class="fa-solid fa-check"></i> Cập nhật Cloud
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                <button onclick="closeCustomerModal()" class="px-4 py-2 bg-slate-200 rounded-lg font-bold text-sm">Hủy</button>
+                <button onclick="saveCustomerForm()" class="px-5 py-2 bg-inni-blue text-white rounded-lg font-bold text-sm shadow scale-active">Lưu Thông Tin</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL MODULE 3: SỔ GHI NỢ CHI TIẾT (DEBT LEDGER) & THU NỢ -->
+    <!-- ========================================== -->
+    <div id="debt-ledger-modal" class="fixed inset-0 modal-overlay z-[80] hidden flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                <div>
+                    <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
+                        <i class="fa-solid fa-book-bookmark text-amber-400"></i> Sổ Ghi Nợ Chi Tiết: <span id="dl-cust-name" class="text-amber-300">...</span>
+                    </h3>
+                    <p class="text-xs text-slate-300 mt-0.5" id="dl-cust-summary">Dư nợ hiện tại: 0 đ</p>
+                </div>
+                <button onclick="closeDebtLedgerModal()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Thanh Thu nợ / Trả nợ nhanh -->
+            <div class="bg-emerald-50 p-3 border-b border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shrink-0">
+                <div class="text-xs text-emerald-900 font-bold">
+                    <i class="fa-solid fa-hand-holding-dollar mr-1"></i>Lập phiếu khách thanh toán nợ:
+                </div>
+                <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                    <input type="text" id="dl-pay-amount" oninput="formatCurrencyInput(this)" placeholder="Số tiền trả..." class="border border-emerald-500 rounded-lg px-2.5 py-1.5 text-sm font-black text-emerald-700 w-32 bg-white">
+                    <select id="dl-pay-channel" class="border border-emerald-400 rounded-lg px-2 py-1.5 text-xs font-bold bg-white">
+                        <option value="CASH">💵 Tiền mặt</option>
+                        <option value="BANK">🏦 Chuyển khoản</option>
+                    </select>
+                    <input type="text" id="dl-pay-note" placeholder="Ghi chú (VD: Trả nợ tiền mặt)" class="border border-emerald-300 rounded-lg px-2.5 py-1.5 text-xs flex-1 sm:w-40 bg-white">
+                    <button onclick="submitDebtPayment()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow-sm scale-active">
+                        Xác Nhận Trả Nợ
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4">
+                <table class="w-full text-left border-collapse text-xs md:text-sm">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-600 uppercase border-b">
+                            <th class="p-2.5">Ngày giờ</th>
+                            <th class="p-2.5">Loại giao dịch / Mã đơn</th>
+                            <th class="p-2.5">Diễn giải</th>
+                            <th class="p-2.5 text-right">Nợ trước</th>
+                            <th class="p-2.5 text-right">Phát sinh</th>
+                            <th class="p-2.5 text-right">Dư nợ cuối</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dl-tbody" class="divide-y divide-slate-100"></tbody>
+                </table>
+                <div id="dl-empty" class="hidden text-center p-8 text-slate-400 italic">Chưa có lịch sử công nợ cho khách hàng này.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MODAL MODULE 3: HOÀN HÀNG LỖI / MÓP MÉO (TỰ ĐỘNG CỘNG KHO & CẤN TRỪ CÔNG NỢ) -->
+    <!-- ========================================== -->
+    <div id="return-order-modal" class="fixed inset-0 modal-overlay z-[90] hidden flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-purple-700 text-white flex justify-between items-center shrink-0">
+                <div>
+                    <h3 class="font-bold text-base"><i class="fa-solid fa-rotate-left mr-2"></i>Xử Lý Khách Hoàn Hàng Lỗi / Móp Méo</h3>
+                    <p class="text-xs text-purple-200 mt-0.5">Tự động cộng lại tồn kho & tự động cấn trừ vào công nợ của khách</p>
+                </div>
+                <button onclick="closeReturnOrderModal()" class="text-purple-200 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 space-y-3 overflow-y-auto text-sm flex-1">
+                <div class="bg-purple-50 p-3 rounded-xl border border-purple-200 text-xs space-y-1">
+                    <div><b>Hóa đơn gốc:</b> <span id="ret-orig-code" class="font-bold text-purple-800">...</span></div>
+                    <div><b>Khách hàng:</b> <span id="ret-cust-name" class="font-bold">...</span> (Nợ hiện tại: <b id="ret-cust-debt" class="text-red-600">0đ</b>)</div>
+                </div>
+                <div class="text-xs font-bold text-slate-700">Nhập số lượng hàng khách trả lại ở từng dòng:</div>
+                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 border-b">
+                                <th class="p-2">Sản phẩm</th>
+                                <th class="p-2 text-center">Đã mua</th>
+                                <th class="p-2 text-center">SL Hoàn trả</th>
+                                <th class="p-2 text-right">Tiền hoàn</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ret-items-tbody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Hình thức hoàn tiền:</label>
+                        <select id="ret-refund-mode" class="w-full border border-slate-300 p-2 rounded-lg text-xs font-bold bg-white">
+                            <option value="DEBT_OFFSET">📒 Cấn trừ thẳng vào Công nợ khách</option>
+                            <option value="CASH_REFUND">💵 Chi trả lại Tiền mặt cho khách</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Lý do hoàn hàng:</label>
+                        <input type="text" id="ret-reason" placeholder="VD: Hàng móp lon, lỗi NSX..." value="Hàng lỗi / móp méo" class="w-full border border-slate-300 p-2 rounded-lg text-xs">
+                    </div>
+                </div>
+                <div class="bg-slate-100 p-3 rounded-xl flex justify-between items-center">
+                    <span class="font-bold text-xs text-slate-700">Tổng giá trị hoàn trả:</span>
+                    <span class="font-black text-lg text-purple-700" id="ret-total-refund">0 đ</span>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                <button onclick="closeReturnOrderModal()" class="px-4 py-2 bg-slate-200 rounded-lg font-bold text-sm">Hủy</button>
+                <button onclick="submitReturnOrder()" id="btn-submit-return" class="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-sm shadow scale-active">
+                    <i class="fa-solid fa-check mr-1"></i> Xác Nhận Hoàn Hàng & Cộng Kho
                 </button>
             </div>
         </div>
     </div>
 
-    <script>
-        window.addEventListener('load', function() {
-            setTimeout(function() {
-                const splash = document.getElementById('splash-screen');
-                if (splash) {
-                    splash.classList.add('splash-fade-out');
-                    setTimeout(() => splash.remove(), 500); 
-                }
-            }, 1500);
-        });
+    <!-- ========================================== -->
+    <!-- CÁC MODAL CŨ CỦA BƯỚC 2 & BƯỚC 3 (GIỮ NGUYÊN 100%) -->
+    <!-- ========================================== -->
+    <div id="zalo-nlp-modal" class="fixed inset-0 modal-overlay z-[80] hidden flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
+            <div class="p-4 bg-blue-600 text-white flex justify-between items-center shrink-0">
+                <div>
+                    <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> Bóc Tách Tin Nhắn Zalo Tự Động Lên Đơn
+                    </h3>
+                    <p class="text-xs text-blue-100 mt-0.5">Copy tin nhắn đặt hàng của khách sỉ từ Zalo dán vào ô dưới đây</p>
+                </div>
+                <button onclick="closeZaloModal()" class="text-blue-200 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
 
-        // ==========================================
-        // 1. CẤU HÌNH FIREBASE CLOUD
-        // ==========================================
-        const firebaseConfig = {
-            apiKey: "AIzaSyDPdxOqQiGA3uhCtctfM17mLdwnIryOYkM",
-            authDomain: "inni-shop.firebaseapp.com",
-            projectId: "inni-shop",
-            storageBucket: "inni-shop.firebasestorage.app",
-            messagingSenderId: "162996670712",
-            appId: "1:162996670712:web:188d90a03ba81759c42b0d",
-            measurementId: "G-6CP67CR75J"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+            <div class="p-4 space-y-3 overflow-y-auto text-sm flex-1">
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-bold text-slate-700">Nội dung tin nhắn đặt hàng Zalo:</label>
+                        <button onclick="fillSampleZaloText()" class="text-[11px] text-inni-blue font-bold hover:underline">Chèn tin nhắn mẫu thử nghiệm</button>
+                    </div>
+                    <textarea id="zalo-input-text" rows="4" oninput="previewZaloParse()" placeholder="Ví dụ khách nhắn:&#10;Lấy em 5 thùng tiger nâu, 2 lốc bò húc&#10;10 gói hảo hảo, 3 chai tương ớt chinsu" class="w-full border-2 border-blue-300 rounded-xl p-3 text-sm focus:outline-none focus:border-inni-blue bg-blue-50/30 font-medium"></textarea>
+                </div>
 
-        let inventory = [];
-        let dailySales = {}; 
-        let currentMonth = new Date().getMonth();
-        let currentYear = new Date().getFullYear();
-        let cart = {}; 
-        let currentViewedDate = null;
-        let currentCartTotal = 0;
+                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                    <div class="bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 flex justify-between items-center">
+                        <span>Kết quả AI / Regex bóc tách mặt hàng:</span>
+                        <span id="zalo-match-summary" class="text-inni-blue">Chưa có dữ liệu</span>
+                    </div>
+                    <div class="max-h-56 overflow-y-auto">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="border-b bg-slate-50 text-slate-500">
+                                    <th class="p-2">Cụm từ khách nhắn</th>
+                                    <th class="p-2">Khớp sản phẩm trong kho</th>
+                                    <th class="p-2 text-center">SL & Đơn vị</th>
+                                    <th class="p-2 text-right">Đơn giá (Sửa được ở giỏ)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="zalo-preview-tbody" class="divide-y divide-slate-100">
+                                <tr><td colspan="4" class="p-4 text-center text-slate-400 italic">Hãy dán tin nhắn Zalo vào ô bên trên...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
 
-        function formatCurrencyInput(input) {
-            let val = input.value.replace(/\./g, '').replace(/\D/g, ''); 
-            if (val === '') {
-                input.value = '';
-                return;
-            }
-            input.value = parseInt(val).toLocaleString('vi-VN').replace(/,/g, '.');
-        }
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-2 shrink-0">
+                <button onclick="closeZaloModal()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold text-sm">Đóng</button>
+                <button onclick="pushZaloItemsToCart()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md scale-active flex items-center gap-2">
+                    <i class="fa-solid fa-cart-plus"></i> Đẩy Tất Cả Món Khớp Vào Giỏ Hàng
+                </button>
+            </div>
+        </div>
+    </div>
 
-        function getRawNumberFromInput(inputId) {
-            let val = document.getElementById(inputId).value.replace(/\./g, '');
-            return parseInt(val) || 0;
-        }
+    <div id="hold-orders-modal" class="fixed inset-0 modal-overlay z-[80] hidden flex items-center justify-center p-3">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in flex flex-col max-h-[85vh]">
+            <div class="p-4 bg-amber-600 text-white flex justify-between items-center">
+                <h3 class="font-bold text-base"><i class="fa-solid fa-pause-circle mr-2"></i>Danh Sách Đơn Hàng Đang Lưu Tạm</h3>
+                <button onclick="closeHoldOrdersModal()" class="text-amber-100 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-2.5" id="hold-orders-list"></div>
+            <div class="p-3 border-t bg-slate-50 text-right">
+                <button onclick="closeHoldOrdersModal()" class="px-4 py-2 bg-slate-200 rounded-lg font-bold text-xs">Đóng</button>
+            </div>
+        </div>
+    </div>
 
-        function initCalendarSelects() {
-            const monthSelect = document.getElementById('filter-month');
-            const yearSelect = document.getElementById('filter-year');
+    <div id="checkout-modal" class="fixed inset-0 modal-overlay z-[80] hidden flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
+            <div class="p-4 bg-emerald-700 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold text-base"><i class="fa-solid fa-cash-register mr-2"></i>Xác Nhận Thanh Toán & Công Nợ</h3>
+                <button onclick="closeCheckoutModal()" class="text-emerald-200 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="p-4 space-y-3 overflow-y-auto text-sm">
+                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
+                    <div class="flex justify-between text-xs text-slate-600">
+                        <span>Khách hàng:</span>
+                        <b id="chk-customer-name" class="text-slate-800">Khách Lẻ</b>
+                    </div>
+                    <div class="flex justify-between text-xs text-slate-600">
+                        <span>Tiền hàng đơn này:</span>
+                        <b id="chk-order-total" class="text-slate-800">0 đ</b>
+                    </div>
+                    <div class="flex justify-between text-xs text-amber-700">
+                        <span>Nợ cũ trước đơn này:</span>
+                        <b id="chk-old-debt">0 đ</b>
+                    </div>
+                    <div class="flex justify-between text-base font-black text-red-600 border-t pt-1.5">
+                        <span>TỔNG CẦN THANH TOÁN:</span>
+                        <span id="chk-grand-total">0 đ</span>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5">Phương thức khách trả:</label>
+                    <div class="grid grid-cols-3 gap-2 text-xs font-bold">
+                        <button type="button" onclick="setPaymentMethod('CASH')" id="pm-btn-CASH" class="pm-btn py-2.5 px-2 rounded-lg border-2 border-emerald-600 bg-emerald-50 text-emerald-800 flex flex-col items-center gap-1">
+                            <i class="fa-solid fa-money-bill-wave text-base"></i> Tiền Mặt
+                        </button>
+                        <button type="button" onclick="setPaymentMethod('BANK')" id="pm-btn-BANK" class="pm-btn py-2.5 px-2 rounded-lg border border-slate-300 text-slate-600 flex flex-col items-center gap-1">
+                            <i class="fa-solid fa-qrcode text-base"></i> Chuyển Khoản
+                        </button>
+                        <button type="button" onclick="setPaymentMethod('DEBT')" id="pm-btn-DEBT" class="pm-btn py-2.5 px-2 rounded-lg border border-slate-300 text-slate-600 flex flex-col items-center gap-1">
+                            <i class="fa-solid fa-book-bookmark text-base"></i> Ghi Nợ Sổ
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-xs font-bold text-slate-700">Số tiền khách thanh toán ngay (VNĐ):</label>
+                        <button type="button" onclick="fillFullPayment()" class="text-[11px] text-inni-blue font-bold hover:underline">Trả đủ 100%</button>
+                    </div>
+                    <input type="text" id="chk-paid-input" oninput="formatCurrencyInput(this); calcCheckoutDebt()" class="w-full border-2 border-emerald-500 p-2.5 rounded-xl font-black text-lg text-emerald-700 focus:outline-none" placeholder="Nhập số tiền khách đưa...">
+                </div>
+
+                <div class="bg-amber-50 p-3 rounded-xl border border-amber-200 flex justify-between items-center">
+                    <span class="text-xs font-bold text-amber-900" id="chk-balance-label">Còn nợ lại sau đơn này:</span>
+                    <span class="text-lg font-black text-red-600" id="chk-balance-value">0 đ</span>
+                </div>
+            </div>
+
+            <div class="p-4 border-t bg-slate-50 flex gap-2 shrink-0">
+                <button onclick="closeCheckoutModal()" class="px-4 py-2.5 bg-slate-200 rounded-xl font-bold text-sm">Quay lại</button>
+                <button onclick="confirmPosCheckout()" id="btn-confirm-checkout" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl shadow-md scale-active flex items-center justify-center gap-2 text-sm uppercase">
+                    <i class="fa-solid fa-print"></i> Hoàn Tất & Xuất Hóa Đơn
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="barcode-scanner-modal" class="fixed inset-0 modal-overlay z-[90] hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-fade-in flex flex-col">
+            <div class="p-3.5 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="font-bold text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-camera text-amber-400"></i> Đưa Mã Vạch Vào Khung Camera
+                </h3>
+                <button onclick="stopBarcodeScanner()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-3 bg-black">
+                <div id="qr-reader" class="w-full rounded-lg overflow-hidden"></div>
+            </div>
+            <div class="p-3 bg-slate-50 text-center text-xs text-slate-600">
+                Hỗ trợ quét mã vạch trên lon, gói, thùng hàng bằng Camera iPhone/Android hoặc Webcam.
+            </div>
+        </div>
+    </div>
+
+    <div id="product-modal" class="fixed inset-0 modal-overlay z-[60] hidden flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
+            <div class="p-4 bg-inni-blue text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold text-base md:text-lg" id="prod-modal-title"><i class="fa-solid fa-box-open mr-2"></i>Thêm / Sửa Sản Phẩm Bán Sỉ</h3>
+                <button onclick="closeProductModal()" class="text-blue-200 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
             
-            for(let i=0; i<12; i++) {
-                let opt = document.createElement('option');
-                opt.value = i;
-                opt.innerText = "Tháng " + (i+1);
-                if(i === currentMonth) opt.selected = true;
-                monthSelect.appendChild(opt);
-            }
-            
-            for(let i=2024; i<=2060; i++) {
-                let opt = document.createElement('option');
-                opt.value = i;
-                opt.innerText = "Năm " + i;
-                if(i === currentYear) opt.selected = true;
-                yearSelect.appendChild(opt);
-            }
-        }
-        initCalendarSelects();
-
-        function changeCalendarMonth() {
-            currentMonth = parseInt(document.getElementById('filter-month').value);
-            currentYear = parseInt(document.getElementById('filter-year').value);
-            renderCalendar();
-        }
-
-        // ==========================================
-        // 2. KHỞI TẠO & LẮNG NGHE DỮ LIỆU ĐÁM MÂY
-        // ==========================================
-        db.collection("inventory").onSnapshot((snapshot) => {
-            inventory = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            inventory.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-            renderInventory();
-            renderSellGrid(); 
-        });
-
-        db.collection("shop_data").doc("sales").onSnapshot((doc) => {
-            if (doc.exists) {
-                dailySales = doc.data().records || {};
+            <div class="p-4 md:p-5 space-y-4 overflow-y-auto text-sm">
+                <input type="hidden" id="prod-id">
                 
-                for (let date in dailySales) {
-                    if (dailySales[date].bills) {
-                        let dailyTotal = 0;
-                        let dailyItems = {};
-                        
-                        dailySales[date].bills.forEach(bill => {
-                            dailyTotal += bill.total;
-                            bill.items.forEach(item => {
-                                if(!dailyItems[item.name]) dailyItems[item.name] = { price: item.price, qty: 0 };
-                                dailyItems[item.name].qty += item.qty;
-                            });
-                        });
-                        
-                        dailySales[date].total = dailyTotal;
-                        dailySales[date].items = dailyItems;
-                    }
-                }
-            } else {
-                dailySales = {};
-            }
-            calculateRevenueStats();
-            renderCalendar();
-            renderHistory(); 
-            if (currentViewedDate) showDateDetail(currentViewedDate); 
-        });
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Tên sản phẩm chuẩn *</label>
+                        <input type="text" id="prod-name" placeholder="VD: Bia Tiger Nâu 330ml" class="w-full border border-slate-300 p-2.5 rounded-lg outline-none focus:border-inni-blue font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Phân loại hàng</label>
+                        <select id="prod-category" class="w-full border border-slate-300 p-2.5 rounded-lg outline-none bg-white"></select>
+                    </div>
+                </div>
 
-        function saveSalesToCloud() {
-            db.collection("shop_data").doc("sales").set({ records: dailySales });
-        }
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Từ khóa gọi tắt Zalo (Cách nhau dấu phẩy)</label>
+                        <input type="text" id="prod-keywords" placeholder="VD: tiger, tg nâu, bia tiger" class="w-full border border-slate-300 p-2 rounded-lg outline-none focus:border-inni-blue">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1"><i class="fa-solid fa-barcode mr-1"></i>Mã vạch (Bắn súng hoặc Bấm Quét Camera)</label>
+                        <div class="flex gap-1.5">
+                            <input type="text" id="prod-barcode" placeholder="Mã vạch đơn vị lẻ..." class="flex-1 border border-slate-300 p-2 rounded-lg outline-none focus:border-inni-blue font-semibold">
+                            <button type="button" onclick="startBarcodeScanner('prod-barcode')" class="bg-slate-800 hover:bg-slate-900 text-white px-3 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0 scale-active">
+                                <i class="fa-solid fa-camera text-amber-400"></i> Quét
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
-        function compressImage(base64Str, maxWidth = 250) {
-            return new Promise((resolve) => {
-                if (!base64Str) return resolve(null);
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width, height = img.height;
-                    if (width > maxWidth) {
-                        height = Math.round((height * maxWidth) / width);
-                        width = maxWidth;
-                    }
-                    canvas.width = width; canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.6)); 
-                };
-                img.onerror = () => resolve(base64Str);
-                img.src = base64Str;
-            });
-        }
-
-        // --- ĐIỀU HƯỚNG TAB ---
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => {
-                el.classList.add('hidden');
-                el.classList.remove('animate-fade-in');
-            });
-            const targetTab = document.getElementById(tabId);
-            targetTab.classList.remove('hidden');
-            void targetTab.offsetWidth; 
-            targetTab.classList.add('animate-fade-in');
-            
-            document.querySelectorAll('aside nav button').forEach(el => el.classList.remove('bg-blue-800'));
-            if(document.getElementById('btn-' + tabId)) document.getElementById('btn-' + tabId).classList.add('bg-blue-800');
-            
-            document.querySelectorAll('.mobile-nav-btn').forEach(el => {
-                el.classList.remove('text-inni-blue', 'font-bold');
-                el.classList.add('text-gray-400');
-            });
-            if (document.getElementById('btn-mobile-' + tabId)) {
-                document.getElementById('btn-mobile-' + tabId).classList.remove('text-gray-400');
-                document.getElementById('btn-mobile-' + tabId).classList.add('text-inni-blue', 'font-bold');
-            }
-
-            if (tabId === 'tab-sell') renderSellGrid();
-            if (tabId === 'tab-history') renderHistory();
-            if (tabId === 'tab-inventory') renderInventory();
-            if (tabId === 'tab-stats') { renderCalendar(); calculateRevenueStats(); }
-        }
-
-        // ==========================================
-        // GIAO DIỆN BÁN HÀNG & GIỎ HÀNG 
-        // ==========================================
-        function renderSellGrid() {
-            const grid = document.getElementById('sell-grid');
-            const noResult = document.getElementById('sell-no-result');
-            grid.innerHTML = '';
-
-            const searchTerm = document.getElementById('sell-search-name').value.toLowerCase();
-            const filterCat = document.getElementById('sell-search-cat').value;
-            let count = 0;
-
-            inventory.forEach((item) => {
-                if (searchTerm && !item.name.toLowerCase().includes(searchTerm)) return;
-                if (filterCat !== 'all' && item.category !== filterCat) return;
-                count++;
-
-                const imgTag = item.image 
-                    ? `<div class="w-full h-24 bg-white rounded-lg mb-2 border border-gray-100 flex items-center justify-center overflow-hidden"><img src="${item.image}" class="max-w-full max-h-full object-contain"></div>` 
-                    : `<div class="w-full h-24 bg-gray-50 rounded-lg mb-2 flex items-center justify-center text-gray-300 border border-gray-100"><i class="fa-solid fa-image text-3xl"></i></div>`;
-
-                const isOutOfStock = item.stock <= 0;
-                const safeName = item.name.replace(/'/g, "\\'");
-                
-                grid.innerHTML += `
-                    <div id="item-card-${item.id}" onclick="addToCart('${item.id}', '${safeName}', ${item.price}, ${item.stock})" class="bg-white border border-gray-200 rounded-xl p-2 shadow-sm flex flex-col justify-between cursor-pointer scale-active ${isOutOfStock ? 'opacity-50 pointer-events-none' : ''}">
+                <div class="bg-red-50/60 p-3.5 rounded-xl border border-red-200">
+                    <div class="font-bold text-red-700 text-xs uppercase mb-2 flex items-center gap-1.5">
+                        <i class="fa-solid fa-tag"></i> 1. Cấu hình Giá Bán Lẻ & Tồn kho (Tính theo Đơn vị nhỏ nhất)
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2.5">
                         <div>
-                            ${imgTag}
-                            <div class="font-bold text-gray-800 text-xs line-clamp-2 leading-tight h-8 mb-1">${item.name}</div>
-                            <div class="text-[9px] text-white bg-blue-400 px-2 py-0.5 rounded-full inline-block mb-1">${item.category}</div>
-                            <div class="text-red-500 font-bold text-sm mb-1">${item.price.toLocaleString('vi-VN').replace(/,/g, '.')} đ</div>
-                            <div class="text-[10px] font-semibold ${isOutOfStock ? 'text-red-400' : 'text-green-600'}">Kho: ${item.stock > 0 ? item.stock : 'Hết hàng'}</div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Đơn vị lẻ *</label>
+                            <input type="text" id="prod-base-unit" placeholder="Lon, Gói, Chai" value="Lon" class="w-full border border-slate-300 p-2 rounded bg-white font-bold text-center">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Giá vốn lẻ (1 ĐV)</label>
+                            <input type="text" id="prod-cost-price" oninput="formatCurrencyInput(this)" placeholder="13.500" class="w-full border border-slate-300 p-2 rounded bg-white font-bold text-slate-700">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-red-700 mb-1">GIÁ BÁN LẺ *</label>
+                            <input type="text" id="prod-base-price" oninput="formatCurrencyInput(this)" placeholder="15.000" class="w-full border-2 border-red-400 p-2 rounded bg-white font-black text-red-600">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Tổng tồn (ĐV lẻ)</label>
+                            <input type="number" id="prod-stock" placeholder="240" class="w-full border border-slate-300 p-2 rounded bg-white font-bold text-emerald-700">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Báo động khi dưới</label>
+                            <input type="number" id="prod-min-stock" value="24" placeholder="24" class="w-full border border-slate-300 p-2 rounded bg-white font-bold text-amber-700">
                         </div>
                     </div>
-                `;
-            });
+                </div>
 
-            if (count === 0) noResult.classList.remove('hidden');
-            else noResult.classList.add('hidden');
-            
-            renderCart(); 
-        }
-
-        function addToCart(id, name, price, stock) {
-            const card = document.getElementById('item-card-' + id);
-            if(card) {
-                card.classList.add('item-added');
-                setTimeout(() => card.classList.remove('item-added'), 300);
-            }
-
-            if (!cart[id]) {
-                cart[id] = { name, price, qty: 0, maxStock: stock };
-            }
-            if (cart[id].qty < cart[id].maxStock) {
-                cart[id].qty++;
-                renderCart();
-            } else {
-                alert("Đã đạt giới hạn số lượng trong kho!");
-            }
-        }
-
-        function updateCartQty(id, delta) {
-            if (!cart[id]) return;
-            cart[id].qty += delta;
-            if (cart[id].qty <= 0) {
-                delete cart[id];
-            } else if (cart[id].qty > cart[id].maxStock) {
-                cart[id].qty = cart[id].maxStock;
-                alert("Không đủ hàng trong kho!");
-            }
-            renderCart();
-        }
-
-        function renderCart() {
-            const list = document.getElementById('cart-list');
-            const totalEl = document.getElementById('cart-total');
-            list.innerHTML = '';
-            currentCartTotal = 0;
-
-            const keys = Object.keys(cart);
-            if (keys.length === 0) {
-                list.innerHTML = '<li class="text-center text-gray-400 text-sm italic mt-10">Giỏ hàng trống</li>';
-                totalEl.innerText = "0 đ";
-                return;
-            }
-
-            keys.forEach(id => {
-                const item = cart[id];
-                const itemTotal = item.price * item.qty;
-                currentCartTotal += itemTotal;
-
-                list.innerHTML += `
-                    <li class="bg-gray-50 p-2 rounded border border-gray-100 flex flex-col gap-2 animate-fade-in">
-                        <div class="flex justify-between items-start">
-                            <div class="font-bold text-gray-800 text-sm line-clamp-1">${item.name}</div>
-                            <button onclick="updateCartQty('${id}', -999)" class="text-gray-400 hover:text-red-500"><i class="fa-solid fa-xmark"></i></button>
+                <div class="bg-blue-50/70 p-3.5 rounded-xl border border-blue-200">
+                    <div class="flex justify-between items-center mb-2">
+                        <div class="font-bold text-inni-blue text-xs uppercase flex items-center gap-1.5">
+                            <i class="fa-solid fa-boxes-packing"></i> 2. Cấu hình Giá Bán Sỉ (Thùng, Lốc, Bịch, Cây...)
                         </div>
-                        <div class="flex justify-between items-center">
-                            <div class="text-xs text-red-500 font-bold">${itemTotal.toLocaleString('vi-VN').replace(/,/g, '.')} đ</div>
-                            <div class="flex items-center gap-2 bg-white border border-gray-200 rounded">
-                                <button onclick="updateCartQty('${id}', -1)" class="w-6 h-6 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded-l scale-active"><i class="fa-solid fa-minus text-[10px]"></i></button>
-                                <span class="font-bold text-inni-blue text-sm w-4 text-center">${item.qty}</span>
-                                <button onclick="updateCartQty('${id}', 1)" class="w-6 h-6 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded-r scale-active"><i class="fa-solid fa-plus text-[10px]"></i></button>
-                            </div>
-                        </div>
-                    </li>
-                `;
-            });
-            totalEl.innerText = currentCartTotal.toLocaleString('vi-VN').replace(/,/g, '.') + " đ";
-        }
-
-        function checkoutCart() {
-            if (Object.keys(cart).length === 0) return alert("Giỏ hàng trống!");
-            openPaymentModal();
-        }
-
-        function openPaymentModal() {
-            document.getElementById('payment-total').innerText = currentCartTotal.toLocaleString('vi-VN').replace(/,/g, '.') + " đ";
-            document.getElementById('customer-paid-input').value = '';
-            document.getElementById('payment-change').innerText = "0 đ";
-            document.getElementById('payment-change').classList.remove('text-red-500');
-            document.getElementById('payment-change').classList.add('text-blue-600');
-            document.getElementById('payment-modal').classList.remove('hidden');
-            setTimeout(() => document.getElementById('customer-paid-input').focus(), 100);
-        }
-
-        function closePaymentModal() {
-            document.getElementById('payment-modal').classList.add('hidden');
-        }
-
-        function calculateChange() {
-            const paid = getRawNumberFromInput('customer-paid-input');
-            const changeEl = document.getElementById('payment-change');
-            
-            if (document.getElementById('customer-paid-input').value === '') {
-                changeEl.innerText = "0 đ";
-                changeEl.classList.remove('text-red-500');
-                changeEl.classList.add('text-blue-600');
-                return;
-            }
-
-            const change = paid - currentCartTotal;
-            if (change < 0) {
-                changeEl.innerText = "Khách đưa thiếu " + Math.abs(change).toLocaleString('vi-VN').replace(/,/g, '.') + " đ";
-                changeEl.classList.add('text-red-500');
-                changeEl.classList.remove('text-blue-600');
-            } else {
-                changeEl.innerText = change.toLocaleString('vi-VN').replace(/,/g, '.') + " đ";
-                changeEl.classList.remove('text-red-500');
-                changeEl.classList.add('text-blue-600');
-            }
-        }
-
-        function confirmCheckout() {
-            const paid = getRawNumberFromInput('customer-paid-input');
-            if (document.getElementById('customer-paid-input').value !== '' && paid < currentCartTotal) {
-                return alert("Số tiền khách đưa chưa đủ!");
-            }
-
-            const sellerName = document.getElementById('seller-name').value.trim() || "Chủ Quán";
-            const dateStr = getLocalTodayString();
-            const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-            let billItems = [];
-
-            if (!dailySales[dateStr]) dailySales[dateStr] = { total: 0, bills: [], items: {} };
-            if (!dailySales[dateStr].bills) dailySales[dateStr].bills = [];
-
-            for (let id in cart) {
-                const item = cart[id];
-                const itemTotal = item.price * item.qty;
-                billItems.push({ name: item.name, price: item.price, qty: item.qty, total: itemTotal, inventoryId: id });
-
-                const dbItem = inventory.find(i => i.id === id);
-                if(dbItem) {
-                    db.collection("inventory").doc(id).update({ stock: dbItem.stock - item.qty });
-                }
-            }
-
-            const newBill = {
-                id: 'BILL-' + Math.floor(Math.random() * 10000), 
-                seller: sellerName,
-                time: timeStr,
-                total: currentCartTotal,
-                items: billItems
-            };
-
-            dailySales[dateStr].bills.push(newBill);
-            
-            saveSalesToCloud();
-            
-            alert(`Thanh toán thành công Bill ${newBill.id}!`);
-            cart = {}; 
-            renderCart();
-            closePaymentModal();
-        }
-
-        function renderHistory() {
-            const list = document.getElementById('history-list');
-            const empty = document.getElementById('history-empty');
-            list.innerHTML = '';
-            let hasHistory = false;
-
-            const sortedDates = Object.keys(dailySales).sort().reverse();
-
-            sortedDates.forEach(date => {
-                const dayData = dailySales[date];
-                if (!dayData.bills || dayData.bills.length === 0) return;
-                hasHistory = true;
-
-                const dateHeader = `<div class="bg-gray-100 text-gray-700 font-bold px-3 py-2 rounded mt-4 mb-3 text-sm border-l-4 border-inni-blue uppercase">${date.split('-').reverse().join('/')}</div>`;
-                list.innerHTML += dateHeader;
-
-                const sortedBills = [...dayData.bills].reverse();
-
-                sortedBills.forEach((bill, index) => {
-                    const billId = bill.id;
-                    const itemsText = bill.items.map(i => `${i.name} (x${i.qty})`).join(', ');
-
-                    list.innerHTML += `
-                        <div onclick="openBillDetail('${date}', ${dayData.bills.length - 1 - index})" class="bg-white border border-gray-200 rounded-xl p-4 mb-3 hover:border-inni-blue hover:shadow-md transition cursor-pointer shadow-sm scale-active relative overflow-hidden group">
-                            <div class="absolute top-0 left-0 w-1 h-full bg-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                            <div class="flex justify-between items-center mb-3 pb-3 border-b border-gray-100">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-inni-blue shrink-0">
-                                        <i class="fa-solid fa-receipt text-lg"></i>
-                                    </div>
-                                    <div>
-                                        <div class="font-bold text-gray-800 text-sm">Hóa đơn #${billId}</div>
-                                        <div class="text-xs text-gray-500 mt-0.5"><i class="fa-regular fa-clock mr-1"></i>${bill.time} - Thu ngân: ${bill.seller}</div>
-                                    </div>
-                                </div>
-                                <div class="text-right shrink-0 ml-2">
-                                    <div class="text-red-500 font-bold text-lg">${bill.total.toLocaleString('vi-VN').replace(/,/g, '.')} đ</div>
-                                </div>
-                            </div>
-                            <div class="text-sm text-gray-600 line-clamp-1 italic">${itemsText}</div>
-                        </div>
-                    `;
-                });
-            });
-
-            if (hasHistory) empty.classList.add('hidden');
-            else empty.classList.remove('hidden');
-        }
-
-        function openBillDetail(date, billIndex) {
-            const bill = dailySales[date].bills[billIndex];
-            
-            document.getElementById('bill-delete-date').value = date;
-            document.getElementById('bill-delete-index').value = billIndex;
-            
-            document.getElementById('bill-detail-date').innerText = date.split('-').reverse().join('/') + ' ' + bill.time;
-            document.getElementById('bill-detail-id').innerText = bill.id;
-            document.getElementById('bill-detail-seller').innerText = bill.seller;
-            document.getElementById('bill-detail-total').innerText = bill.total.toLocaleString('vi-VN').replace(/,/g, '.') + ' đ';
-
-            const tbody = document.getElementById('bill-detail-items');
-            tbody.innerHTML = '';
-            bill.items.forEach(item => {
-                tbody.innerHTML += `
-                    <tr class="border-b border-gray-100 last:border-0">
-                        <td class="py-2 pr-2">
-                            <div class="font-bold text-gray-800 line-clamp-2 leading-tight">${item.name}</div>
-                            <div class="text-xs text-gray-400 mt-0.5">${item.price.toLocaleString('vi-VN').replace(/,/g, '.')} đ</div>
-                        </td>
-                        <td class="py-2 text-center align-middle font-bold text-gray-600">${item.qty}</td>
-                        <td class="py-2 text-right align-middle font-bold text-gray-800 whitespace-nowrap">${item.total.toLocaleString('vi-VN').replace(/,/g, '.')}</td>
-                    </tr>
-                `;
-            });
-
-            document.getElementById('bill-detail-modal').classList.remove('hidden');
-        }
-
-        function closeBillModal() {
-            document.getElementById('bill-detail-modal').classList.add('hidden');
-        }
-
-        function deleteBill() {
-            const date = document.getElementById('bill-delete-date').value;
-            const index = parseInt(document.getElementById('bill-delete-index').value);
-            
-            if(confirm(`Bạn có chắc muốn xóa Bill này?\nToàn bộ sản phẩm sẽ được HOÀN TRẢ LẠI KHO.`)) {
-                const bill = dailySales[date].bills[index];
-                
-                bill.items.forEach(bItem => {
-                    if (bItem.inventoryId) {
-                        const dbItem = inventory.find(i => i.id === bItem.inventoryId);
-                        if(dbItem) {
-                            db.collection("inventory").doc(dbItem.id).update({ stock: dbItem.stock + bItem.qty });
-                        }
-                    }
-                });
-                
-                dailySales[date].bills.splice(index, 1);
-                saveSalesToCloud(); 
-                closeBillModal();
-                alert("Đã xóa Bill và hoàn trả kho thành công!");
-            }
-        }
-
-        function exportStatsToCSV() {
-            let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
-            csvContent += "Tên Sản Phẩm,Đơn Giá Hiện Tại,Tổng Số Lượng Đã Bán,Tổng Doanh Thu\n";
-
-            let itemStats = {};
-            let grandTotal = 0;
-
-            for (let date in dailySales) {
-                let dayData = dailySales[date];
-                if (dayData.items) {
-                    for (let itemName in dayData.items) {
-                        if (!itemStats[itemName]) {
-                            itemStats[itemName] = { price: dayData.items[itemName].price, qty: 0, total: 0 };
-                        }
-                        itemStats[itemName].qty += dayData.items[itemName].qty;
-                        itemStats[itemName].total += (dayData.items[itemName].price * dayData.items[itemName].qty);
-                    }
-                }
-                if (dayData.total) {
-                    grandTotal += dayData.total;
-                }
-            }
-
-            let sortedItems = Object.keys(itemStats).sort((a, b) => itemStats[b].qty - itemStats[a].qty);
-
-            sortedItems.forEach(itemName => {
-                let stat = itemStats[itemName];
-                let safeName = `"${itemName.replace(/"/g, '""')}"`;
-                csvContent += `${safeName},${stat.price},${stat.qty},${stat.total}\n`;
-            });
-
-            csvContent += `\nTỔNG CỘNG TẤT CẢ DOANH THU,,,${grandTotal}\n`;
-
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `Bao_Cao_Tong_Doanh_Thu_${getLocalTodayString()}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-
-        function exportToCSV() {
-            let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
-            csvContent += "Ngày,Giờ Giao Dịch,Mã Hóa Đơn,Thu Ngân,Sản Phẩm,Đơn Giá,Số Lượng,Thành Tiền,Tổng Hóa Đơn\n";
-
-            for (let date in dailySales) {
-                let dayData = dailySales[date];
-                if (dayData.bills) {
-                    dayData.bills.forEach(bill => {
-                        bill.items.forEach((item, index) => {
-                            let safeName = `"${item.name.replace(/"/g, '""')}"`;
-                            if (index === 0) {
-                                csvContent += `${date},${bill.time},${bill.id},${bill.seller},${safeName},${item.price},${item.qty},${item.total},${bill.total}\n`;
-                            } else {
-                                csvContent += `,,,,${safeName},${item.price},${item.qty},${item.total},\n`;
-                            }
-                        });
-                    });
-                }
-            }
-
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `Lich_Su_Ban_Hang_${getLocalTodayString()}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-
-        function getLocalTodayString() {
-            const d = new Date();
-            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        }
-
-        function getRevenueForDays(days) {
-            let total = 0;
-            for(let i=0; i<days; i++) {
-                let d = new Date(); d.setDate(d.getDate() - i);
-                let dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                if(dailySales[dateStr]) total += dailySales[dateStr].total;
-            }
-            return total;
-        }
-
-        function calculateRevenueStats() {
-            document.getElementById('rev-1-day').innerText = getRevenueForDays(1).toLocaleString('vi-VN').replace(/,/g, '.') + " đ";
-            document.getElementById('rev-3-days').innerText = getRevenueForDays(3).toLocaleString('vi-VN').replace(/,/g, '.') + " đ";
-            document.getElementById('rev-7-days').innerText = getRevenueForDays(7).toLocaleString('vi-VN').replace(/,/g, '.') + " đ";
-        }
-
-        async function addProduct() {
-            const btn = document.getElementById('btn-add-product');
-            const name = document.getElementById('prod-name').value;
-            const category = document.getElementById('prod-category').value;
-            const price = getRawNumberFromInput('prod-price-input');
-            const stock = parseInt(document.getElementById('prod-stock').value);
-            const imageInput = document.getElementById('prod-image');
-
-            if (!name || isNaN(price) || isNaN(stock)) return alert("Vui lòng nhập đủ thông tin!");
-
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải lên...';
-
-            let base64 = null;
-            if (imageInput.files.length > 0) {
-                base64 = await new Promise(resolve => {
-                    const reader = new FileReader();
-                    reader.onload = e => resolve(e.target.result);
-                    reader.readAsDataURL(imageInput.files[0]);
-                });
-                base64 = await compressImage(base64, 250); 
-            }
-
-            try {
-                await db.collection("inventory").add({
-                    name, category, price, stock, image: base64, createdAt: Date.now()
-                });
-                document.getElementById('prod-name').value = ''; 
-                document.getElementById('prod-price-input').value = ''; 
-                document.getElementById('prod-stock').value = ''; 
-                document.getElementById('prod-image').value = '';
-                alert("Đã lưu hàng hóa mới!");
-                switchTab('tab-sell');
-            } catch (e) { alert("Lỗi: " + e.message); }
-            
-            btn.disabled = false; 
-            btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Lưu Món Hàng Lên Đám Mây';
-        }
-
-        function openEditModal(id) {
-            const item = inventory.find(i => i.id === id);
-            if(!item) return;
-            document.getElementById('edit-index').value = id;
-            document.getElementById('edit-name').value = item.name;
-            document.getElementById('edit-category').value = item.category;
-            
-            const priceInput = document.getElementById('edit-price-input');
-            priceInput.value = item.price;
-            formatCurrencyInput(priceInput);
-
-            document.getElementById('edit-stock').value = item.stock;
-            document.getElementById('edit-image').value = ''; 
-            document.getElementById('edit-modal').classList.remove('hidden');
-        }
-
-        function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden'); }
-
-        async function saveEditItem() {
-            const btn = document.getElementById('btn-save-edit');
-            const itemId = document.getElementById('edit-index').value;
-            const name = document.getElementById('edit-name').value;
-            const category = document.getElementById('edit-category').value;
-            const price = getRawNumberFromInput('edit-price-input');
-            const stock = parseInt(document.getElementById('edit-stock').value);
-            const imageInput = document.getElementById('edit-image');
-
-            if (!name || isNaN(price) || isNaN(stock)) return alert("Vui lòng nhập đủ thông tin!");
-
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang đồng bộ...';
-
-            const updateData = { name, category, price, stock };
-
-            if (imageInput.files.length > 0) {
-                let base64 = await new Promise(resolve => {
-                    const reader = new FileReader();
-                    reader.onload = e => resolve(e.target.result);
-                    reader.readAsDataURL(imageInput.files[0]);
-                });
-                updateData.image = await compressImage(base64, 250);
-            }
-
-            try {
-                await db.collection("inventory").doc(itemId).update(updateData);
-                closeEditModal();
-            } catch(e) { alert("Lỗi cập nhật: " + e.message); }
-            
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-check"></i> Cập nhật Cloud';
-        }
-
-        function renderInventory() {
-            const tbody = document.getElementById('inventory-list');
-            const noResultMsg = document.getElementById('no-result-msg');
-            tbody.innerHTML = '';
-            
-            const searchTerm = document.getElementById('search-name').value.toLowerCase();
-            const filterCat = document.getElementById('search-cat').value;
-            let countFound = 0;
-
-            inventory.forEach((item) => {
-                if (searchTerm && !item.name.toLowerCase().includes(searchTerm)) return;
-                if (filterCat !== 'all' && item.category !== filterCat) return;
-                countFound++;
-
-                const imgTag = item.image 
-                    ? `<div class="w-12 h-12 bg-white rounded shadow-sm border border-gray-200 flex items-center justify-center p-0.5 overflow-hidden"><img src="${item.image}" class="max-w-full max-h-full object-contain"></div>` 
-                    : `<div class="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-[10px] text-gray-500 text-center"><i class="fa-solid fa-image"></i></div>`;
-
-                const tr = document.createElement('tr');
-                tr.className = "hover:bg-blue-50 transition text-sm md:text-base";
-                tr.innerHTML = `
-                    <td class="p-3">${imgTag}</td>
-                    <td class="p-3">
-                        <div class="font-bold text-gray-800">${item.name}</div>
-                        <div class="text-[10px] text-white bg-gray-400 px-2 py-0.5 rounded-full inline-block mt-1">${item.category}</div>
-                    </td>
-                    <td class="p-3 text-red-500 font-bold whitespace-nowrap">${item.price.toLocaleString('vi-VN').replace(/,/g, '.')} đ</td>
-                    <td class="p-3 text-center font-bold ${item.stock > 0 ? 'text-green-600' : 'text-gray-400'}">${item.stock > 0 ? item.stock : 'Hết'}</td>
-                    <td class="p-3 text-center">
-                        <div class="flex justify-center gap-2">
-                            <button onclick="openEditModal('${item.id}')" class="text-yellow-600 bg-yellow-50 hover:bg-yellow-500 hover:text-white w-8 h-8 rounded transition flex items-center justify-center scale-active shadow-sm">
-                                <i class="fa-solid fa-pen"></i>
-                            </button>
-                            <button onclick="deleteItem('${item.id}')" class="text-red-500 bg-red-50 hover:bg-red-500 hover:text-white w-8 h-8 rounded transition flex items-center justify-center scale-active shadow-sm">
-                                <i class="fa-solid fa-trash-can"></i>
-                            </button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            document.getElementById('total-inventory-count').innerText = `Tổng: ${countFound} món`;
-            if(countFound === 0) noResultMsg.classList.remove('hidden'); else noResultMsg.classList.add('hidden');
-        }
-
-        function deleteItem(id) {
-            if(confirm(`Bạn có chắc chắn muốn xóa mặt hàng này trên toàn bộ hệ thống?`)) {
-                db.collection("inventory").doc(id).delete();
-            }
-        }
-
-        function renderCalendar() {
-            const grid = document.getElementById('calendar-grid');
-            grid.innerHTML = '';
-            
-            const firstDay = new Date(currentYear, currentMonth, 1).getDay();
-            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-            
-            for (let i = 0; i < firstDay; i++) {
-                grid.innerHTML += `<div></div>`;
-            }
-
-            for (let day = 1; day <= daysInMonth; day++) {
-                const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const saleData = dailySales[dateStr]; 
-                const isValidSale = saleData && saleData.total > 0;
-                
-                const revenueText = isValidSale ? `<div class="text-[9px] md:text-xs text-green-600 font-bold mt-1">${(saleData.total / 1000)}k</div>` : '';
-                const bgClass = isValidSale ? 'bg-green-50 border-green-200 hover:bg-green-100 shadow-sm' : 'bg-white border-gray-100 hover:bg-gray-50';
-                const isToday = (dateStr === getLocalTodayString()) ? 'ring-2 ring-blue-500' : '';
-
-                grid.innerHTML += `
-                    <div onclick="showDateDetail('${dateStr}')" class="p-1 md:p-2 h-14 md:h-20 border rounded-lg flex flex-col items-center justify-start transition cursor-pointer scale-active ${bgClass} ${isToday}">
-                        <span class="text-xs md:text-sm font-bold text-gray-700">${day}</span>
-                        ${revenueText}
+                        <button type="button" onclick="addUnitRow()" class="bg-inni-blue hover:bg-blue-700 text-white text-xs font-bold px-3 py-1 rounded-lg shadow-sm scale-active">
+                            <i class="fa-solid fa-plus"></i> Thêm Đơn Vị Sỉ
+                        </button>
                     </div>
-                `;
-            }
-        }
+                    <div class="grid grid-cols-12 gap-2 text-[11px] font-bold text-slate-600 mb-1 px-2">
+                        <div class="col-span-3">Tên ĐV Sỉ (Thùng/Lốc)</div>
+                        <div class="col-span-3 text-center">Số ĐV lẻ trong 1 ĐV sỉ</div>
+                        <div class="col-span-3">GIÁ BÁN SỈ (VNĐ)</div>
+                        <div class="col-span-3">Mã vạch Thùng/Lốc</div>
+                    </div>
+                    <div id="unit-rows-container" class="space-y-2"></div>
+                </div>
 
-        function showDateDetail(dateStr) {
-            currentViewedDate = dateStr;
-            const saleData = dailySales[dateStr];
-            document.getElementById('detail-date').innerText = dateStr.split('-').reverse().join('/'); 
-            const listObj = document.getElementById('detail-items-list');
+                <div class="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <i class="fa-solid fa-image text-2xl text-slate-400"></i>
+                    <div class="flex-1">
+                        <label class="block text-xs font-bold text-slate-700">Ảnh sản phẩm (Tự động nén nhẹ 15KB)</label>
+                        <input type="file" id="prod-image" accept="image/*" class="w-full text-xs mt-1 file:mr-3 file:py-1 file:px-3 file:rounded-full file:border-0 file:bg-blue-100 file:text-inni-blue file:font-bold">
+                    </div>
+                </div>
+            </div>
 
-            let itemsToRender = (saleData && saleData.items) ? saleData.items : {};
+            <div class="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2 shrink-0">
+                <button onclick="closeProductModal()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold text-sm">Hủy</button>
+                <button onclick="saveProduct()" id="btn-save-product" class="px-5 py-2 bg-inni-blue text-white rounded-lg font-bold text-sm shadow scale-active flex items-center gap-2">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> Lưu Mặt Hàng
+                </button>
+            </div>
+        </div>
+    </div>
 
-            if (Object.keys(itemsToRender).length === 0) {
-                document.getElementById('detail-revenue').innerText = "0 đ";
-                listObj.innerHTML = '<li class="text-gray-500 text-xs italic text-center mt-8">Chưa có giao dịch.</li>';
-                return;
-            }
+    <div id="stock-card-modal" class="fixed inset-0 modal-overlay z-[60] hidden flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                <div>
+                    <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
+                        <i class="fa-solid fa-clipboard-list text-amber-400"></i> Thẻ Kho (Stock Card): <span id="sc-prod-name" class="text-amber-300">...</span>
+                    </h3>
+                    <p class="text-xs text-slate-300 mt-0.5" id="sc-prod-summary">Tồn hiện tại: ...</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="clearAllProductLogs()" class="bg-red-500/20 hover:bg-red-600 text-red-200 hover:text-white border border-red-400/30 text-xs font-bold px-2.5 py-1.5 rounded-lg transition">
+                        <i class="fa-solid fa-broom mr-1"></i> Xóa sạch lịch sử thẻ
+                    </button>
+                    <button onclick="closeStockCardModal()" class="text-slate-400 hover:text-white text-xl ml-2"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
 
-            document.getElementById('detail-revenue').innerText = saleData.total.toLocaleString('vi-VN').replace(/,/g, '.') + " đ";
-            listObj.innerHTML = '';
-            
-            for (const [itemName, itemInfo] of Object.entries(itemsToRender)) {
-                listObj.innerHTML += `
-                    <li class="p-3 bg-white rounded border border-gray-100 shadow-sm mb-2 animate-fade-in">
-                        <div class="flex justify-between items-start mb-2">
-                            <div>
-                                <div class="font-bold text-gray-800 text-sm">${itemName}</div>
-                                <div class="text-xs text-gray-500">Đơn giá: ${itemInfo.price.toLocaleString('vi-VN').replace(/,/g, '.')} đ</div>
-                            </div>
-                            <div class="text-right">
-                                <div class="text-sm font-bold text-red-500">${(itemInfo.price * itemInfo.qty).toLocaleString('vi-VN').replace(/,/g, '.')} đ</div>
-                            </div>
+            <div class="bg-amber-50 p-3 border-b border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shrink-0">
+                <div class="text-xs text-amber-900">
+                    <b class="uppercase"><i class="fa-solid fa-scale-balanced mr-1"></i>Sửa / Cân bằng tồn kho nhanh:</b> Nhập tổng số lượng đếm thực tế (theo <span id="sc-base-unit-label" class="font-bold underline">đơn vị nhỏ</span>)
+                </div>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <input type="number" id="sc-actual-stock" placeholder="Tồn thực tế..." class="border border-amber-400 rounded px-2.5 py-1 text-sm font-bold w-28 bg-white">
+                    <input type="text" id="sc-adjust-note" placeholder="Ghi chú (VD: Kiểm kho)" class="border border-amber-300 rounded px-2.5 py-1 text-xs flex-1 sm:w-44 bg-white">
+                    <button onclick="submitStockAdjust()" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded shadow-sm whitespace-nowrap scale-active">
+                        Cập Nhật Tồn
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4">
+                <table class="w-full text-left border-collapse text-xs md:text-sm">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-600 uppercase border-b">
+                            <th class="p-2.5">Ngày giờ</th>
+                            <th class="p-2.5">Loại / Ghi chú</th>
+                            <th class="p-2.5">Diễn giải ĐV</th>
+                            <th class="p-2.5 text-right">Tồn đầu</th>
+                            <th class="p-2.5 text-right">Xuất / Nhập</th>
+                            <th class="p-2.5 text-right">Tồn cuối</th>
+                            <th class="p-2.5 text-center">Sửa / Xóa</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-card-tbody" class="divide-y divide-slate-100"></tbody>
+                </table>
+                <div id="sc-empty" class="hidden text-center p-8 text-slate-400 italic">Chưa có lịch sử biến động thẻ kho cho mặt hàng này.</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="po-modal" class="fixed inset-0 modal-overlay z-[60] hidden flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-emerald-700 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold text-base"><i class="fa-solid fa-truck-ramp-box mr-2"></i>Nhập Hàng Vào Kho (Tự tính Giá vốn TB)</h3>
+                <button onclick="closePurchaseOrderModal()" class="text-emerald-200 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 space-y-3 overflow-y-auto text-sm">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Chọn mặt hàng cần nhập *</label>
+                    <select id="po-product-id" onchange="onChangePoProduct()" class="w-full border border-slate-300 p-2.5 rounded-lg bg-white font-bold text-slate-800"></select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Chọn Đơn vị nhập *</label>
+                        <select id="po-unit-select" onchange="onChangePoUnit()" class="w-full border border-slate-300 p-2.5 rounded-lg bg-white font-bold text-inni-blue"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Số lượng nhập *</label>
+                        <input type="number" id="po-qty" oninput="calcPoSummary()" value="1" min="1" class="w-full border border-slate-300 p-2.5 rounded-lg font-bold text-center">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Đơn giá nhập (1 ĐV đang chọn) *</label>
+                        <input type="text" id="po-import-price" oninput="formatCurrencyInput(this); calcPoSummary()" placeholder="VD: 310.000" class="w-full border border-slate-300 p-2.5 rounded-lg font-bold text-emerald-700">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Tên Nhà Cung Cấp / Ghi chú</label>
+                        <input type="text" id="po-supplier" placeholder="VD: Đại lý Bia Sài Gòn" class="w-full border border-slate-300 p-2.5 rounded-lg">
+                    </div>
+                </div>
+                <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-xs space-y-1 text-emerald-900">
+                    <div class="flex justify-between"><span>Quy đổi số lượng cộng kho:</span> <b id="po-conv-preview">0</b></div>
+                    <div class="flex justify-between"><span>Tổng tiền lô nhập này:</span> <b id="po-total-preview" class="text-sm text-red-600">0 đ</b></div>
+                    <div class="flex justify-between"><span>Giá vốn bình quân mới (Dự kiến):</span> <b id="po-mac-preview" class="text-inni-blue">0 đ</b></div>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                <button onclick="closePurchaseOrderModal()" class="px-4 py-2 bg-slate-200 rounded-lg font-bold text-sm">Hủy</button>
+                <button onclick="submitPurchaseOrder()" id="btn-submit-po" class="px-5 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm shadow scale-active">
+                    <i class="fa-solid fa-check mr-1"></i> Xác Nhận Nhập Kho
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="fixed inset-0 modal-overlay z-[70] hidden flex items-center justify-center p-3">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in flex flex-col">
+            <div class="p-4 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="font-bold text-base"><i class="fa-solid fa-sliders mr-2 text-blue-400"></i>Cài Đặt Hóa Đơn & VietQR</h3>
+                <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 space-y-3 text-sm overflow-y-auto max-h-[80vh]">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Tên cửa hàng (In trên đầu Bill)</label>
+                    <input type="text" id="set-store-name" class="w-full border border-slate-300 p-2 rounded-lg font-bold">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Số điện thoại chủ quán</label>
+                        <input type="text" id="set-store-phone" placeholder="0909..." class="w-full border border-slate-300 p-2 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Khổ giấy in mặc định</label>
+                        <select id="set-print-size" class="w-full border border-slate-300 p-2 rounded-lg font-bold bg-white">
+                            <option value="A5">Khổ A5 (AirPrint / Sỉ)</option>
+                            <option value="80mm">Khổ 80mm (Máy in nhiệt)</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-1">Địa chỉ cửa hàng</label>
+                    <input type="text" id="set-store-address" placeholder="Số nhà, đường, phường/xã..." class="w-full border border-slate-300 p-2 rounded-lg">
+                </div>
+                <div class="border-t pt-3 mt-2">
+                    <div class="font-bold text-xs text-inni-blue uppercase mb-2"><i class="fa-solid fa-qrcode mr-1"></i>Cấu hình Ngân hàng tạo mã VietQR tự động</div>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Ngân hàng (Mã BIN/Tên)</label>
+                            <select id="set-bank-id" class="w-full border border-slate-300 p-2 rounded-lg bg-white text-xs font-bold">
+                                <option value="MB">MBBank (Quân Đội)</option>
+                                <option value="VCB">Vietcombank</option>
+                                <option value="ICB">VietinBank</option>
+                                <option value="BIDV">BIDV</option>
+                                <option value="ACB">ACB</option>
+                                <option value="TCB">Techcombank</option>
+                                <option value="VPB">VPBank</option>
+                                <option value="TPB">TPBank</option>
+                                <option value="STB">Sacombank</option>
+                                <option value="VBA">Agribank</option>
+                            </select>
                         </div>
-                        <div class="flex justify-between items-center border-t border-gray-50 pt-2">
-                            <span class="text-xs text-gray-400">Số lượng đã bán:</span>
-                            <div class="flex items-center gap-1">
-                                <span class="font-bold text-inni-blue w-6 text-center text-sm">${itemInfo.qty}</span>
-                            </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Số tài khoản nhận tiền</label>
+                            <input type="text" id="set-bank-acc" placeholder="Nhập STK..." class="w-full border border-slate-300 p-2 rounded-lg font-bold">
                         </div>
-                    </li>
-                `;
-            }
-        }
-    </script>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Tên chủ tài khoản (Không dấu)</label>
+                        <input type="text" id="set-bank-owner" placeholder="VD: NGUYEN MINH NHAT" class="w-full border border-slate-300 p-2 rounded-lg uppercase">
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                <button onclick="closeSettingsModal()" class="px-4 py-2 bg-slate-200 rounded-lg font-bold text-sm">Đóng</button>
+                <button onclick="saveStoreSettings()" class="px-5 py-2 bg-inni-blue text-white rounded-lg font-bold text-sm shadow scale-active">Lưu Cài Đặt</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GỌI 2 FILE JAVASCRIPT CỦA HỆ THỐNG -->
+    <script src="app.js"></script>
+    <script src="pos_crm.js"></script>
 </body>
 </html>
