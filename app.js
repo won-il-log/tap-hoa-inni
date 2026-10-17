@@ -263,11 +263,33 @@ function toggleLowStockFilter() {
     renderInventory();
 }
 
-function renderInventory() {
+let invRenderLimit = 40;
+
+function loadMoreInventory() {
+    invRenderLimit += 40;
+    renderInventory(false);
+}
+
+function openMobileProductActionSheet(prodId) {
+    const item = inventory.find(i => i.id === prodId);
+    if (!item) return;
+    const choice = prompt(
+        `THAO TÁC: ${item.name}\nNhập số để chọn:\n1 - Sửa sản phẩm\n2 - Kiểm kho / Xem thẻ kho\n3 - Xóa sản phẩm`,
+        "1"
+    );
+    if (choice === "1") openProductModal(prodId);
+    else if (choice === "2") openStockCardModal(prodId);
+    else if (choice === "3") deleteProduct(prodId);
+}
+
+function renderInventory(resetLimit = true) {
+    if (resetLimit) invRenderLimit = 40;
     const tbody = document.getElementById('inventory-list');
+    const mobList = document.getElementById('inventory-mobile-list');
     const noRes = document.getElementById('inv-no-result');
     if (!tbody) return;
     tbody.innerHTML = '';
+    if (mobList) mobList.innerHTML = '';
 
     const search = (document.getElementById('inv-search-name')?.value || '').toLowerCase().trim();
     const catFilter = document.getElementById('inv-search-cat')?.value || 'all';
@@ -299,7 +321,9 @@ function renderInventory() {
         if (stockFilter === 'out' && item.stock > 0) return;
 
         renderedCount++;
+        if (renderedCount > invRenderLimit) return;
 
+        // 1. Dữ liệu cho bảng PC
         const imgTag = item.image 
             ? `<img src="${item.image}" class="w-11 h-11 object-contain rounded-lg border bg-white p-0.5">`
             : `<div class="w-11 h-11 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><i class="fa-solid fa-image"></i></div>`;
@@ -321,39 +345,74 @@ function renderInventory() {
 
         const rowBg = isLow ? "bg-red-50/70 hover:bg-red-100/60" : "hover:bg-blue-50/40";
         const lowBadge = isLow 
-            ? `<span class="ml-1.5 px-1.5 py-0.5 bg-red-600 text-white text-[10px] font-bold rounded animate-pulse"><i class="fa-solid fa-triangle-exclamation"></i> Cảnh báo tồn (<=${item.minStock})</span>` 
+            ? `<span class="ml-1.5 px-1.5 py-0.5 bg-red-600 text-white text-[10px] font-bold rounded">Cảnh báo tồn (<=${item.minStock})</span>` 
             : '';
 
         const tr = document.createElement('tr');
         tr.className = `transition ${rowBg}`;
-       tr.innerHTML = `
-            <td class="p-3 mobile-hide-col">${imgTag}</td>
+        tr.innerHTML = `
+            <td class="p-3">${imgTag}</td>
             <td class="p-3">
                 <div class="font-bold text-slate-800 flex items-center flex-wrap">${item.name}${lowBadge}</div>
-                <div class="text-[11px] text-slate-500 mt-0.5 hidden sm:flex items-center gap-2 flex-wrap">
+                <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
                     <span class="bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-semibold">${item.category}</span>${item.barcode ? `<span><i class="fa-solid fa-barcode"></i> ${item.barcode}</span>` : ''}
-                    ${item.keywords.length ? `<span class="text-blue-600 italic">Zalo: ${item.keywords.join(', ')}</span>` : ''}
                 </div>
             </td>
-            <td class="p-3 text-right font-semibold text-slate-600 mobile-hide-col">${formatmoney(item.costPrice)} đ<span class="text-[10px] text-slate-400 block">/${item.baseUnit}</span></td>
+            <td class="p-3 text-right font-semibold text-slate-600">${formatmoney(item.costPrice)} đ<span class="text-[10px] text-slate-400 block">/${item.baseUnit}</span></td>
             <td class="p-3 text-right bg-red-50/20">${retailHtml}</td>
             <td class="p-3 bg-blue-50/20">${wholesaleHtml}</td>
             <td class="p-3 text-center">${formatStockMultiUnit(item)}</td>
             <td class="p-3 text-center">
                 <div class="flex justify-center gap-1.5">
-                    <button onclick="openStockCardModal('${item.id}')" title="Kiểm Kho Thông Minh & Xem Thẻ Kho" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-amber-300 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm scale-active">
+                    <button onclick="openStockCardModal('${item.id}')" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-amber-300 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm scale-active">
                         <i class="fa-solid fa-clipboard-check"></i> Kiểm Kho / Thẻ
                     </button>
-                    <button onclick="openProductModal('${item.id}')" title="Sửa mặt hàng" class="w-8 h-8 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white rounded-lg flex items-center justify-center transition scale-active border border-amber-200">
+                    <button onclick="openProductModal('${item.id}')" class="w-8 h-8 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white rounded-lg flex items-center justify-center transition scale-active border border-amber-200">
                         <i class="fa-solid fa-pen text-xs"></i>
                     </button>
-                    <button onclick="deleteProduct('${item.id}')" title="Xóa mặt hàng" class="w-8 h-8 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white rounded-lg flex items-center justify-center transition scale-active border border-red-200">
+                    <button onclick="deleteProduct('${item.id}')" class="w-8 h-8 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white rounded-lg flex items-center justify-center transition scale-active border border-red-200">
                         <i class="fa-solid fa-trash-can text-xs"></i>
                     </button>
                 </div>
             </td>
         `;
         tbody.appendChild(tr);
+
+        // 2. Dữ liệu Thẻ Sản Phẩm (List Item 1 dòng chuẩn Sapo) trên Mobile (< 768px)
+        if (mobList) {
+            let stockConvertedStr = `${item.stock} ${item.baseUnit}`;
+            if (item.stock <= 0) {
+                stockConvertedStr = `Hết hàng (0)`;
+            } else if (item.units.some(u => u.conversionRate > 1)) {
+                const parts = breakdownStockByUnits(item.stock, item.units).filter(p => p.count > 0);
+                stockConvertedStr = parts.map(p => `${p.count} ${p.unitName}`).join(' ');
+            }
+
+            const mobThumb = item.image
+                ? `<img src="${item.image}" class="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0">`
+                : `<div class="w-10 h-10 rounded-lg bg-slate-100 text-slate-400 flex items-center justify-center shrink-0 text-xs"><i class="fa-solid fa-box"></i></div>`;
+
+            mobList.innerHTML += `
+                <div class="flex items-center justify-between px-3.5 py-3 gap-2.5 active:bg-slate-50" onclick="openProductModal('${item.id}')">
+                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                        ${mobThumb}
+                        <div class="min-w-0 flex-1">
+                            <div class="font-bold text-slate-800 text-[13px] truncate">${item.name}</div>
+                            <div class="text-[11px] text-slate-400 truncate mt-0.5">${item.barcode || 'Chưa có SKU'}</div>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <div class="font-bold text-[13px] ${item.stock <= 0 ? 'text-red-600' : 'text-slate-800'}">${stockConvertedStr}</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">
+                            Lẻ: <b class="text-slate-700">${formatmoney(item.basePrice)}</b> • Sỉ: <b class="text-[#0088FF]">${formatmoney(item.wholesalePrice || item.basePrice)}</b>
+                        </div>
+                    </div>
+                    <button type="button" onclick="event.stopPropagation(); openMobileProductActionSheet('${item.id}')" class="w-7 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 shrink-0 -mr-1">
+                        <i class="fa-solid fa-ellipsis-vertical"></i>
+                    </button>
+                </div>
+            `;
+        }
     });
 
     document.getElementById('inv-stat-total').innerText = `${totalItems} mặt hàng`;
@@ -361,15 +420,19 @@ function renderInventory() {
     document.getElementById('inv-stat-low').innerText = `${lowStockCount} món`;
     document.getElementById('inv-stat-retail').innerText = `${formatmoney(totalRetail)} đ`;
 
+    const mobCntEl = document.getElementById('inv-mobile-count-label');
+    if (mobCntEl) mobCntEl.innerText = `${renderedCount} sản phẩm`;
+    const loadMoreWrap = document.getElementById('inv-load-more-wrap');
+    if (loadMoreWrap) loadMoreWrap.classList.toggle('hidden', renderedCount <= invRenderLimit);
+
     const badgeDesk = document.getElementById('badge-low-stock');
     const badgeMob = document.getElementById('badge-mobile-low-stock');
     if (lowStockCount > 0) {
-        badgeDesk.innerText = lowStockCount;
-        badgeDesk.classList.remove('hidden');
-        badgeMob.classList.remove('hidden');
+        if (badgeDesk) { badgeDesk.innerText = lowStockCount; badgeDesk.classList.remove('hidden'); }
+        if (badgeMob) badgeMob.classList.remove('hidden');
     } else {
-        badgeDesk.classList.add('hidden');
-        badgeMob.classList.add('hidden');
+        if (badgeDesk) badgeDesk.classList.add('hidden');
+        if (badgeMob) badgeMob.classList.add('hidden');
     }
 
     if (renderedCount === 0) noRes.classList.remove('hidden');
@@ -1223,4 +1286,55 @@ function saveStoreSettings() {
     applyStoreSettingsToUI();
     closeSettingsModal();
     alert("Đã lưu cấu hình Cửa hàng & VietQR!");
+}
+
+// ==========================================
+// 9. BẢO MẬT MÃ PIN & SAO LƯU TOÀN BỘ DỮ LIỆU (FULL BACKUP)
+// ==========================================
+const SHOP_PIN_CODE = localStorage.getItem('hh_shop_pin') || "1234"; // Mã PIN mặc định: 1234
+
+window.addEventListener('DOMContentLoaded', () => {
+    const isAuth = localStorage.getItem('hh_auth_remember') === 'true' || sessionStorage.getItem('hh_auth_session') === 'true';
+    if (!isAuth) {
+        document.getElementById('auth-lock-modal')?.classList.remove('hidden');
+    }
+});
+
+function verifyShopPin() {
+    const inp = document.getElementById('auth-pin-input')?.value.trim();
+    const remember = document.getElementById('auth-remember-chk')?.checked;
+    if (inp === SHOP_PIN_CODE) {
+        sessionStorage.setItem('hh_auth_session', 'true');
+        if (remember) localStorage.setItem('hh_auth_remember', 'true');
+        document.getElementById('auth-lock-modal')?.classList.add('hidden');
+    } else {
+        alert("Mã PIN không chính xác!");
+    }
+}
+
+async function exportFullBackupData() {
+    try {
+        const [invSnap, custSnap, ordSnap, debtSnap, cbSnap] = await Promise.all([
+            db.collection("inventory").get(),
+            db.collection("customers").get(),
+            db.collection("orders").orderBy("createdAt", "desc").limit(2000).get(),
+            db.collection("debts").orderBy("createdAt", "desc").limit(2000).get(),
+            db.collection("cashbook").orderBy("createdAt", "desc").limit(2000).get()
+        ]);
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invSnap.docs.map(d => d.data())), "Kho_Hang");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(custSnap.docs.map(d => d.data())), "Khach_Hang_Cong_No");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordSnap.docs.map(d => {
+            const o = d.data();
+            return { ...o, items: JSON.stringify(o.items || []), customerSnapshot: JSON.stringify(o.customerSnapshot || {}) };
+        })), "Hoa_Don");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(debtSnap.docs.map(d => d.data())), "Lich_Su_So_No");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cbSnap.docs.map(d => d.data())), "So_Quy");
+
+        const dateStr = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `Full_Backup_Huy_Hoang_${dateStr}.xlsx`);
+    } catch (e) {
+        alert("Lỗi khi tải bản sao lưu: " + e.message);
+    }
 }

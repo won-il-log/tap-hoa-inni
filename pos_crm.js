@@ -613,14 +613,23 @@ function clearCart() {
 function renderCart() {
     const list = document.getElementById('cart-list');
     const countEl = document.getElementById('cart-item-count');
+    const botCntEl = document.getElementById('cart-bottom-count');
     if (!list) return;
     list.innerHTML = '';
 
     const keys = Object.keys(cart);
-    countEl.innerText = keys.length;
+    if (countEl) countEl.innerText = keys.length;
+    if (botCntEl) botCntEl.innerText = keys.length;
 
     if (keys.length === 0) {
-        list.innerHTML = `<li class="text-center text-slate-400 text-xs italic mt-12">Giỏ hàng trống. Hãy bấm chọn món, quét mã vạch hoặc dán đơn Zalo!</li>`;
+        list.innerHTML = `
+            <li class="text-center py-8 flex flex-col items-center justify-center gap-2">
+                <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-xl">
+                    <i class="fa-solid fa-basket-shopping"></i>
+                </div>
+                <div class="text-slate-400 text-xs">Giỏ hàng trống</div>
+                <button type="button" onclick="document.getElementById('sell-search-name').focus()" class="text-[#0088FF] font-bold text-xs">Chọn sản phẩm</button>
+            </li>`;
         updateCartTotalsOnly();
         return;
     }
@@ -636,19 +645,19 @@ function renderCart() {
 
         const lineTotal = item.price * item.qty;
         const giftBadge = item.isGift 
-            ? `<span class="bg-purple-600 text-white text-[10px] px-1.5 py-0.2 rounded font-bold ml-1">🎁 HÀNG TẶNG 0Đ</span>` 
+            ? `<span class="bg-purple-600 text-white text-[10px] px-1.5 py-0.2 rounded font-bold ml-1">HÀNG TẶNG 0Đ</span>` 
             : '';
 
         list.innerHTML += `
-            <li class="p-2.5 rounded-xl border ${item.isGift ? 'bg-purple-50/60 border-purple-300' : 'bg-slate-50 border-slate-200'} flex flex-col gap-2 animate-fade-in shadow-sm">
+            <li class="p-2.5 rounded-xl border ${item.isGift ? 'bg-purple-50/60 border-purple-300' : 'bg-white border-slate-200'} flex flex-col gap-2 animate-fade-in shadow-sm">
                 <div class="flex justify-between items-start gap-2">
                     <div class="font-bold text-slate-800 text-xs leading-snug flex-1">
                         ${item.name} ${giftBadge}
                         <span class="block text-[10px] text-slate-400 font-normal">Trừ kho: ${item.qty * item.conversionRate} ${item.baseUnit}</span>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0">
-                        <button onclick="toggleCartItemGift('${key}')" title="Chuyển thành Hàng tặng khuyến mãi 0đ" class="text-[10px] font-bold px-2 py-0.5 rounded border transition ${item.isGift ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-700 border-purple-300 hover:bg-purple-50'}">
-                            🎁 Tặng 0đ
+                        <button onclick="toggleCartItemGift('${key}')" class="text-[10px] font-bold px-2 py-0.5 rounded border transition ${item.isGift ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-700 border-purple-300'}">
+                            Tặng 0đ
                         </button>
                         <button onclick="updateCartQty('${key}', -99999)" class="text-slate-400 hover:text-red-500 px-1"><i class="fa-solid fa-xmark"></i></button>
                     </div>
@@ -660,21 +669,19 @@ function renderCart() {
                             ${unitSelectHtml}
                         </select>
                     </div>
-
                     <div class="col-span-4 relative">
-                        <input type="text" value="${formatmoney(item.price)}" oninput="updateCartCustomPrice('${key}', this)" title="Click để sửa giá bán trực tiếp" class="w-full border border-amber-400 bg-amber-50/50 focus:bg-white rounded-lg p-1 pr-4 text-xs font-black text-red-600 text-right focus:outline-none">
+                        <input type="text" value="${formatmoney(item.price)}" oninput="updateCartCustomPrice('${key}', this)" class="w-full border border-amber-400 bg-amber-50/50 focus:bg-white rounded-lg p-1 pr-4 text-xs font-black text-red-600 text-right focus:outline-none">
                         <i class="fa-solid fa-pen text-[8px] text-amber-500 absolute right-1.5 top-2 pointer-events-none"></i>
                     </div>
-
                     <div class="col-span-4 flex items-center justify-end gap-1">
-                        <button onclick="updateCartQty('${key}', -1)" class="w-6 h-6 bg-white border border-slate-300 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100 scale-active"><i class="fa-solid fa-minus text-[9px]"></i></button>
+                        <button onclick="updateCartQty('${key}', -1)" class="w-6 h-6 bg-white border border-slate-300 rounded flex items-center justify-center text-slate-600"><i class="fa-solid fa-minus text-[9px]"></i></button>
                         <input type="number" value="${item.qty}" onchange="updateCartQty('${key}', 0, this.value)" class="w-10 border border-slate-300 rounded p-0.5 text-center font-black text-xs text-slate-800 bg-white">
-                        <button onclick="updateCartQty('${key}', 1)" class="w-6 h-6 bg-white border border-slate-300 rounded flex items-center justify-center text-slate-600 hover:bg-slate-100 scale-active"><i class="fa-solid fa-plus text-[9px]"></i></button>
+                        <button onclick="updateCartQty('${key}', 1)" class="w-6 h-6 bg-white border border-slate-300 rounded flex items-center justify-center text-slate-600"><i class="fa-solid fa-plus text-[9px]"></i></button>
                     </div>
                 </div>
 
-                <div class="flex justify-between items-center text-[11px] pt-1 border-t border-slate-200/70">
-                    <span class="text-slate-400">Thành tiền dòng này:</span>
+                <div class="flex justify-between items-center text-[11px] pt-1 border-t border-slate-100">
+                    <span class="text-slate-400">Thành tiền:</span>
                     <span class="font-black text-slate-800 text-xs" id="line-total-${key}">${formatmoney(lineTotal)} đ</span>
                 </div>
             </li>
@@ -1515,10 +1522,51 @@ function syncToPreRenderedPrintArea() {
 function triggerFastAirPrint() {
     const editBox = document.getElementById('quick-bill-edit-box');
     if (editBox) editBox.classList.add('hidden');
-    syncToPreRenderedPrintArea();
+
+    const source = document.getElementById('printable-bill');
+    if (!source) return;
+
+    let iframe = document.getElementById('print-iframe');
+    if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = 'print-iframe';
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+    }
+
+    const is80mm = document.body.classList.contains('print-mode-80mm');
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+        <!DOCTYPE html>
+        <html lang="vi">
+        <head>
+            <meta charset="UTF-8">
+            <title>In Hóa Đơn</title>
+            <script src="https://cdn.tailwindcss.com"><\/script>
+            <style>
+                @page { size: ${is80mm ? '80mm auto' : 'A5'}; margin: ${is80mm ? '4mm' : '12mm'}; }
+                body { font-family: sans-serif; background: #fff; color: #000; margin: 0; padding: 0; font-size: ${is80mm ? '11px' : '12px'}; }
+                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+                th, td { border: 1px solid #64748b; padding: 4px; word-wrap: break-word; }
+                .col-stt { width: 8%; ${is80mm ? 'display:none;' : ''} }
+                .col-name { width: 38%; }
+                .col-unit { width: 12%; }
+                .col-qty { width: 10%; }
+                .col-price { width: 15%; }
+                .col-total { width: 17%; }
+                .vietqr-header-img { width: ${is80mm ? '28mm' : '32mm'}; height: ${is80mm ? '28mm' : '32mm'}; object-fit: contain; }
+            </style>
+        </head>
+        <body>${source.innerHTML}</body>
+        </html>
+    `);
+    doc.close();
+
     setTimeout(() => {
-        window.print();
-    }, 400);
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+    }, 120);
 }
 
 function toggleQuickBillHeaderEdit() {
@@ -1635,7 +1683,15 @@ function openPrintableInvoice(order) {
     document.getElementById('bill-detail-modal').classList.remove('hidden');
 }
 
-async function loadOrdersModule() {
+let ordFetchLimit = 50;
+
+function loadMoreOrders() {
+    ordFetchLimit += 50;
+    loadOrdersModule(false);
+}
+
+async function loadOrdersModule(resetLimit = true) {
+    if (resetLimit) ordFetchLimit = 50;
     const fromStr = document.getElementById('ord-date-from')?.value || '2024-01-01';
     const toStr = document.getElementById('ord-date-to')?.value || '2060-12-31';
     const tbody = document.getElementById('orders-tbody');
@@ -1645,6 +1701,7 @@ async function loadOrdersModule() {
         const snap = await db.collection("orders")
             .where("dateStr", ">=", fromStr)
             .where("dateStr", "<=", toStr)
+            .limit(ordFetchLimit)
             .get();
 
         ordersList = snap.docs.map(d => d.data()).sort((a, b) => b.createdAt - a.createdAt);
@@ -1656,9 +1713,11 @@ async function loadOrdersModule() {
 
 function renderOrdersList() {
     const tbody = document.getElementById('orders-tbody');
+    const mobList = document.getElementById('orders-mobile-list');
     const emptyEl = document.getElementById('orders-empty');
     if (!tbody) return;
     tbody.innerHTML = '';
+    if (mobList) mobList.innerHTML = '';
 
     const search = (document.getElementById('ord-search-text')?.value || '').toLowerCase().trim();
     const typeFilter = document.getElementById('ord-filter-type')?.value || 'all';
@@ -1685,23 +1744,24 @@ function renderOrdersList() {
         if (isReturn) {
             badge = `<span class="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full">HOÀN HÀNG</span>`;
         } else if (isPending) {
-            badge = `<span class="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full">🚚 ĐANG GIAO DỊCH</span>`;
+            badge = `<span class="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full">ĐANG GIAO DỊCH</span>`;
         } else {
-            badge = `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">✅ HOÀN THÀNH</span>`;
+            badge = `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">HOÀN THÀNH</span>`;
         }
 
+        // Render Bảng trên PC
         tbody.innerHTML += `
             <tr class="${isPending ? 'bg-amber-50/40' : 'hover:bg-blue-50/40'} transition">
                 <td class="p-3">
-                    <div class="font-bold text-inni-blue flex items-center justify-between sm:justify-start gap-1.5 flex-wrap">${ord.orderCode} ${badge}</div>
+                    <div class="font-bold text-inni-blue flex items-center gap-1.5 flex-wrap">${ord.orderCode} ${badge}</div>
                     <div class="text-xs text-slate-400 mt-0.5">${timeStr} • TN: ${ord.seller || 'Chủ Quán'}</div>
                 </td>
                 <td class="p-3">
                     <div class="font-bold text-slate-800">${custName} ${custPhone ? `<span class="text-xs font-normal text-slate-500">(${custPhone})</span>` : ''}</div>
                 </td>
-                <td class="p-3 text-xs text-slate-600 max-w-xs truncate mobile-hide-col" title="${itemsText}">${itemsText}</td>
+                <td class="p-3 text-xs text-slate-600 max-w-xs truncate" title="${itemsText}">${itemsText}</td>
                 <td class="p-3 text-right font-black whitespace-nowrap ${isReturn ? 'text-purple-700' : 'text-slate-800'}">${formatmoney(ord.totalAmount)} đ</td>
-                <td class="p-3 text-right font-semibold text-emerald-600 whitespace-nowrap mobile-hide-col">${isPending ? '<span class="text-amber-600 italic text-xs">Chờ thu</span>' : `${formatmoney(ord.paidAmount || 0)} đ`}</td>
+                <td class="p-3 text-right font-semibold text-emerald-600 whitespace-nowrap">${isPending ? '<span class="text-amber-600 italic text-xs">Chờ thu</span>' : `${formatmoney(ord.paidAmount || 0)} đ`}</td>
                 <td class="p-3 text-right font-bold text-red-600 whitespace-nowrap">${isPending ? `${formatmoney(ord.totalAmount)} đ` : `${formatmoney(ord.newDebt || 0)} đ`}</td>
                 <td class="p-3 text-center whitespace-nowrap pt-2">
                     ${isPending ? `
@@ -1721,7 +1781,35 @@ function renderOrdersList() {
                 </td>
             </tr>
         `;
+
+        // Render Danh sách phẳng (Flat List 2 cột Trái-Phải) trên Mobile
+        if (mobList) {
+            const statusText = isReturn
+                ? `<span class="text-xs font-semibold text-purple-600">Hoàn hàng</span>`
+                : (isPending
+                    ? `<span class="text-xs font-semibold text-amber-500">Đang giao dịch</span>`
+                    : `<span class="text-xs font-semibold text-slate-400">Hoàn thành</span>`);
+
+            mobList.innerHTML += `
+                <div onclick="openPrintableInvoice(ordersList[${idx}])" class="p-3.5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
+                    <div class="space-y-0.5">
+                        <div class="font-bold text-slate-800 text-sm">${ord.orderCode}</div>
+                        <div class="text-xs text-slate-600">${custName}</div>
+                        <div class="text-[11px] text-slate-400">${timeStr}</div>
+                    </div>
+                    <div class="text-right space-y-1">
+                        <div class="font-bold text-slate-800 text-sm">${formatmoney(ord.totalAmount)} đ</div>
+                        <div>${statusText}</div>
+                    </div>
+                </div>
+            `;
+        }
     });
+
+    const cntLabel = document.getElementById('ord-count-label');
+    if (cntLabel) cntLabel.innerText = `${count} đơn hàng`;
+    const moreWrap = document.getElementById('ord-load-more-wrap');
+    if (moreWrap) moreWrap.classList.toggle('hidden', ordersList.length < ordFetchLimit);
 
     if (count === 0) emptyEl.classList.remove('hidden');
     else emptyEl.classList.add('hidden');
