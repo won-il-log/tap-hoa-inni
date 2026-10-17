@@ -35,6 +35,8 @@ window.addEventListener('load', () => {
     initKeyboardShortcuts();
     initOrderDateFilter();
     initCustomerSearchOutsideClick();
+    initMobileAutoHideToolbar();
+    loadOverviewDashboard(); // <-- Thêm dòng này để tự động cập nhật số lượng đơn vận chuyển khi vừa mở app
 });
 
 function initOrderDateFilter() {
@@ -972,6 +974,16 @@ function copyOrderToPosFromBill() {
     copyOrderToPos(currentViewingOrder);
 }
 
+// ==========================================
+// ĐÓNG POPUP XEM HÓA ĐƠN & KHUNG SỬA NHANH (FIX LỖI KẸT TRÊN IPHONE)
+// ==========================================
+function closeBillModal() {
+    const modal = document.getElementById('bill-detail-modal');
+    if (modal) modal.classList.add('hidden');
+    const editBox = document.getElementById('quick-bill-edit-box');
+    if (editBox) editBox.classList.add('hidden');
+}
+
 function copyOrderToPos(order) {
     if (!order || !Array.isArray(order.items)) return;
     if (Object.keys(cart).length > 0) {
@@ -1018,16 +1030,120 @@ function copyOrderToPos(order) {
 }
 
 // ==========================================
-// THANH TOÁN ĐƠN HÀNG & GHI SỔ CÔNG NỢ / THẺ KHO
+// ĐIỀU HƯỚNG MÀN HÌNH TỔNG QUAN SAPO & MÀN HÌNH POS ĐỘC LẬP (FULL-SCREEN)
 // ==========================================
-function openCheckoutModal() {
-    if (Object.keys(cart).length === 0) return alert("Giỏ hàng đang trống!");
+let currentSettlingOrder = null;
 
+window.addEventListener('load', () => {
+    if (window.innerWidth <= 767) {
+        switchTab('tab-overview');
+    }
+    setTimeout(loadOverviewDashboard, 600);
+});
+
+function openPosScreen(mode = 'COUNTER') {
+    document.body.classList.add('pos-fullscreen-active');
+    const titleEl = document.getElementById('pos-mode-title');
+    if (titleEl) {
+        titleEl.innerText = mode === 'DELIVERY' ? '🚚 Bán Giao Hàng (Thu sau)' : '🏪 Bán Tại Quầy';
+    }
+    switchTab('tab-sell');
+}
+
+function closePosScreen() {
+    document.body.classList.remove('pos-fullscreen-active');
+    switchTab('tab-overview');
+    loadOverviewDashboard();
+}
+
+function openOrdersWithFilter(filterVal) {
+    document.body.classList.remove('pos-fullscreen-active');
+    const sel = document.getElementById('ord-filter-type');
+    if (sel) sel.value = filterVal;
+    switchTab('tab-orders');
+    loadOrdersModule();
+
+    if (filterVal === 'PROCESSING') {
+        document.querySelectorAll('.mobile-nav-btn').forEach(b => {
+            b.classList.remove('text-inni-blue', 'font-bold');
+            b.classList.add('text-slate-400');
+        });
+        const shipBtn = document.getElementById('btn-mobile-tab-shipping');
+        if (shipBtn) {
+            shipBtn.classList.remove('text-slate-400');
+            shipBtn.classList.add('text-inni-blue', 'font-bold');
+        }
+    }
+}
+
+async function loadOverviewDashboard() {
+    const storeNameEl = document.getElementById('mobile-home-store-name');
+    if (storeNameEl && typeof storeSettings !== 'undefined') {
+        storeNameEl.innerText = storeSettings.storeName || "Tạp Hóa Huy Hoàng";
+    }
+    const mobHold = document.getElementById('hold-count-badge-mob');
+    if (mobHold) mobHold.innerText = holdOrders.length;
+
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    try {
+        const snap = await db.collection("orders").where("dateStr", "==", todayStr).get();
+        let todayRev = 0, todayProfit = 0, completedCnt = 0, pendingCnt = 0;
+
+        snap.docs.forEach(d => {
+            const o = d.data();
+            if (o.orderType === 'RETURN') return;
+            if (o.status === 'PROCESSING') {
+                pendingCnt++;
+            } else {
+                completedCnt++;
+                todayRev += Number(o.totalAmount) || 0;
+                todayProfit += (Number(o.totalAmount) || 0) - (Number(o.totalCost) || 0);
+            }
+        });
+
+        const revEl = document.getElementById('home-today-revenue');
+        if (revEl) {
+            revEl.innerText = `${formatmoney(todayRev)} đ`;
+            document.getElementById('home-today-orders').innerText = `${completedCnt} đơn`;
+            document.getElementById('home-today-pending').innerText = `${pendingCnt} đơn`;
+            document.getElementById('home-today-profit').innerText = `${formatmoney(todayProfit)} đ`;
+        }
+
+        const shipBadge = document.getElementById('badge-mobile-shipping');
+        if (shipBadge) {
+            if (pendingCnt > 0) {
+                shipBadge.innerText = pendingCnt;
+                shipBadge.classList.remove('hidden');
+            } else {
+                shipBadge.classList.add('hidden');
+            }
+        }
+    } catch (e) {}
+}
+
+// ==========================================
+// THANH TOÁN ĐƠN HÀNG & LUỒNG "GIAO HÀNG TRƯỚC - THANH TOÁN SAU" (CHUẨN SAPO)
+// ==========================================
+function getActiveCheckoutContext() {
+    if (currentSettlingOrder) {
+        const cust = customers.find(c => c.id === currentSettlingOrder.customerId);
+        const oldDebt = cust ? (Number(cust.currentDebt) || 0) : (Number(currentSettlingOrder.oldDebt) || 0);
+        return { orderTotal: Number(currentSettlingOrder.totalAmount) || 0, cust, oldDebt };
+    }
     let orderTotal = 0;
     for (const k in cart) orderTotal += cart[k].price * cart[k].qty;
-
     const cust = customers.find(c => c.id === selectedCustomerId);
     const oldDebt = cust ? (Number(cust.currentDebt) || 0) : 0;
+    return { orderTotal, cust, oldDebt };
+}
+
+function openCheckoutModal() {
+    if (Object.keys(cart).length === 0) return alert("Giỏ hàng đang trống!");
+    currentSettlingOrder = null;
+
+    const { orderTotal, cust, oldDebt } = getActiveCheckoutContext();
     const grandTotal = orderTotal + oldDebt;
 
     document.getElementById('chk-customer-name').innerText = cust ? `${cust.name} (${cust.phone || 'Không SĐT'})` : "Khách Lẻ (Vãng lai)";
@@ -1043,7 +1159,35 @@ function openCheckoutModal() {
     setTimeout(() => document.getElementById('chk-paid-input').select(), 100);
 }
 
+// Mở Popup xác nhận thanh toán cho đơn "Đang giao dịch"
+function openSettleOrderModal(order) {
+    if (!order) return;
+    currentSettlingOrder = order;
+    const { orderTotal, cust, oldDebt } = getActiveCheckoutContext();
+    const grandTotal = orderTotal + oldDebt;
+    const snapName = cust ? `${cust.name} (${cust.phone || 'Không SĐT'})` : `${order.customerSnapshot?.name || 'Khách Lẻ'}`;
+
+    document.getElementById('chk-customer-name').innerText = `${snapName} [Chốt đơn: ${order.orderCode}]`;
+    document.getElementById('chk-order-total').innerText = `${formatmoney(orderTotal)} đ`;
+    document.getElementById('chk-old-debt').innerText = `${formatmoney(oldDebt)} đ`;
+    document.getElementById('chk-grand-total').innerText = `${formatmoney(grandTotal)} đ`;
+
+    setPaymentMethod('CASH');
+    document.getElementById('chk-paid-input').value = formatmoney(orderTotal);
+    calcCheckoutDebt();
+
+    document.getElementById('checkout-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('chk-paid-input').select(), 100);
+}
+
+function openSettleOrderModalFromBill() {
+    if (!currentViewingOrder) return;
+    closeBillModal();
+    openSettleOrderModal(currentViewingOrder);
+}
+
 function closeCheckoutModal() {
+    currentSettlingOrder = null;
     document.getElementById('checkout-modal').classList.add('hidden');
 }
 
@@ -1056,7 +1200,6 @@ function setPaymentMethod(method) {
     if (activeBtn) {
         activeBtn.className = "pm-btn py-2.5 px-2 rounded-lg border-2 border-emerald-600 bg-emerald-50 text-emerald-800 flex flex-col items-center gap-1 font-bold";
     }
-
     if (method === 'DEBT') {
         document.getElementById('chk-paid-input').value = '0';
         calcCheckoutDebt();
@@ -1064,21 +1207,14 @@ function setPaymentMethod(method) {
 }
 
 function fillFullPayment() {
-    let orderTotal = 0;
-    for (const k in cart) orderTotal += cart[k].price * cart[k].qty;
-    const cust = customers.find(c => c.id === selectedCustomerId);
-    const oldDebt = cust ? (Number(cust.currentDebt) || 0) : 0;
+    const { orderTotal, oldDebt } = getActiveCheckoutContext();
     document.getElementById('chk-paid-input').value = formatmoney(orderTotal + oldDebt);
     calcCheckoutDebt();
 }
 
 function calcCheckoutDebt() {
-    let orderTotal = 0;
-    for (const k in cart) orderTotal += cart[k].price * cart[k].qty;
-    const cust = customers.find(c => c.id === selectedCustomerId);
-    const oldDebt = cust ? (Number(cust.currentDebt) || 0) : 0;
+    const { orderTotal, oldDebt } = getActiveCheckoutContext();
     const grandTotal = orderTotal + oldDebt;
-
     const paid = getRawNum('chk-paid-input');
     const labelEl = document.getElementById('chk-balance-label');
     const valEl = document.getElementById('chk-balance-value');
@@ -1094,9 +1230,11 @@ function calcCheckoutDebt() {
     }
 }
 
-async function confirmPosCheckout() {
-    let orderTotal = 0;
-    let totalCost = 0;
+// Tạo đơn "Đang giao dịch" (Màu cam - Trừ kho giữ hàng, in phiếu đi giao, chưa thu tiền)
+async function createPendingDeliveryOrder() {
+    if (Object.keys(cart).length === 0) return alert("Giỏ hàng đang trống!");
+
+    let orderTotal = 0, totalCost = 0;
     const orderItems = [];
 
     for (const k in cart) {
@@ -1104,23 +1242,160 @@ async function confirmPosCheckout() {
         const baseQty = c.qty * c.conversionRate;
         const lineTotal = c.price * c.qty;
         const lineCost = baseQty * c.costPricePerBase;
-
         orderTotal += lineTotal;
         totalCost += lineCost;
-
         orderItems.push({
-            productId: c.productId,
-            productName: c.name,
-            baseUnit: c.baseUnit,
-            unitName: c.unitName,
-            conversionRate: c.conversionRate,
-            qty: c.qty,
-            baseQty: baseQty,
-            unitPrice: c.price,
-            costPricePerBase: c.costPricePerBase,
-            totalPrice: lineTotal,
-            totalCost: lineCost,
-            isGift: !!c.isGift
+            productId: c.productId, productName: c.name, baseUnit: c.baseUnit,
+            unitName: c.unitName, conversionRate: c.conversionRate, qty: c.qty,
+            baseQty, unitPrice: c.price, costPricePerBase: c.costPricePerBase,
+            totalPrice: lineTotal, totalCost: lineCost, isGift: !!c.isGift
+        });
+    }
+
+    const cust = customers.find(c => c.id === selectedCustomerId);
+    const oldDebt = cust ? (Number(cust.currentDebt) || 0) : 0;
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const orderCode = `BH-${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const seller = document.getElementById('seller-name').value.trim() || "Chủ Quán";
+
+    try {
+        const orderData = {
+            orderCode,
+            orderType: "SALE",
+            status: "PROCESSING", // Đang giao dịch (Màu cam)
+            customerId: selectedCustomerId,
+            customerSnapshot: cust ? { name: cust.name, phone: cust.phone || '', address: cust.address || '', type: cust.type } : { name: "Khách Lẻ", phone: "", address: "", type: "RETAIL" },
+            seller,
+            items: orderItems,
+            totalAmount: orderTotal,
+            totalCost: totalCost,
+            oldDebt: oldDebt,
+            paidAmount: 0,
+            newDebt: oldDebt + orderTotal,
+            paymentMethod: "PENDING",
+            cashAmount: 0,
+            bankAmount: 0,
+            dateStr,
+            createdAt: Date.now()
+        };
+
+        await db.collection("orders").doc(orderCode).set(orderData);
+
+        for (const item of orderItems) {
+            const dbProd = inventory.find(i => i.id === item.productId);
+            if (dbProd) {
+                const startStock = dbProd.stock;
+                const endStock = startStock - item.baseQty;
+                await db.collection("inventory").doc(dbProd.id).update({ stock: endStock });
+                await writeInventoryLog(
+                    dbProd.id, dbProd.name, "SALE", orderCode,
+                    `Xuất giao chờ TT: ${item.qty} ${item.unitName}${item.isGift ? ' (Tặng 0đ)' : ''}`,
+                    startStock, -item.baseQty, endStock
+                );
+            }
+        }
+
+        playBeepSound();
+        cart = {};
+        renderCart();
+        loadOverviewDashboard();
+        openPrintableInvoice(orderData);
+    } catch (e) {
+        alert("Lỗi khi lưu đơn chờ giao: " + e.message);
+    }
+}
+
+async function confirmPosCheckout() {
+    const btn = document.getElementById('btn-confirm-checkout');
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const seller = document.getElementById('seller-name').value.trim() || "Chủ Quán";
+
+    // CHỐT THANH TOÁN ĐƠN "ĐANG GIAO DỊCH" -> CHUYỂN SANG "HOÀN THÀNH" (MÀU XANH)
+    if (currentSettlingOrder) {
+        const ord = currentSettlingOrder;
+        const cust = customers.find(c => c.id === ord.customerId);
+        const oldDebt = cust ? (Number(cust.currentDebt) || 0) : (Number(ord.oldDebt) || 0);
+        const orderTotal = Number(ord.totalAmount) || 0;
+        const grandTotal = orderTotal + oldDebt;
+        const rawPaid = getRawNum('chk-paid-input');
+        const actualPaidRecorded = Math.min(rawPaid, grandTotal);
+        const newDebt = Math.max(0, grandTotal - actualPaidRecorded);
+
+        if (newDebt > 0 && (!ord.customerId || ord.customerId === 'GUEST')) {
+            return alert("Đơn Khách Lẻ không thể Ghi nợ phần tiền thiếu! Vui lòng thu đủ hoặc chọn khách hàng.");
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang chốt đơn...`;
+
+        try {
+            const updatedFields = {
+                status: "COMPLETED",
+                oldDebt,
+                paidAmount: actualPaidRecorded,
+                newDebt,
+                paymentMethod: currentPaymentMethod,
+                cashAmount: currentPaymentMethod === 'CASH' ? actualPaidRecorded : 0,
+                bankAmount: currentPaymentMethod === 'BANK' ? actualPaidRecorded : 0,
+                completedAt: Date.now()
+            };
+
+            await db.collection("orders").doc(ord.orderCode).update(updatedFields);
+
+            if (cust && newDebt !== oldDebt) {
+                await db.collection("customers").doc(cust.id).update({ currentDebt: newDebt, updatedAt: Date.now() });
+                await db.collection("debts").add({
+                    customerId: cust.id, customerName: cust.name, ledgerType: "RECEIVABLE",
+                    transactionType: "ORDER_DEBT", referenceId: ord.orderCode,
+                    beforeDebt: oldDebt, changeAmount: newDebt - oldDebt, afterDebt: newDebt,
+                    note: `Chốt thanh toán đơn giao ${ord.orderCode} (Tổng: ${formatmoney(orderTotal)}đ, Trả: ${formatmoney(actualPaidRecorded)}đ)`,
+                    createdAt: Date.now()
+                });
+            }
+
+            if (actualPaidRecorded > 0) {
+                await db.collection("cashbook").add({
+                    voucherCode: "PT-" + ord.orderCode.split('-').pop(), type: "INCOME",
+                    channel: currentPaymentMethod === 'BANK' ? 'BANK' : 'CASH', category: "SALE",
+                    amount: actualPaidRecorded, referenceId: ord.orderCode,
+                    note: `Thu tiền chốt đơn giao ${ord.orderCode} (${cust ? cust.name : (ord.customerSnapshot?.name || 'Khách lẻ')})`,
+                    seller, dateStr, createdAt: Date.now()
+                });
+            }
+
+            const finalOrder = { ...ord, ...updatedFields };
+            playBeepSound();
+            closeCheckoutModal();
+            loadOrdersModule();
+            loadOverviewDashboard();
+            openPrintableInvoice(finalOrder);
+        } catch (e) {
+            alert("Lỗi khi chốt thanh toán: " + e.message);
+        }
+
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fa-solid fa-print"></i> Hoàn Tất & Xuất Hóa Đơn`;
+        return;
+    }
+
+    // THANH TOÁN TRỰC TIẾP TẠI QUẦY
+    let orderTotal = 0, totalCost = 0;
+    const orderItems = [];
+
+    for (const k in cart) {
+        const c = cart[k];
+        const baseQty = c.qty * c.conversionRate;
+        const lineTotal = c.price * c.qty;
+        const lineCost = baseQty * c.costPricePerBase;
+        orderTotal += lineTotal;
+        totalCost += lineCost;
+        orderItems.push({
+            productId: c.productId, productName: c.name, baseUnit: c.baseUnit,
+            unitName: c.unitName, conversionRate: c.conversionRate, qty: c.qty,
+            baseQty, unitPrice: c.price, costPricePerBase: c.costPricePerBase,
+            totalPrice: lineTotal, totalCost: lineCost, isGift: !!c.isGift
         });
     }
 
@@ -1135,19 +1410,15 @@ async function confirmPosCheckout() {
         return alert("Khách Lẻ vãng lai không thể Ghi nợ! Vui lòng bấm nút [+] chọn hoặc tạo Tên Khách Hàng trước khi ghi nợ.");
     }
 
-    const btn = document.getElementById('btn-confirm-checkout');
     btn.disabled = true;
     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang xử lý đơn...`;
-
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const orderCode = `BH-${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const seller = document.getElementById('seller-name').value.trim() || "Chủ Quán";
 
     try {
         const orderData = {
             orderCode,
             orderType: "SALE",
+            status: "COMPLETED",
             customerId: selectedCustomerId,
             customerSnapshot: cust ? { name: cust.name, phone: cust.phone || '', address: cust.address || '', type: cust.type } : { name: "Khách Lẻ", phone: "", address: "", type: "RETAIL" },
             seller,
@@ -1181,19 +1452,11 @@ async function confirmPosCheckout() {
         }
 
         if (cust && newDebt !== oldDebt) {
-            await db.collection("customers").doc(cust.id).update({
-                currentDebt: newDebt,
-                updatedAt: Date.now()
-            });
+            await db.collection("customers").doc(cust.id).update({ currentDebt: newDebt, updatedAt: Date.now() });
             await db.collection("debts").add({
-                customerId: cust.id,
-                customerName: cust.name,
-                ledgerType: "RECEIVABLE",
-                transactionType: "ORDER_DEBT",
-                referenceId: orderCode,
-                beforeDebt: oldDebt,
-                changeAmount: newDebt - oldDebt,
-                afterDebt: newDebt,
+                customerId: cust.id, customerName: cust.name, ledgerType: "RECEIVABLE",
+                transactionType: "ORDER_DEBT", referenceId: orderCode,
+                beforeDebt: oldDebt, changeAmount: newDebt - oldDebt, afterDebt: newDebt,
                 note: `Mua đơn ${orderCode} (Tổng: ${formatmoney(orderTotal)}đ, Trả: ${formatmoney(actualPaidRecorded)}đ)`,
                 createdAt: Date.now()
             });
@@ -1201,16 +1464,11 @@ async function confirmPosCheckout() {
 
         if (actualPaidRecorded > 0) {
             await db.collection("cashbook").add({
-                voucherCode: "PT-" + orderCode.split('-').pop(),
-                type: "INCOME",
-                channel: currentPaymentMethod === 'BANK' ? 'BANK' : 'CASH',
-                category: "SALE",
-                amount: actualPaidRecorded,
-                referenceId: orderCode,
+                voucherCode: "PT-" + orderCode.split('-').pop(), type: "INCOME",
+                channel: currentPaymentMethod === 'BANK' ? 'BANK' : 'CASH', category: "SALE",
+                amount: actualPaidRecorded, referenceId: orderCode,
                 note: `Thu tiền bán hàng đơn ${orderCode} (${cust ? cust.name : 'Khách lẻ'})`,
-                seller,
-                dateStr,
-                createdAt: Date.now()
+                seller, dateStr, createdAt: Date.now()
             });
         }
 
@@ -1218,6 +1476,7 @@ async function confirmPosCheckout() {
         closeCheckoutModal();
         cart = {};
         renderCart();
+        loadOverviewDashboard();
         openPrintableInvoice(orderData);
     } catch (e) {
         alert("Lỗi khi lưu đơn hàng: " + e.message);
@@ -1228,7 +1487,7 @@ async function confirmPosCheckout() {
 }
 
 // ==========================================
-// MODULE 4: HÓA ĐƠN IN HEADER VIETQR TĨNH (KHÔNG GẮN SỐ TIỀN) & LỊCH SỬ ĐƠN
+// MODULE 4: HÓA ĐƠN IN PRE-RENDER SIÊU TỐC (SETTIMEOUT 400MS) & LỊCH SỬ ĐƠN
 // ==========================================
 function setInvoicePrintMode(mode) {
     document.body.classList.remove('print-mode-A5', 'print-mode-80mm');
@@ -1237,24 +1496,31 @@ function setInvoicePrintMode(mode) {
     const btnA5 = document.getElementById('btn-mode-A5');
     const btn80 = document.getElementById('btn-mode-80mm');
     if (mode === 'A5') {
-        btnA5.className = "px-2.5 py-1 rounded text-xs font-bold bg-blue-600 text-white";
-        btn80.className = "px-2.5 py-1 rounded text-xs font-bold bg-slate-700 text-slate-300";
+        btnA5.className = "px-2.5 py-1.5 rounded text-xs font-bold bg-blue-600 text-white cursor-pointer";
+        btn80.className = "px-2.5 py-1.5 rounded text-xs font-bold bg-slate-700 text-slate-300 cursor-pointer";
     } else {
-        btn80.className = "px-2.5 py-1 rounded text-xs font-bold bg-blue-600 text-white";
-        btnA5.className = "px-2.5 py-1 rounded text-xs font-bold bg-slate-700 text-slate-300";
+        btn80.className = "px-2.5 py-1.5 rounded text-xs font-bold bg-blue-600 text-white cursor-pointer";
+        btnA5.className = "px-2.5 py-1.5 rounded text-xs font-bold bg-slate-700 text-slate-300 cursor-pointer";
     }
 }
 
-// Hàm gọi lệnh in AirPrint siêu tốc trên iPhone (Dùng setTimeout giải phóng UI thread chống đơ/lag)
+function syncToPreRenderedPrintArea() {
+    const source = document.getElementById('printable-bill');
+    const target = document.getElementById('pre-rendered-print-area');
+    if (source && target) {
+        target.innerHTML = source.innerHTML;
+    }
+}
+
 function triggerFastAirPrint() {
     const editBox = document.getElementById('quick-bill-edit-box');
     if (editBox) editBox.classList.add('hidden');
+    syncToPreRenderedPrintArea();
     setTimeout(() => {
         window.print();
-    }, 120);
+    }, 400);
 }
 
-// Bật/tắt khung sửa nhanh Tên cửa hàng, SĐT & Tài khoản QR ngay trên đầu Hóa đơn
 function toggleQuickBillHeaderEdit() {
     const box = document.getElementById('quick-bill-edit-box');
     if (!box) return;
@@ -1269,7 +1535,6 @@ function toggleQuickBillHeaderEdit() {
     }
 }
 
-// Gõ sửa tới đâu cập nhật ngay lên tờ Hóa đơn & lưu cấu hình tới đó
 function applyQuickBillHeaderEdit() {
     storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Tạp Hóa Huy Hoàng";
     storeSettings.phone = document.getElementById('qb-store-phone').value.trim();
@@ -1282,7 +1547,6 @@ function applyQuickBillHeaderEdit() {
     db.collection("shop_data").doc("settings").set(storeSettings).catch(() => {});
     if (typeof applyStoreSettingsToUI === 'function') applyStoreSettingsToUI();
 
-    // Cập nhật tức thì chữ và mã QR trên hóa đơn đang mở
     document.getElementById('bill-store-name').innerText = storeSettings.storeName.toUpperCase();
     document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
     document.getElementById('bill-store-address').innerText = storeSettings.address || "";
@@ -1299,62 +1563,7 @@ function applyQuickBillHeaderEdit() {
     } else {
         qrBox.classList.add('hidden');
     }
-}
-
-// Hàm gọi lệnh in AirPrint siêu tốc trên iPhone (Dùng setTimeout giải phóng UI thread chống đơ/lag)
-function triggerFastAirPrint() {
-    const editBox = document.getElementById('quick-bill-edit-box');
-    if (editBox) editBox.classList.add('hidden');
-    setTimeout(() => {
-        window.print();
-    }, 120);
-}
-
-// Bật/tắt khung sửa nhanh Tên cửa hàng, SĐT & Tài khoản QR ngay trên đầu Hóa đơn
-function toggleQuickBillHeaderEdit() {
-    const box = document.getElementById('quick-bill-edit-box');
-    if (!box) return;
-    box.classList.toggle('hidden');
-    if (!box.classList.contains('hidden')) {
-        document.getElementById('qb-store-name').value = storeSettings.storeName || "Tạp Hóa Huy Hoàng";
-        document.getElementById('qb-store-phone').value = storeSettings.phone || "";
-        document.getElementById('qb-store-address').value = storeSettings.address || "";
-        document.getElementById('qb-bank-id').value = storeSettings.bankId || "MB";
-        document.getElementById('qb-bank-acc').value = storeSettings.bankAcc || "";
-        document.getElementById('qb-bank-owner').value = storeSettings.bankOwner || "";
-    }
-}
-
-// Gõ sửa tới đâu cập nhật ngay lên tờ Hóa đơn & lưu cấu hình tới đó
-function applyQuickBillHeaderEdit() {
-    storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Tạp Hóa Huy Hoàng";
-    storeSettings.phone = document.getElementById('qb-store-phone').value.trim();
-    storeSettings.address = document.getElementById('qb-store-address').value.trim();
-    storeSettings.bankId = document.getElementById('qb-bank-id').value;
-    storeSettings.bankAcc = document.getElementById('qb-bank-acc').value.trim();
-    storeSettings.bankOwner = document.getElementById('qb-bank-owner').value.trim().toUpperCase();
-
-    localStorage.setItem('hh_store_settings', JSON.stringify(storeSettings));
-    db.collection("shop_data").doc("settings").set(storeSettings).catch(() => {});
-    if (typeof applyStoreSettingsToUI === 'function') applyStoreSettingsToUI();
-
-    // Cập nhật tức thì chữ và mã QR trên hóa đơn đang mở
-    document.getElementById('bill-store-name').innerText = storeSettings.storeName.toUpperCase();
-    document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
-    document.getElementById('bill-store-address').innerText = storeSettings.address || "";
-
-    const qrBox = document.getElementById('bill-vietqr-box');
-    const qrImg = document.getElementById('bill-vietqr-img');
-    const bankInfo = document.getElementById('bill-bank-info');
-
-    if (storeSettings.bankAcc && storeSettings.bankId) {
-        const accName = encodeURIComponent(storeSettings.bankOwner || "");
-        qrImg.src = `https://img.vietqr.io/image/${storeSettings.bankId}-${storeSettings.bankAcc}-qr_only.png?accountName=${accName}`;
-        bankInfo.innerText = `${storeSettings.bankId}: ${storeSettings.bankAcc}\n${storeSettings.bankOwner || ''}`;
-        qrBox.classList.remove('hidden');
-    } else {
-        qrBox.classList.add('hidden');
-    }
+    syncToPreRenderedPrintArea();
 }
 
 function openPrintableInvoice(order) {
@@ -1366,7 +1575,10 @@ function openPrintableInvoice(order) {
     document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
     document.getElementById('bill-store-address').innerText = storeSettings.address || "";
 
-    document.getElementById('bill-title-type').innerText = order.orderType === 'RETURN' ? 'PHIẾU HOÀN TRẢ HÀNG' : 'HÓA ĐƠN BÁN HÀNG';
+    const isPending = order.status === 'PROCESSING';
+    document.getElementById('bill-title-type').innerText = order.orderType === 'RETURN'
+        ? 'PHIẾU HOÀN TRẢ HÀNG'
+        : (isPending ? 'PHIẾU GIAO HÀNG (ĐANG GIAO DỊCH)' : 'HÓA ĐƠN BÁN HÀNG');
     document.getElementById('bill-detail-id').innerText = order.orderCode;
     document.getElementById('bill-detail-date').innerText = new Date(order.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
     document.getElementById('bill-detail-seller').innerText = order.seller || "Chủ Quán";
@@ -1377,20 +1589,19 @@ function openPrintableInvoice(order) {
     document.getElementById('bill-cust-address').innerText = snap.address || "---";
 
     const tbody = document.getElementById('bill-detail-items');
-    tbody.innerHTML = '';
-    (order.items || []).forEach((item, idx) => {
+    tbody.innerHTML = (order.items || []).map((item, idx) => {
         const giftLabel = item.isGift ? ` (Tặng 0đ)` : '';
-        tbody.innerHTML += `
+        return `
             <tr>
-                <td class="border border-slate-400 p-1.5 text-center a5-only-col">${idx + 1}</td>
-                <td class="border border-slate-400 p-1.5 font-semibold">${item.productName}${giftLabel}</td>
-                <td class="border border-slate-400 p-1.5 text-center">${item.unitName}</td>
-                <td class="border border-slate-400 p-1.5 text-center font-bold">${item.qty}</td>
-                <td class="border border-slate-400 p-1.5 text-right">${formatmoney(item.unitPrice)}</td>
-                <td class="border border-slate-400 p-1.5 text-right font-bold">${formatmoney(item.totalPrice)}</td>
+                <td class="border border-slate-400 p-1.5 text-center a5-only-col col-stt">${idx + 1}</td>
+                <td class="border border-slate-400 p-1.5 font-semibold col-name" style="word-wrap:break-word;overflow-wrap:break-word;white-space:normal;">${item.productName}${giftLabel}</td>
+                <td class="border border-slate-400 p-1.5 text-center col-unit">${item.unitName}</td>
+                <td class="border border-slate-400 p-1.5 text-center font-bold col-qty">${item.qty}</td>
+                <td class="border border-slate-400 p-1.5 text-right col-price">${formatmoney(item.unitPrice)}</td>
+                <td class="border border-slate-400 p-1.5 text-right font-bold col-total">${formatmoney(item.totalPrice)}</td>
             </tr>
         `;
-    });
+    }).join('');
 
     document.getElementById('bill-detail-total').innerText = `${formatmoney(order.totalAmount)} đ`;
     document.getElementById('bill-old-debt').innerText = `${formatmoney(order.oldDebt || 0)} đ`;
@@ -1410,10 +1621,17 @@ function openPrintableInvoice(order) {
         qrBox.classList.add('hidden');
     }
 
+    const btnSettle = document.getElementById('btn-settle-from-bill');
+    if (btnSettle) {
+        if (isPending) btnSettle.classList.remove('hidden');
+        else btnSettle.classList.add('hidden');
+    }
+
     const btnRet = document.getElementById('btn-open-return-from-bill');
-    if (order.orderType === 'RETURN') btnRet.classList.add('hidden');
+    if (order.orderType === 'RETURN' || isPending) btnRet.classList.add('hidden');
     else btnRet.classList.remove('hidden');
 
+    syncToPreRenderedPrintArea();
     document.getElementById('bill-detail-modal').classList.remove('hidden');
 }
 
@@ -1421,7 +1639,7 @@ async function loadOrdersModule() {
     const fromStr = document.getElementById('ord-date-from')?.value || '2024-01-01';
     const toStr = document.getElementById('ord-date-to')?.value || '2060-12-31';
     const tbody = document.getElementById('orders-tbody');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải danh sách hóa đơn...</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải danh sách đơn hàng...</td></tr>`;
 
     try {
         const snap = await db.collection("orders")
@@ -1447,7 +1665,14 @@ function renderOrdersList() {
     let count = 0;
 
     ordersList.forEach((ord, idx) => {
-        if (typeFilter !== 'all' && ord.orderType !== typeFilter) return;
+        const isReturn = ord.orderType === 'RETURN';
+        const isPending = ord.status === 'PROCESSING';
+
+        if (typeFilter === 'PROCESSING' && !isPending) return;
+        if (typeFilter === 'COMPLETED' && (isPending || isReturn)) return;
+        if (typeFilter === 'RETURN' && !isReturn) return;
+        if (typeFilter === 'SALE' && isReturn) return;
+
         const custName = ord.customerSnapshot?.name || 'Khách Lẻ';
         const custPhone = ord.customerSnapshot?.phone || '';
         if (search && !ord.orderCode.toLowerCase().includes(search) && !custName.toLowerCase().includes(search) && !custPhone.includes(search)) return;
@@ -1455,36 +1680,43 @@ function renderOrdersList() {
         count++;
         const timeStr = new Date(ord.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
         const itemsText = (ord.items || []).map(i => `${i.productName} (${i.qty} ${i.unitName})`).join(', ');
-        const isReturn = ord.orderType === 'RETURN';
 
-        const badge = isReturn 
-            ? `<span class="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded">HOÀN HÀNG</span>`
-            : `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded">XUẤT BÁN</span>`;
+        let badge = '';
+        if (isReturn) {
+            badge = `<span class="bg-purple-100 text-purple-800 text-[10px] font-bold px-2 py-0.5 rounded-full">HOÀN HÀNG</span>`;
+        } else if (isPending) {
+            badge = `<span class="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full">🚚 ĐANG GIAO DỊCH</span>`;
+        } else {
+            badge = `<span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">✅ HOÀN THÀNH</span>`;
+        }
 
         tbody.innerHTML += `
-            <tr class="hover:bg-blue-50/40 transition">
+            <tr class="${isPending ? 'bg-amber-50/40' : 'hover:bg-blue-50/40'} transition">
                 <td class="p-3">
-                    <div class="font-bold text-inni-blue flex items-center gap-1.5">${ord.orderCode} ${badge}</div>
+                    <div class="font-bold text-inni-blue flex items-center justify-between sm:justify-start gap-1.5 flex-wrap">${ord.orderCode} ${badge}</div>
                     <div class="text-xs text-slate-400 mt-0.5">${timeStr} • TN: ${ord.seller || 'Chủ Quán'}</div>
                 </td>
                 <td class="p-3">
-                    <div class="font-bold text-slate-800">${custName}</div>
-                    <div class="text-xs text-slate-500">${custPhone}</div>
+                    <div class="font-bold text-slate-800">${custName} ${custPhone ? `<span class="text-xs font-normal text-slate-500">(${custPhone})</span>` : ''}</div>
                 </td>
                 <td class="p-3 text-xs text-slate-600 max-w-xs truncate mobile-hide-col" title="${itemsText}">${itemsText}</td>
-                <td class="p-3 text-right font-black ${isReturn ? 'text-purple-700' : 'text-slate-800'}">${formatmoney(ord.totalAmount)} đ</td>
-                <td class="p-3 text-right font-semibold text-emerald-600 mobile-hide-col">${formatmoney(ord.paidAmount || 0)} đ</td>
-                <td class="p-3 text-right font-bold text-red-600">${formatmoney(ord.newDebt || 0)} đ</td>
-                <td class="p-3 text-center whitespace-nowrap">
-                    <button onclick="openPrintableInvoice(ordersList[${idx}])" title="Xem & In hóa đơn" class="px-2.5 py-1.5 bg-blue-50 hover:bg-inni-blue text-inni-blue hover:text-white rounded-lg text-xs font-bold transition scale-active mr-1">
+                <td class="p-3 text-right font-black whitespace-nowrap ${isReturn ? 'text-purple-700' : 'text-slate-800'}">${formatmoney(ord.totalAmount)} đ</td>
+                <td class="p-3 text-right font-semibold text-emerald-600 whitespace-nowrap mobile-hide-col">${isPending ? '<span class="text-amber-600 italic text-xs">Chờ thu</span>' : `${formatmoney(ord.paidAmount || 0)} đ`}</td>
+                <td class="p-3 text-right font-bold text-red-600 whitespace-nowrap">${isPending ? `${formatmoney(ord.totalAmount)} đ` : `${formatmoney(ord.newDebt || 0)} đ`}</td>
+                <td class="p-3 text-center whitespace-nowrap pt-2">
+                    ${isPending ? `
+                    <button onclick="openSettleOrderModal(ordersList[${idx}])" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition scale-active mr-1 shadow-sm">
+                        <i class="fa-solid fa-hand-holding-dollar"></i> Xác Nhận Thanh Toán
+                    </button>` : ''}
+                    <button onclick="openPrintableInvoice(ordersList[${idx}])" class="px-3 py-2 bg-blue-50 hover:bg-inni-blue text-inni-blue hover:text-white rounded-xl text-xs font-bold transition scale-active mr-1">
                         <i class="fa-solid fa-print"></i> In
                     </button>
-                    <button onclick="copyOrderToPos(ordersList[${idx}])" title="Sao chép toàn bộ mặt hàng trong đơn này ra POS" class="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-500 text-amber-700 hover:text-white rounded-lg text-xs font-bold transition scale-active mr-1">
-                        <i class="fa-solid fa-copy"></i> Sao Chép Đơn
+                    <button onclick="copyOrderToPos(ordersList[${idx}])" class="px-3 py-2 bg-amber-50 hover:bg-amber-500 text-amber-700 hover:text-white rounded-xl text-xs font-bold transition scale-active mr-1">
+                        <i class="fa-solid fa-copy"></i> Sao Chép
                     </button>
-                    ${!isReturn ? `
-                    <button onclick="openReturnOrderModal(ordersList[${idx}])" title="Khách trả lại hàng lỗi/móp" class="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white rounded-lg text-xs font-bold transition scale-active">
-                        <i class="fa-solid fa-rotate-left"></i> Hoàn Hàng
+                    ${(!isReturn && !isPending) ? `
+                    <button onclick="openReturnOrderModal(ordersList[${idx}])" class="px-3 py-2 bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white rounded-xl text-xs font-bold transition scale-active">
+                        <i class="fa-solid fa-rotate-left"></i> Hoàn
                     </button>` : ''}
                 </td>
             </tr>
@@ -1513,8 +1745,8 @@ async function deleteEntireOrder() {
             }
         }
 
-        // 2. Đảo ngược công nợ khách hàng & Xóa lịch sử nợ của đơn này
-        if (ord.customerId && ord.customerId !== 'GUEST') {
+        // 2. Đảo ngược công nợ khách hàng (Chỉ áp dụng nếu đơn đã chốt COMPLETED, vì đơn PROCESSING chưa cộng vào nợ khách)
+        if (ord.status !== 'PROCESSING' && ord.customerId && ord.customerId !== 'GUEST') {
             const cust = customers.find(c => c.id === ord.customerId);
             const debtDiff = (ord.newDebt || 0) - (ord.oldDebt || 0);
             if (cust && debtDiff !== 0) {
@@ -2418,7 +2650,7 @@ async function loadReportsModule() {
     const toStr = document.getElementById('rep-date-to')?.value || '2060-12-31';
     const tbody = document.getElementById('rep-tbody');
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tính toán báo cáo Lãi/Lỗ...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tính toán báo cáo Lãi/Lỗ...</td></tr>`;
 
     try {
         const snap = await db.collection("orders")
@@ -2432,17 +2664,19 @@ async function loadReportsModule() {
         const itemMap = {};
 
         salesOrders.forEach(ord => {
-            netRev += Number(ord.totalAmount) || 0;
-            totalCost += Number(ord.totalCost) || 0;
-
             (ord.items || []).forEach(i => {
                 if ((Number(i.qty) || 0) <= 0) return;
+                const lineRev = Number(i.totalPrice) || 0;
+                const lineCost = Number(i.totalCost) || 0;
+                netRev += lineRev;
+                totalCost += lineCost;
+
                 if (!itemMap[i.productName]) {
                     itemMap[i.productName] = { baseUnit: i.baseUnit || 'ĐV', baseQty: 0, rev: 0, cost: 0 };
                 }
                 itemMap[i.productName].baseQty += Number(i.baseQty) || 0;
-                itemMap[i.productName].rev += Number(i.totalPrice) || 0;
-                itemMap[i.productName].cost += Number(i.totalCost) || 0;
+                itemMap[i.productName].rev += lineRev;
+                itemMap[i.productName].cost += lineCost;
             });
         });
 
@@ -2456,24 +2690,171 @@ async function loadReportsModule() {
         tbody.innerHTML = '';
 
         if (sortedNames.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-slate-400 italic">Chưa có dữ liệu bán hàng trong kỳ này.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400 italic">Chưa có dữ liệu bán hàng trong kỳ này.</td></tr>`;
             return;
         }
 
         sortedNames.forEach(name => {
             const st = itemMap[name];
             const profit = st.rev - st.cost;
+            const safeName = name.replace(/'/g, "\\'");
+
             tbody.innerHTML += `
                 <tr class="hover:bg-slate-50">
                     <td class="p-3 font-bold text-slate-800">${name}</td>
                     <td class="p-3 text-center font-semibold">${st.baseQty} ${st.baseUnit}</td>
                     <td class="p-3 text-right font-bold text-inni-blue">${formatmoney(st.rev)} đ</td>
                     <td class="p-3 text-right text-slate-600">${formatmoney(st.cost)} đ</td>
-                    <td class="p-3 text-right font-black text-emerald-600">+${formatmoney(profit)} đ</td>
+                    <td class="p-3 text-right font-black ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}">${profit >= 0 ? '+' : ''}${formatmoney(profit)} đ</td>
+                    <td class="p-3 text-center whitespace-nowrap">
+                        <button onclick="editReportItem('${safeName}', ${st.baseQty}, ${st.rev}, ${st.cost})" title="Sửa Doanh thu / Tiền vốn mặt hàng này" class="text-amber-600 hover:text-amber-800 px-1.5 py-1"><i class="fa-solid fa-pen"></i></button>
+                        <button onclick="deleteReportItem('${safeName}')" title="Xóa mặt hàng này khỏi báo cáo kỳ này" class="text-red-500 hover:text-red-700 px-1.5 py-1"><i class="fa-solid fa-trash-can"></i></button>
+                    </td>
                 </tr>
             `;
         });
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-red-500">Lỗi báo cáo: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Lỗi báo cáo: ${e.message}</td></tr>`;
     }
+}
+
+// Sửa trực tiếp Số lượng, Doanh thu, Tiền vốn của mặt hàng trong Báo cáo Lãi/Lỗ
+async function editReportItem(productName, oldBaseQty, oldRev, oldCost) {
+    const rawQty = prompt(`Sửa Tổng SL đã bán của "${productName}":`, oldBaseQty);
+    if (rawQty === null) return;
+    const newBaseQty = parseInt(rawQty.toString().replace(/\./g, '').replace(/\D/g, ''), 10) || 0;
+    if (newBaseQty <= 0) return alert("Số lượng phải lớn hơn 0! (Nếu muốn bỏ hẳn hãy bấm nút Xóa)");
+
+    const rawRev = prompt(`Sửa Tổng Doanh Thu của "${productName}" (VNĐ):`, oldRev);
+    if (rawRev === null) return;
+    const newRev = parseInt(rawRev.toString().replace(/\./g, '').replace(/\D/g, ''), 10) || 0;
+
+    const rawCost = prompt(`Sửa Tổng Tiền Vốn của "${productName}" (VNĐ):`, oldCost);
+    if (rawCost === null) return;
+    const newCost = parseInt(rawCost.toString().replace(/\./g, '').replace(/\D/g, ''), 10) || 0;
+
+    const fromStr = document.getElementById('rep-date-from')?.value || '2024-01-01';
+    const toStr = document.getElementById('rep-date-to')?.value || '2060-12-31';
+
+    try {
+        const snap = await db.collection("orders")
+            .where("dateStr", ">=", fromStr)
+            .where("dateStr", "<=", toStr)
+            .get();
+
+        let applied = false;
+        for (const doc of snap.docs) {
+            const ord = doc.data();
+            if (ord.orderType !== 'SALE' || (Number(ord.totalAmount) || 0) <= 0) continue;
+
+            let modified = false;
+            const updatedItems = [];
+
+            (ord.items || []).forEach(item => {
+                if (item.productName === productName && (Number(item.qty) || 0) > 0) {
+                    modified = true;
+                    if (!applied) {
+                        // Gán tổng số lượng, doanh thu, tiền vốn mới vào dòng đầu tiên tìm thấy trong kỳ
+                        applied = true;
+                        const rate = Number(item.conversionRate) || 1;
+                        const newQty = Math.max(1, Math.round(newBaseQty / rate));
+                        updatedItems.push({
+                            ...item,
+                            qty: newQty,
+                            baseQty: newBaseQty,
+                            unitPrice: Math.round(newRev / newQty),
+                            totalPrice: newRev,
+                            costPricePerBase: Math.round(newCost / newBaseQty),
+                            totalCost: newCost
+                        });
+                    }
+                    // Nếu mặt hàng này nằm rải rác ở các đơn khác trong cùng kỳ thì gom về dòng đã gán ở trên để tổng khớp 100%
+                } else {
+                    updatedItems.push(item);
+                }
+            });
+
+            if (modified) {
+                const newOrdTotal = updatedItems.reduce((s, i) => s + (Number(i.totalPrice) || 0), 0);
+                const newOrdCost = updatedItems.reduce((s, i) => s + (Number(i.totalCost) || 0), 0);
+                await doc.ref.update({
+                    items: updatedItems,
+                    totalAmount: newOrdTotal,
+                    totalCost: newOrdCost
+                });
+            }
+        }
+
+        loadReportsModule();
+        if (typeof loadOverviewDashboard === 'function') loadOverviewDashboard();
+        alert(`✅ Đã cập nhật Lãi/Lỗ cho "${productName}" thành công!`);
+    } catch (e) {
+        alert("Lỗi khi sửa báo cáo Lãi/Lỗ: " + e.message);
+    }
+}
+
+// Xóa mặt hàng khỏi Báo cáo Lãi/Lỗ trong kỳ đang chọn
+async function deleteReportItem(productName) {
+    if (!confirm(`Bạn có chắc chắn muốn XÓA mặt hàng "${productName}" khỏi Báo cáo Lãi/Lỗ trong kỳ này?`)) return;
+
+    const fromStr = document.getElementById('rep-date-from')?.value || '2024-01-01';
+    const toStr = document.getElementById('rep-date-to')?.value || '2060-12-31';
+
+    try {
+        const snap = await db.collection("orders")
+            .where("dateStr", ">=", fromStr)
+            .where("dateStr", "<=", toStr)
+            .get();
+
+        for (const doc of snap.docs) {
+            const ord = doc.data();
+            if (ord.orderType !== 'SALE') continue;
+
+            const origLen = (ord.items || []).length;
+            const remainingItems = (ord.items || []).filter(i => i.productName !== productName);
+
+            if (remainingItems.length !== origLen) {
+                const newOrdTotal = remainingItems.reduce((s, i) => s + (Number(i.totalPrice) || 0), 0);
+                const newOrdCost = remainingItems.reduce((s, i) => s + (Number(i.totalCost) || 0), 0);
+                await doc.ref.update({
+                    items: remainingItems,
+                    totalAmount: newOrdTotal,
+                    totalCost: newOrdCost
+                });
+            }
+        }
+
+        loadReportsModule();
+        if (typeof loadOverviewDashboard === 'function') loadOverviewDashboard();
+        alert(`✅ Đã xóa "${productName}" khỏi Báo cáo Lãi/Lỗ!`);
+    } catch (e) {
+        alert("Lỗi khi xóa dòng báo cáo: " + e.message);
+    }
+}
+// ==========================================
+// TỰ ĐỘNG ẨN/HIỆN THANH CÔNG CỤ KHI CUỘN TRÊN MOBILE (CHUẨN SAPO)
+// ==========================================
+function initMobileAutoHideToolbar() {
+    const sellGrid = document.getElementById('sell-grid');
+    const subToolbar = document.getElementById('pos-sub-toolbar');
+    const searchBar = document.getElementById('pos-search-bar');
+    if (!sellGrid) return;
+
+    let lastScrollTop = 0;
+    sellGrid.addEventListener('scroll', () => {
+        if (window.innerWidth > 767) return; // Chỉ áp dụng trên màn hình điện thoại (< 768px)
+        const st = sellGrid.scrollTop;
+        if (Math.abs(st - lastScrollTop) < 15) return;
+
+        if (st > lastScrollTop && st > 40) {
+            // Vuốt màn hình xuống -> Ẩn thanh công cụ phụ & thu gọn thanh tìm kiếm để chừa chỗ hiển thị hàng
+            if (subToolbar) subToolbar.classList.add('mobile-toolbar-hidden');
+            if (searchBar) searchBar.classList.add('mobile-toolbar-hidden');
+        } else {
+            // Vuốt màn hình lên -> Hiện lại bình thường
+            if (subToolbar) subToolbar.classList.remove('mobile-toolbar-hidden');
+            if (searchBar) searchBar.classList.remove('mobile-toolbar-hidden');
+        }
+        lastScrollTop = st <= 0 ? 0 : st;
+    }, { passive: true });
 }
