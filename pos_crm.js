@@ -1245,9 +1245,122 @@ function setInvoicePrintMode(mode) {
     }
 }
 
+// Hàm gọi lệnh in AirPrint siêu tốc trên iPhone (Dùng setTimeout giải phóng UI thread chống đơ/lag)
+function triggerFastAirPrint() {
+    const editBox = document.getElementById('quick-bill-edit-box');
+    if (editBox) editBox.classList.add('hidden');
+    setTimeout(() => {
+        window.print();
+    }, 120);
+}
+
+// Bật/tắt khung sửa nhanh Tên cửa hàng, SĐT & Tài khoản QR ngay trên đầu Hóa đơn
+function toggleQuickBillHeaderEdit() {
+    const box = document.getElementById('quick-bill-edit-box');
+    if (!box) return;
+    box.classList.toggle('hidden');
+    if (!box.classList.contains('hidden')) {
+        document.getElementById('qb-store-name').value = storeSettings.storeName || "Tạp Hóa Huy Hoàng";
+        document.getElementById('qb-store-phone').value = storeSettings.phone || "";
+        document.getElementById('qb-store-address').value = storeSettings.address || "";
+        document.getElementById('qb-bank-id').value = storeSettings.bankId || "MB";
+        document.getElementById('qb-bank-acc').value = storeSettings.bankAcc || "";
+        document.getElementById('qb-bank-owner').value = storeSettings.bankOwner || "";
+    }
+}
+
+// Gõ sửa tới đâu cập nhật ngay lên tờ Hóa đơn & lưu cấu hình tới đó
+function applyQuickBillHeaderEdit() {
+    storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Tạp Hóa Huy Hoàng";
+    storeSettings.phone = document.getElementById('qb-store-phone').value.trim();
+    storeSettings.address = document.getElementById('qb-store-address').value.trim();
+    storeSettings.bankId = document.getElementById('qb-bank-id').value;
+    storeSettings.bankAcc = document.getElementById('qb-bank-acc').value.trim();
+    storeSettings.bankOwner = document.getElementById('qb-bank-owner').value.trim().toUpperCase();
+
+    localStorage.setItem('hh_store_settings', JSON.stringify(storeSettings));
+    db.collection("shop_data").doc("settings").set(storeSettings).catch(() => {});
+    if (typeof applyStoreSettingsToUI === 'function') applyStoreSettingsToUI();
+
+    // Cập nhật tức thì chữ và mã QR trên hóa đơn đang mở
+    document.getElementById('bill-store-name').innerText = storeSettings.storeName.toUpperCase();
+    document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
+    document.getElementById('bill-store-address').innerText = storeSettings.address || "";
+
+    const qrBox = document.getElementById('bill-vietqr-box');
+    const qrImg = document.getElementById('bill-vietqr-img');
+    const bankInfo = document.getElementById('bill-bank-info');
+
+    if (storeSettings.bankAcc && storeSettings.bankId) {
+        const accName = encodeURIComponent(storeSettings.bankOwner || "");
+        qrImg.src = `https://img.vietqr.io/image/${storeSettings.bankId}-${storeSettings.bankAcc}-qr_only.png?accountName=${accName}`;
+        bankInfo.innerText = `${storeSettings.bankId}: ${storeSettings.bankAcc}\n${storeSettings.bankOwner || ''}`;
+        qrBox.classList.remove('hidden');
+    } else {
+        qrBox.classList.add('hidden');
+    }
+}
+
+// Hàm gọi lệnh in AirPrint siêu tốc trên iPhone (Dùng setTimeout giải phóng UI thread chống đơ/lag)
+function triggerFastAirPrint() {
+    const editBox = document.getElementById('quick-bill-edit-box');
+    if (editBox) editBox.classList.add('hidden');
+    setTimeout(() => {
+        window.print();
+    }, 120);
+}
+
+// Bật/tắt khung sửa nhanh Tên cửa hàng, SĐT & Tài khoản QR ngay trên đầu Hóa đơn
+function toggleQuickBillHeaderEdit() {
+    const box = document.getElementById('quick-bill-edit-box');
+    if (!box) return;
+    box.classList.toggle('hidden');
+    if (!box.classList.contains('hidden')) {
+        document.getElementById('qb-store-name').value = storeSettings.storeName || "Tạp Hóa Huy Hoàng";
+        document.getElementById('qb-store-phone').value = storeSettings.phone || "";
+        document.getElementById('qb-store-address').value = storeSettings.address || "";
+        document.getElementById('qb-bank-id').value = storeSettings.bankId || "MB";
+        document.getElementById('qb-bank-acc').value = storeSettings.bankAcc || "";
+        document.getElementById('qb-bank-owner').value = storeSettings.bankOwner || "";
+    }
+}
+
+// Gõ sửa tới đâu cập nhật ngay lên tờ Hóa đơn & lưu cấu hình tới đó
+function applyQuickBillHeaderEdit() {
+    storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Tạp Hóa Huy Hoàng";
+    storeSettings.phone = document.getElementById('qb-store-phone').value.trim();
+    storeSettings.address = document.getElementById('qb-store-address').value.trim();
+    storeSettings.bankId = document.getElementById('qb-bank-id').value;
+    storeSettings.bankAcc = document.getElementById('qb-bank-acc').value.trim();
+    storeSettings.bankOwner = document.getElementById('qb-bank-owner').value.trim().toUpperCase();
+
+    localStorage.setItem('hh_store_settings', JSON.stringify(storeSettings));
+    db.collection("shop_data").doc("settings").set(storeSettings).catch(() => {});
+    if (typeof applyStoreSettingsToUI === 'function') applyStoreSettingsToUI();
+
+    // Cập nhật tức thì chữ và mã QR trên hóa đơn đang mở
+    document.getElementById('bill-store-name').innerText = storeSettings.storeName.toUpperCase();
+    document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
+    document.getElementById('bill-store-address').innerText = storeSettings.address || "";
+
+    const qrBox = document.getElementById('bill-vietqr-box');
+    const qrImg = document.getElementById('bill-vietqr-img');
+    const bankInfo = document.getElementById('bill-bank-info');
+
+    if (storeSettings.bankAcc && storeSettings.bankId) {
+        const accName = encodeURIComponent(storeSettings.bankOwner || "");
+        qrImg.src = `https://img.vietqr.io/image/${storeSettings.bankId}-${storeSettings.bankAcc}-qr_only.png?accountName=${accName}`;
+        bankInfo.innerText = `${storeSettings.bankId}: ${storeSettings.bankAcc}\n${storeSettings.bankOwner || ''}`;
+        qrBox.classList.remove('hidden');
+    } else {
+        qrBox.classList.add('hidden');
+    }
+}
+
 function openPrintableInvoice(order) {
     currentViewingOrder = order;
     setInvoicePrintMode(storeSettings.printSize || 'A5');
+    document.getElementById('quick-bill-edit-box')?.classList.add('hidden');
 
     document.getElementById('bill-store-name').innerText = (storeSettings.storeName || "TẠP HÓA HUY HOÀNG").toUpperCase();
     document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
@@ -1284,7 +1397,6 @@ function openPrintableInvoice(order) {
     document.getElementById('bill-paid-amount').innerText = `${formatmoney(order.paidAmount || 0)} đ`;
     document.getElementById('bill-new-debt').innerText = `${formatmoney(order.newDebt || 0)} đ`;
 
-    // QUY TẮC MÃ VIETQR MỚI: TĨNH 100% (CHỈ CHỨA STK & TÊN CHỦ TK, TUYỆT ĐỐI KHÔNG GẮN SỐ TIỀN)
     const qrBox = document.getElementById('bill-vietqr-box');
     const qrImg = document.getElementById('bill-vietqr-img');
     const bankInfo = document.getElementById('bill-bank-info');
@@ -1303,10 +1415,6 @@ function openPrintableInvoice(order) {
     else btnRet.classList.remove('hidden');
 
     document.getElementById('bill-detail-modal').classList.remove('hidden');
-}
-
-function closeBillModal() {
-    document.getElementById('bill-detail-modal').classList.add('hidden');
 }
 
 async function loadOrdersModule() {
@@ -1363,9 +1471,9 @@ function renderOrdersList() {
                     <div class="font-bold text-slate-800">${custName}</div>
                     <div class="text-xs text-slate-500">${custPhone}</div>
                 </td>
-                <td class="p-3 text-xs text-slate-600 max-w-xs truncate" title="${itemsText}">${itemsText}</td>
+                <td class="p-3 text-xs text-slate-600 max-w-xs truncate mobile-hide-col" title="${itemsText}">${itemsText}</td>
                 <td class="p-3 text-right font-black ${isReturn ? 'text-purple-700' : 'text-slate-800'}">${formatmoney(ord.totalAmount)} đ</td>
-                <td class="p-3 text-right font-semibold text-emerald-600">${formatmoney(ord.paidAmount || 0)} đ</td>
+                <td class="p-3 text-right font-semibold text-emerald-600 mobile-hide-col">${formatmoney(ord.paidAmount || 0)} đ</td>
                 <td class="p-3 text-right font-bold text-red-600">${formatmoney(ord.newDebt || 0)} đ</td>
                 <td class="p-3 text-center whitespace-nowrap">
                     <button onclick="openPrintableInvoice(ordersList[${idx}])" title="Xem & In hóa đơn" class="px-2.5 py-1.5 bg-blue-50 hover:bg-inni-blue text-inni-blue hover:text-white rounded-lg text-xs font-bold transition scale-active mr-1">
@@ -1504,9 +1612,9 @@ function renderCrmModule() {
         tbody.innerHTML += `
             <tr class="hover:bg-slate-50 transition">
                 <td class="p-3 font-bold text-slate-800">${c.name}</td>
-                <td class="p-3">${typeBadge}</td>
+                <td class="p-3 mobile-hide-col">${typeBadge}</td>
                 <td class="p-3 font-semibold text-slate-600">${c.phone || '---'}</td>
-                <td class="p-3 text-xs text-slate-500">${c.address || '---'}</td>
+                <td class="p-3 text-xs text-slate-500 mobile-hide-col">${c.address || '---'}</td>
                 <td class="p-3 text-right font-black ${debt > 0 ? 'text-red-600 text-base' : 'text-emerald-600'}">${formatmoney(debt)} đ</td>
                 <td class="p-3 text-center whitespace-nowrap">
                     <button onclick="openDebtLedgerModal('${c.id}')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-amber-300 rounded-lg text-xs font-bold shadow-sm scale-active mr-1">

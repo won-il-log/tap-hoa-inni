@@ -326,16 +326,16 @@ function renderInventory() {
 
         const tr = document.createElement('tr');
         tr.className = `transition ${rowBg}`;
-        tr.innerHTML = `
-            <td class="p-3">${imgTag}</td>
+       tr.innerHTML = `
+            <td class="p-3 mobile-hide-col">${imgTag}</td>
             <td class="p-3">
                 <div class="font-bold text-slate-800 flex items-center flex-wrap">${item.name}${lowBadge}</div>
-                <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                <div class="text-[11px] text-slate-500 mt-0.5 hidden sm:flex items-center gap-2 flex-wrap">
                     <span class="bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-semibold">${item.category}</span>${item.barcode ? `<span><i class="fa-solid fa-barcode"></i> ${item.barcode}</span>` : ''}
                     ${item.keywords.length ? `<span class="text-blue-600 italic">Zalo: ${item.keywords.join(', ')}</span>` : ''}
                 </div>
             </td>
-            <td class="p-3 text-right font-semibold text-slate-600">${formatmoney(item.costPrice)} đ<span class="text-[10px] text-slate-400 block">/${item.baseUnit}</span></td>
+            <td class="p-3 text-right font-semibold text-slate-600 mobile-hide-col">${formatmoney(item.costPrice)} đ<span class="text-[10px] text-slate-400 block">/${item.baseUnit}</span></td>
             <td class="p-3 text-right bg-red-50/20">${retailHtml}</td>
             <td class="p-3 bg-blue-50/20">${wholesaleHtml}</td>
             <td class="p-3 text-center">${formatStockMultiUnit(item)}</td>

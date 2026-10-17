@@ -58,47 +58,80 @@
         /* Kích thước QR chuẩn 3.5x3.5 cm trên hóa đơn */
         .vietqr-header-img { width: 35mm; height: 35mm; object-fit: contain; }
 
-        /* Cấu hình In Ấn Linh Hoạt: Khổ A5 (AirPrint iPhone) vs Khổ 80mm (Máy in nhiệt) */
+        /* Tinh giản giao diện gọn gàng trên Điện thoại (< 768px) */
+        @media (max-width: 767px) {
+            main p.text-xs.text-slate-500 { display: none !important; }
+            .mobile-hide-col { display: none !important; }
+            table { min-width: 100% !important; }
+            #sell-grid { max-height: 44vh !important; gap: 6px !important; }
+            #cart-list { min-height: 180px !important; max-height: 300px !important; }
+        }
+
+        /* Cấu hình In Ấn Siêu Tốc cho iPhone AirPrint & Máy in nhiệt */
         @media print {
-            body, html { background: white !important; height: auto !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; }
-            aside, main, nav, .print-hidden, #splash-screen { display: none !important; }
-            
-            #bill-detail-modal { 
-                position: static !important; 
-                display: block !important; 
-                background: white !important; 
-                padding: 0 !important; 
-                margin: 0 !important;
+            @page { margin: 0; }
+            *, *::before, *::after {
+                animation: none !important;
+                transition: none !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                box-shadow: none !important;
             }
-            #bill-detail-modal > div { 
-                box-shadow: none !important; 
-                border: none !important; 
-                max-width: 100% !important; 
-                width: 100% !important; 
-                height: auto !important; 
-                max-height: none !important; 
+            body, html {
+                background: #fff !important;
+                height: auto !important;
+                overflow: visible !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            /* Ẩn triệt để 100% menu, kho hàng, giỏ hàng và các modal phía sau */
+            body > *:not(#bill-detail-modal),
+            aside, main, nav, .print-hidden, #splash-screen {
+                display: none !important;
+            }
+            #bill-detail-modal {
+                position: static !important;
+                display: block !important;
+                background: #fff !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 100% !important;
+                height: auto !important;
+            }
+            #bill-detail-modal > div {
+                max-width: 100% !important;
+                width: 100% !important;
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+                border: none !important;
                 border-radius: 0 !important;
             }
-            
+            #printable-bill {
+                overflow: visible !important;
+                height: auto !important;
+            }
+
             /* Chế độ in 80mm */
-            body.print-mode-80mm #printable-bill { 
-                width: 78mm !important; 
-                margin: 0 auto !important; 
-                padding: 2mm !important; 
-                font-size: 11px !important; 
+            body.print-mode-80mm #printable-bill {
+                width: 78mm !important;
+                margin: 0 auto !important;
+                padding: 2mm !important;
+                font-size: 11px !important;
             }
             body.print-mode-80mm .a5-only-col { display: none !important; }
             body.print-mode-80mm .vietqr-header-img { width: 28mm !important; height: 28mm !important; }
 
             /* Chế độ in A5 (AirPrint trên iPhone / Máy in văn phòng) */
-            body.print-mode-A5 #printable-bill { 
-                width: 100% !important; 
+            body.print-mode-A5 #printable-bill {
+                width: 100% !important;
                 max-width: 210mm !important;
-                padding: 6mm 8mm !important; 
-                font-size: 12px !important; 
+                padding: 6mm 8mm !important;
+                font-size: 12px !important;
             }
             body.print-mode-A5 .vietqr-header-img { width: 34mm !important; height: 34mm !important; }
         }
+
     </style>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800 flex flex-col md:flex-row h-[100dvh] overflow-hidden print-mode-A5">
@@ -169,14 +202,17 @@
                 <!-- CỘT TRÁI (58%): TÌM KIẾM, QUÉT MÃ, LÊN ĐƠN ZALO & LƯỚI HÀNG HÓA -->
                 <div class="lg:w-[58%] flex flex-col lg:h-full bg-white rounded-xl shadow-sm border border-slate-200 p-3">
                     
-                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100 shrink-0">
-                        <div class="flex items-center gap-2">
-                            <button onclick="openZaloModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-lg text-xs shadow-sm flex items-center gap-1.5 scale-active">
-                                <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> Lên Đơn Zalo Tự Động (F3)
+                    <div class="flex flex-wrap items-center justify-between gap-1.5 mb-2.5 pb-2 border-b border-slate-100 shrink-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <button onclick="openZaloModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs shadow-sm flex items-center gap-1 scale-active">
+                                <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> <span class="hidden sm:inline">Lên Đơn</span> Zalo
                             </button>
-                            <button onclick="openHoldOrdersModal()" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold px-3 py-2 rounded-lg text-xs flex items-center gap-1.5 scale-active relative">
-                                <i class="fa-solid fa-pause-circle text-amber-600"></i> Cất Đơn / Lưu Tạm
+                            <button onclick="openHoldOrdersModal()" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 scale-active relative">
+                                <i class="fa-solid fa-pause-circle text-amber-600"></i> Cất Đơn
                                 <span id="hold-count-badge" class="bg-amber-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">0</span>
+                            </button>
+                            <button onclick="openSettingsModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 scale-active">
+                                <i class="fa-solid fa-sliders text-inni-blue"></i> Cài Đặt Bill/QR
                             </button>
                         </div>
                         <div class="text-[11px] text-slate-400 hidden xl:block font-medium">
@@ -329,9 +365,9 @@
                             <tr class="bg-slate-100 text-slate-600 text-xs uppercase border-b border-slate-200">
                                 <th class="p-3">Mã Đơn / Ngày Giờ</th>
                                 <th class="p-3">Khách Hàng</th>
-                                <th class="p-3">Tóm Tắt Mặt Hàng</th>
+                                <th class="p-3 mobile-hide-col">Tóm Tắt Mặt Hàng</th>
                                 <th class="p-3 text-right">Tổng Đơn</th>
-                                <th class="p-3 text-right">Đã Trả</th>
+                                <th class="p-3 text-right mobile-hide-col">Đã Trả</th>
                                 <th class="p-3 text-right">Còn Nợ</th>
                                 <th class="p-3 text-center">Thao Tác (In / Copy / Hoàn)</th>
                             </tr>
@@ -424,9 +460,9 @@
                     <table class="w-full text-left border-collapse min-w-[850px]">
                         <thead>
                             <tr class="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
-                                <th class="p-3 w-14">Ảnh</th>
+                                <th class="p-3 w-14 mobile-hide-col">Ảnh</th>
                                 <th class="p-3">Tên Mặt Hàng / Mã Vạch</th>
-                                <th class="p-3 text-right">Giá Vốn (ĐV nhỏ)</th>
+                                <th class="p-3 text-right mobile-hide-col">Giá Vốn (ĐV nhỏ)</th>
                                 <th class="p-3 text-right bg-red-50/50 text-red-700 font-bold">Giá Bán Lẻ / Giá Sỉ Lẻ</th>
                                 <th class="p-3 bg-blue-50/50 text-inni-blue font-bold">Đơn Vị Sỉ (Thùng / Lốc)</th>
                                 <th class="p-3 text-center">Tồn Kho Thực Tế</th>
@@ -511,9 +547,9 @@
                         <thead>
                             <tr class="bg-slate-100 text-slate-600 text-xs uppercase border-b border-slate-200">
                                 <th class="p-3">Tên Khách Hàng / Nhà Cung Cấp</th>
-                                <th class="p-3">Phân Loại Tệp</th>
+                                <th class="p-3 mobile-hide-col">Phân Loại Tệp</th>
                                 <th class="p-3">Số Điện Thoại</th>
-                                <th class="p-3">Địa Chỉ</th>
+                                <th class="p-3 mobile-hide-col">Địa Chỉ</th>
                                 <th class="p-3 text-right">Dư Nợ Hiện Tại</th>
                                 <th class="p-3 text-center">Sổ Nợ / Sửa / Xóa</th>
                             </tr>
@@ -676,17 +712,66 @@
         <div class="bg-white sm:rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-fade-in flex flex-col max-h-[94vh]">
             
             <!-- Thanh điều khiển trên cùng (Ẩn khi in) -->
-            <div class="bg-slate-900 text-white px-4 py-3 flex flex-wrap justify-between items-center gap-2 shrink-0 print-hidden">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs font-bold text-slate-300">Khổ giấy in:</span>
+            <div class="bg-slate-900 text-white px-3 py-2.5 flex flex-wrap justify-between items-center gap-2 shrink-0 print-hidden">
+                <div class="flex items-center gap-1.5 flex-wrap">
                     <button type="button" onclick="setInvoicePrintMode('A5')" id="btn-mode-A5" class="px-2.5 py-1 rounded text-xs font-bold bg-blue-600 text-white">
-                        Khổ A5 (AirPrint / Sỉ)
+                        Khổ A5 (AirPrint)
                     </button>
                     <button type="button" onclick="setInvoicePrintMode('80mm')" id="btn-mode-80mm" class="px-2.5 py-1 rounded text-xs font-bold bg-slate-700 text-slate-300">
-                        Khổ 80mm (In nhiệt)
+                        Khổ 80mm
+                    </button>
+                    <button type="button" onclick="toggleQuickBillHeaderEdit()" class="px-2.5 py-1 rounded text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white flex items-center gap-1 shadow-sm">
+                        <i class="fa-solid fa-pen-to-square"></i> Sửa Tên Shop / SĐT / QR
                     </button>
                 </div>
-                <button onclick="closeBillModal()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+                <button onclick="closeBillModal()" class="text-slate-400 hover:text-white text-xl px-1"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <!-- Khung tùy biến nhanh Tên cửa hàng, SĐT & Tài khoản VietQR ngay đầu Hóa đơn (Ẩn khi in) -->
+            <div id="quick-bill-edit-box" class="hidden bg-blue-50 border-b border-blue-200 p-3 text-xs space-y-2 shrink-0 print-hidden">
+                <div class="font-bold text-inni-blue uppercase flex justify-between items-center">
+                    <span><i class="fa-solid fa-store mr-1"></i>Tùy chỉnh nhanh Header Hóa Đơn & Mã VietQR:</span>
+                    <span class="text-[10px] text-emerald-700 font-semibold">Gõ tới đâu tự lưu & cập nhật Bill tới đó</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Tên cửa hàng:</label>
+                        <input type="text" id="qb-store-name" oninput="applyQuickBillHeaderEdit()" class="w-full border border-slate-300 rounded p-1.5 font-bold bg-white">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Số điện thoại:</label>
+                        <input type="text" id="qb-store-phone" oninput="applyQuickBillHeaderEdit()" class="w-full border border-slate-300 rounded p-1.5 font-bold bg-white">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Địa chỉ cửa hàng:</label>
+                        <input type="text" id="qb-store-address" oninput="applyQuickBillHeaderEdit()" class="w-full border border-slate-300 rounded p-1.5 bg-white">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-blue-200/60">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Ngân hàng (Mã QR):</label>
+                        <select id="qb-bank-id" onchange="applyQuickBillHeaderEdit()" class="w-full border border-slate-300 rounded p-1.5 font-bold bg-white">
+                            <option value="MB">MBBank (Quân Đội)</option>
+                            <option value="VCB">Vietcombank</option>
+                            <option value="ICB">VietinBank</option>
+                            <option value="BIDV">BIDV</option>
+                            <option value="ACB">ACB</option>
+                            <option value="TCB">Techcombank</option>
+                            <option value="VPB">VPBank</option>
+                            <option value="TPB">TPBank</option>
+                            <option value="STB">Sacombank</option>
+                            <option value="VBA">Agribank</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Số tài khoản nhận tiền:</label>
+                        <input type="text" id="qb-bank-acc" oninput="applyQuickBillHeaderEdit()" placeholder="Nhập STK..." class="w-full border border-slate-300 rounded p-1.5 font-bold text-inni-blue bg-white">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Tên chủ tài khoản:</label>
+                        <input type="text" id="qb-bank-owner" oninput="applyQuickBillHeaderEdit()" placeholder="VD: NGUYEN MINH NHAT" class="w-full border border-slate-300 rounded p-1.5 uppercase bg-white">
+                    </div>
+                </div>
             </div>
 
             <!-- VÙNG IN HÓA ĐƠN (HEADER TRÁI: SHOP + KHÁCH | HEADER PHẢI: MÃ VIETQR TĨNH 3.5x3.5CM) -->
@@ -774,7 +859,7 @@
 
             <!-- Thanh nút thao tác dưới cùng (Ẩn khi in) -->
             <div class="bg-slate-100 p-3 border-t flex flex-wrap gap-2 shrink-0 print-hidden">
-                <button onclick="window.print()" class="flex-1 bg-inni-blue hover:bg-blue-700 text-white font-black py-2.5 px-4 rounded-xl shadow transition scale-active flex justify-center items-center gap-2 text-sm">
+                <button onclick="triggerFastAirPrint()" class="flex-1 bg-inni-blue hover:bg-blue-700 text-white font-black py-2.5 px-4 rounded-xl shadow transition scale-active flex justify-center items-center gap-2 text-sm">
                     <i class="fa-solid fa-print"></i> In Hóa Đơn Ngay
                 </button>
                 <button onclick="copyOrderToPosFromBill()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-3.5 rounded-xl shadow transition scale-active flex justify-center items-center gap-1.5 text-xs">
