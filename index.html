@@ -1092,28 +1092,32 @@
     </nav>
 
     <!-- ========================================== -->
-    <!-- MÀN HÌNH ĐỘC LẬP 1: CHI TIẾT BÁO CÁO (MODULE 5) -->
+    <!-- MÀN HÌNH ĐỘC LẬP 1: CHI TIẾT BÁO CÁO (CÓ "CHỌN BÁO CÁO ▾" & BOTTOM SHEET 7 CHIỀU) -->
     <!-- ========================================== -->
     <div id="detailed-report-modal" class="fixed inset-0 bg-[#F4F6F8] z-[78] hidden flex flex-col overflow-hidden animate-fade-in">
-        <div class="bg-white border-b border-slate-200 px-3.5 py-3 flex items-center justify-between shrink-0">
-            <button type="button" onclick="closeDetailedReport()" class="flex items-center gap-2 text-slate-800 font-bold text-sm">
-                <i class="fa-solid fa-arrow-left text-base"></i>
-                <span id="dr-title">Báo cáo chi tiết</span>
-            </button>
-            <div id="dr-submode-wrap" class="hidden flex bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold">
-                <button type="button" id="dr-sub-day" onclick="setRevenueReportSubMode('DAY')" class="px-2.5 py-1 rounded-md bg-[#0088FF] text-white">Theo ngày</button>
-                <button type="button" id="dr-sub-prod" onclick="setRevenueReportSubMode('PRODUCT')" class="px-2.5 py-1 rounded-md text-slate-600">Theo sản phẩm</button>
+        <div class="bg-white border-b border-slate-200 px-3.5 py-2.5 flex items-center justify-between shrink-0">
+            <div class="flex items-center gap-2.5">
+                <button type="button" onclick="closeDetailedReport()" class="w-8 h-8 flex items-center justify-center text-slate-800 rounded-full active:bg-slate-100">
+                    <i class="fa-solid fa-arrow-left text-base"></i>
+                </button>
+                <div>
+                    <div id="dr-title" class="text-slate-800 font-bold text-sm leading-tight">Báo cáo chi tiết</div>
+                    <button type="button" id="dr-submode-wrap" onclick="openReportDimensionSheet()" class="hidden text-[11px] font-bold text-[#0088FF] flex items-center gap-1 mt-0.5 active:opacity-70">
+                        <span>CHỌN BÁO CÁO ▾</span>
+                        <span id="dr-current-dim-label" class="text-slate-600 font-semibold underline ml-0.5">Doanh thu theo ngày</span>
+                    </button>
+                </div>
             </div>
         </div>
-        <div class="bg-white border-b border-slate-200 px-3.5 py-2.5 flex flex-wrap items-center gap-2 shrink-0 text-xs">
+        <div class="bg-white border-b border-slate-200 px-3.5 py-2 flex flex-wrap items-center gap-2 shrink-0 text-xs">
             <div class="flex items-center gap-1.5" id="dr-date-filter-wrap">
                 <input type="date" id="dr-date-from" onchange="renderDetailedReportData(true)" class="border border-slate-300 rounded-lg p-1.5 font-bold bg-white">
                 <span class="text-slate-400">→</span>
                 <input type="date" id="dr-date-to" onchange="renderDetailedReportData(true)" class="border border-slate-300 rounded-lg p-1.5 font-bold bg-white">
             </div>
-            <div class="relative flex-1 min-w-[160px]" id="dr-search-wrap">
+            <div class="relative flex-1 min-w-[150px]" id="dr-search-wrap">
                 <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2 text-slate-400"></i>
-                <input type="text" id="dr-search-input" oninput="onDebouncedReportSearch()" placeholder="Lọc theo tên, mã chứng từ..." class="w-full bg-[#F4F6F8] rounded-lg py-1.5 pl-8 pr-3 text-xs focus:outline-none">
+                <input type="text" id="dr-search-input" oninput="onDebouncedReportSearch()" placeholder="Lọc theo tên, mã đơn, khách..." class="w-full bg-[#F4F6F8] rounded-lg py-1.5 pl-8 pr-3 text-xs focus:outline-none">
             </div>
             <select id="dr-extra-filter" onchange="renderDetailedReportData(true)" class="hidden border border-slate-300 rounded-lg p-1.5 text-xs font-bold bg-white">
                 <option value="ALL">Tất cả loại chứng từ</option>
@@ -1123,8 +1127,10 @@
                 <option value="ADJUST">Cân bằng kho</option>
             </select>
         </div>
-        <div id="dr-summary-banner" class="p-3 shrink-0"></div>
-        <div class="flex-1 overflow-y-auto px-3 pb-10">
+
+        <!-- Vùng cuộn gồm Summary Card ở đầu trang + Danh sách chi tiết bên dưới -->
+        <div class="flex-1 overflow-y-auto px-3 pb-10 space-y-2.5 pt-2.5">
+            <div id="dr-summary-banner"></div>
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse text-xs">
@@ -1135,6 +1141,19 @@
                 <div id="dr-load-more-wrap" class="hidden p-3 text-center border-t border-slate-100">
                     <button type="button" onclick="loadMoreDetailedReport()" class="text-xs font-bold text-[#0088FF] px-4 py-2 rounded-lg bg-blue-50">Tải thêm dữ liệu...</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- BOTTOM SHEET TRƯỢT TỪ ĐÁY MÀN HÌNH LÊN ĐỂ CHỌN 7 CHIỀU PHÂN TÍCH -->
+        <div id="dr-dimension-sheet-modal" onclick="closeReportDimensionSheet()" class="fixed inset-0 bg-slate-900/50 z-[82] hidden flex items-end justify-center">
+            <div onclick="event.stopPropagation()" class="bg-white w-full max-w-lg rounded-t-2xl shadow-2xl overflow-hidden animate-fade-in max-h-[82dvh] flex flex-col pb-safe">
+                <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between shrink-0">
+                    <span class="font-bold text-sm text-slate-800" id="dr-sheet-title">Chọn loại báo cáo</span>
+                    <button type="button" onclick="closeReportDimensionSheet()" class="w-7 h-7 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div id="dr-dimension-options-list" class="divide-y divide-slate-100 overflow-y-auto text-sm"></div>
             </div>
         </div>
     </div>
@@ -1309,77 +1328,81 @@
                 </div>
             </div>
 
-            <!-- VÙNG IN & CHỤP ẢNH HÓA ĐƠN -->
-            <div class="flex-1 overflow-y-auto bg-white p-5 text-slate-900" id="printable-bill">
-                <div class="flex justify-between items-start border-b-2 border-slate-800 pb-3 mb-3 gap-3">
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2">
-                            <span class="text-xl font-black uppercase tracking-wide" id="bill-store-name">TẠP HÓA HUY HOÀNG</span>
-                        </div>
-                        <p class="text-xs text-slate-700 font-semibold">SĐT: <span id="bill-store-phone">...</span> • ĐC: <span id="bill-store-address">...</span></p>
+            <!-- VÙNG IN & CHỤP ẢNH HÓA ĐƠN A5 (MẬT ĐỘ CAO, NÉN CHIỀU CAO DÒNG, TIẾT KIỆM GIẤY) -->
+            <div class="flex-1 overflow-y-auto bg-white p-4 text-slate-900" id="printable-bill">
+                <!-- Header nén gọn khoảng cách dòng & Mã VietQR chuẩn 65x65px -->
+                <div class="flex justify-between items-start border-b border-slate-800 pb-1.5 mb-1.5 gap-2" style="line-height: 1.2;">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-base font-black uppercase tracking-wide leading-tight" id="bill-store-name">TẠP HÓA HUY HOÀNG</div>
+                        <div class="text-[11px] text-slate-700 font-semibold mt-0.5">SĐT: <span id="bill-store-phone">...</span> • ĐC: <span id="bill-store-address">...</span></div>
                         
-                        <div class="mt-2 pt-1.5 border-t border-dashed border-slate-300 text-xs space-y-0.5">
-                            <div class="font-black text-sm uppercase text-inni-blue" id="bill-title-type">HÓA ĐƠN BÁN HÀNG</div>
+                        <div class="mt-1 pt-1 border-t border-slate-200 text-[11px]" style="line-height: 1.22;">
+                            <div class="font-black text-xs uppercase text-inni-blue" id="bill-title-type">HÓA ĐƠN BÁN HÀNG</div>
                             <div><b>Mã HD:</b> <span id="bill-detail-id" class="font-bold">...</span> • <b>Ngày:</b> <span id="bill-detail-date">...</span></div>
                             <div><b>Khách hàng:</b> <span id="bill-cust-name" class="font-bold uppercase">...</span> (<span id="bill-cust-phone">...</span>)</div>
                             <div><b>Địa chỉ KH:</b> <span id="bill-cust-address">...</span></div>
                         </div>
                     </div>
 
-                    <div id="bill-vietqr-box" class="flex flex-col items-center text-center shrink-0 border border-slate-300 rounded-lg p-1.5 bg-white w-[36mm] max-w-[35%]">
-                        <img id="bill-vietqr-img" crossorigin="anonymous" src="" alt="VietQR" class="vietqr-header-img">
-                        <div class="text-[9px] font-bold text-slate-800 mt-0.5 leading-tight" id="bill-bank-info"></div>
-                        <div class="text-[8.5px] italic text-slate-600 leading-tight mt-0.5">
-                            Quét để chuyển khoản<br>(Nội dung CK: Họ tên + SĐT)
-                        </div>
+                    <div id="bill-vietqr-box" class="flex flex-col items-center text-center shrink-0 border border-slate-200 rounded p-1 bg-white">
+                        <img id="bill-vietqr-img" crossorigin="anonymous" src="" alt="VietQR" class="vietqr-header-img" style="width: 65px; height: 65px; object-fit: contain;">
+                        <div class="text-[8px] font-bold text-slate-800 mt-0.5 leading-tight whitespace-pre-line" id="bill-bank-info"></div>
                     </div>
                 </div>
 
-                <table class="w-full text-xs border-collapse border border-slate-400 mb-3">
+                <!-- Bảng hàng hóa 6 cột đồng bộ: STT 7% | Tên hàng 41% | ĐVT 10% | SL 8% | Đơn giá 16% | Thành tiền 18% -->
+                <table class="w-full text-[11px] border-collapse border border-slate-400 mb-1" style="table-layout: fixed;">
                     <thead>
                         <tr class="bg-slate-100 text-slate-800 font-bold">
-                            <th class="border border-slate-400 p-1.5 text-center a5-only-col col-stt">STT</th>
-                            <th class="border border-slate-400 p-1.5 text-left col-name">Tên hàng hóa</th>
-                            <th class="border border-slate-400 p-1.5 text-center col-unit">ĐVT</th>
-                            <th class="border border-slate-400 p-1.5 text-center col-qty">SL</th>
-                            <th class="border border-slate-400 p-1.5 text-right col-price">Đơn giá</th>
-                            <th class="border border-slate-400 p-1.5 text-right col-total">Thành tiền</th>
+                            <th class="border border-slate-400 text-center a5-only-col col-stt" style="width:7%; padding:2px 4px; line-height:1.15; white-space:nowrap;">STT</th>
+                            <th class="border border-slate-400 text-left col-name" style="width:41%; padding:2px 4px; line-height:1.15;">Tên hàng hóa</th>
+                            <th class="border border-slate-400 text-center col-unit" style="width:10%; padding:2px 4px; line-height:1.15; white-space:nowrap;">ĐVT</th>
+                            <th class="border border-slate-400 text-center col-qty" style="width:8%; padding:2px 4px; line-height:1.15; white-space:nowrap;">SL</th>
+                            <th class="border border-slate-400 text-right col-price" style="width:16%; padding:2px 4px; line-height:1.15; white-space:nowrap;">Đơn giá</th>
+                            <th class="border border-slate-400 text-right col-total" style="width:18%; padding:2px 4px; line-height:1.15; white-space:nowrap;">Thành tiền</th>
                         </tr>
                     </thead>
                     <tbody id="bill-detail-items"></tbody>
                 </table>
 
-                <div class="flex justify-end mb-4">
-                    <div class="w-full sm:w-72 space-y-1 text-xs">
-                        <div class="flex justify-between py-1 border-b border-dashed border-slate-300">
-                            <span class="font-bold">Tổng tiền hàng đơn này:</span>
-                            <span class="font-black text-sm" id="bill-detail-total">0 đ</span>
+                <!-- Dòng Tổng số lượng nằm ngay dưới bảng hàng hóa, trước phần tổng kết tiền -->
+                <div class="text-[11px] font-bold text-slate-800 mb-1" id="bill-total-qty-line" style="line-height: 1.25;">
+                    Tổng số lượng: 0
+                </div>
+
+                <!-- Khu vực tổng kết tiền & công nợ thu gọn (Loại bỏ khung viền lớn và đường kẻ đứt khúc thừa) -->
+                <div class="flex justify-end mb-1.5">
+                    <div class="w-full sm:w-64 text-[11px]" style="line-height: 1.25;">
+                        <div class="flex justify-between" style="margin: 1px 0;">
+                            <span class="font-bold">Tổng tiền hàng:</span>
+                            <span class="font-black text-xs" id="bill-detail-total">0 đ</span>
                         </div>
-                        <div class="flex justify-between py-1 border-b border-dashed border-slate-300 text-slate-700">
-                            <span class="font-bold">1. Nợ cũ:</span>
+                        <div class="flex justify-between text-slate-700" style="margin: 1px 0;">
+                            <span class="font-semibold">Nợ cũ:</span>
                             <span class="font-bold" id="bill-old-debt">0 đ</span>
                         </div>
-                        <div class="flex justify-between py-1 border-b border-dashed border-slate-300 text-emerald-800">
-                            <span class="font-bold">2. Đã thanh toán:</span>
+                        <div class="flex justify-between text-emerald-800" style="margin: 1px 0;">
+                            <span class="font-semibold">Đã thanh toán:</span>
                             <span class="font-bold" id="bill-paid-amount">0 đ</span>
                         </div>
-                        <div class="flex justify-between py-1.5 bg-slate-100 px-2 rounded font-black text-sm text-red-600 border border-slate-400">
-                            <span>3. TỔNG CÒN NỢ:</span>
+                        <div class="flex justify-between font-black text-xs text-red-600 pt-0.5 mt-0.5 border-t border-slate-400" style="margin: 1px 0;">
+                            <span>TỔNG CÒN NỢ:</span>
                             <span id="bill-new-debt">0 đ</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 text-center text-xs mt-3 pt-2 border-t border-dashed border-slate-300">
+                <!-- Khu vực chữ ký thu gọn -->
+                <div class="grid grid-cols-2 text-center text-[10.5px] mt-1.5 pt-1 border-t border-slate-200" style="line-height: 1.2;">
                     <div>
                         <b class="uppercase">Người Mua Hàng</b>
-                        <p class="text-[10px] italic text-slate-500">(Ký, ghi rõ họ tên)</p>
-                        <div class="h-14"></div>
+                        <p class="text-[9.5px] italic text-slate-500">(Ký, ghi rõ họ tên)</p>
+                        <div class="h-9"></div>
                     </div>
                     <div>
                         <b class="uppercase">Người Bán Hàng</b>
-                        <p class="text-[10px] italic text-slate-500">(Ký, ghi rõ họ tên)</p>
-                        <div class="h-14"></div>
+                        <p class="text-[9.5px] italic text-slate-500">(Ký, ghi rõ họ tên)</p>
+                        <div class="h-9"></div>
                         <div class="font-bold text-slate-700" id="bill-detail-seller"></div>
                     </div>
                 </div>

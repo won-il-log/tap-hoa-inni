@@ -1587,14 +1587,13 @@ function syncToPreRenderedPrintArea() {
     }
 }
 
-// Hàm gộp & quy đổi chính xác số lượng Thùng / Lốc / Lon trên hóa đơn (Không cộng lẫn lộn các ĐVT khác nhau)
+// Tính tổng số lượng trên hóa đơn: tách rõ từng đơn vị bán & quy đổi chuẩn về đơn vị cơ sở (không cộng gộp Thùng + Lon)
 function buildInvoiceQuantitySummary(items) {
-    if (!Array.isArray(items) || items.length === 0) {
-        return { unitGroupStr: '0', convertedBaseStr: '0' };
-    }
+    if (!Array.isArray(items) || items.length === 0) return "0";
 
-    const unitCounts = {};
+    const soldUnitCounts = {};
     const baseUnitCounts = {};
+    let hasConversion = false;
 
     items.forEach(item => {
         const qty = Number(item.qty) || 0;
@@ -1603,21 +1602,21 @@ function buildInvoiceQuantitySummary(items) {
         const uName = (item.unitName || item.baseUnit || 'ĐV').trim();
         const bUnit = (item.baseUnit || uName).trim();
         const rate = Number(item.conversionRate) || 1;
+        if (rate > 1) hasConversion = true;
         const baseQty = Number(item.baseQty) || (qty * rate);
 
-        unitCounts[uName] = (unitCounts[uName] || 0) + qty;
+        soldUnitCounts[uName] = (soldUnitCounts[uName] || 0) + qty;
         baseUnitCounts[bUnit] = (baseUnitCounts[bUnit] || 0) + baseQty;
     });
 
-    const unitGroupStr = Object.entries(unitCounts)
-        .map(([u, q]) => `${formatmoney(q)} ${u}`)
-        .join(' + ');
+    const soldParts = Object.entries(soldUnitCounts).map(([u, q]) => `${formatmoney(q)} ${u}`);
+    const baseParts = Object.entries(baseUnitCounts).map(([bu, bq]) => `${formatmoney(bq)} ${bu}`);
 
-    const convertedBaseStr = Object.entries(baseUnitCounts)
-        .map(([bu, bq]) => `${formatmoney(bq)} ${bu}`)
-        .join(', ');
-
-    return { unitGroupStr: unitGroupStr || '0', convertedBaseStr: convertedBaseStr || '0' };
+    if (soldParts.length === 0) return "0";
+    if (hasConversion || soldParts.length > 1) {
+        return `${soldParts.join(' + ')} (Quy đổi: ${baseParts.join(', ')})`;
+    }
+    return soldParts.join(' + ');
 }
 
 function triggerFastAirPrint() {
@@ -1646,10 +1645,10 @@ function triggerFastAirPrint() {
             <title>In Hóa Đơn</title>
             <script src="https://cdn.tailwindcss.com"><\/script>
             <style>
-                /* Giữ nguyên căn lề A5 trong trang A4 đang hoạt động ổn định */
+                /* Giữ nguyên căn lề A5 trong trang A4 đang hoạt động ổn định trên iPhone AirPrint */
                 @page {
                     size: ${is80mm ? '80mm auto' : 'A4 portrait'};
-                    margin: ${is80mm ? '3mm' : '10mm 0'};
+                    margin: ${is80mm ? '4mm' : '10mm 0'};
                 }
                 *, *::before, *::after { box-sizing: border-box !important; }
                 body {
@@ -1658,50 +1657,43 @@ function triggerFastAirPrint() {
                     color: #000;
                     margin: 0;
                     padding: 0;
-                    line-height: 1.15 !important;
+                    line-height: 1.2 !important;
                 }
                 .a5-print-container {
                     width: ${is80mm ? '76mm' : '118mm'} !important;
                     max-width: ${is80mm ? '76mm' : '118mm'} !important;
                     margin: 0 auto !important;
-                    padding: 2.5mm 3.5mm !important;
+                    padding: 4mm !important;
                     box-sizing: border-box !important;
-                    font-size: 10.5px !important;
-                    line-height: 1.15 !important;
+                    font-size: 11px !important;
                     overflow: hidden !important;
                 }
-                /* Nén chiều cao các khối Header, Bảng và Chữ ký để tiết kiệm giấy dọc */
-                .a5-print-container .pb-3 { padding-bottom: 4px !important; }
-                .a5-print-container .mb-3, .a5-print-container .mb-4 { margin-bottom: 5px !important; }
-                .a5-print-container .mt-2, .a5-print-container .mt-3 { margin-top: 4px !important; }
-                .a5-print-container .pt-1\.5, .a5-print-container .pt-2 { padding-top: 3px !important; }
-                .a5-print-container .py-1, .a5-print-container .py-1\.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
-                .a5-print-container .h-14 { height: 7mm !important; }
                 table {
                     width: 100% !important;
                     table-layout: fixed !important;
                     border-collapse: collapse !important;
                     box-sizing: border-box !important;
-                    margin-bottom: 4px !important;
+                    margin-bottom: 3px !important;
                 }
                 th, td {
                     border: 1px solid #64748b;
-                    padding: 2px 3px !important;
+                    padding: 2px 4px !important;
                     line-height: 1.15 !important;
+                    font-size: 11px !important;
                     word-wrap: break-word !important;
                     overflow-wrap: break-word !important;
                     white-space: normal !important;
                 }
-                /* Điều chỉnh tỷ lệ cột chuẩn 100% giúp Tên hàng ít rớt dòng, số tiền rõ ràng */
-                .col-stt { width: 7% !important; ${is80mm ? 'display:none;' : ''} }
-                .col-name { width: ${is80mm ? '38%' : '31%'} !important; }
-                .col-unit { width: 10% !important; }
-                .col-qty { width: 9% !important; }
-                .col-price { width: 20% !important; }
-                .col-total { width: 23% !important; }
+                /* Đồng bộ 6 cột chuẩn 100%: STT 7% | Tên hàng 41% | ĐVT 10% | SL 8% | Đơn giá 16% | Thành tiền 18% */
+                .col-stt { width: 7% !important; white-space: nowrap !important; ${is80mm ? 'display:none;' : ''} }
+                .col-name { width: ${is80mm ? '48%' : '41%'} !important; }
+                .col-unit { width: 10% !important; white-space: nowrap !important; }
+                .col-qty { width: 8% !important; white-space: nowrap !important; }
+                .col-price { width: 16% !important; white-space: nowrap !important; }
+                .col-total { width: 18% !important; white-space: nowrap !important; }
                 .vietqr-header-img {
-                    width: ${is80mm ? '22mm' : '24mm'} !important;
-                    height: ${is80mm ? '22mm' : '24mm'} !important;
+                    width: 65px !important;
+                    height: 65px !important;
                     object-fit: contain !important;
                 }
             </style>
@@ -1869,32 +1861,24 @@ function openPrintableInvoice(order) {
 
     const items = order.items || [];
     const tbody = document.getElementById('bill-detail-items');
-    const rowsHtml = items.map((item, idx) => {
+    tbody.innerHTML = items.map((item, idx) => {
         const giftLabel = item.isGift ? ` (Tặng 0đ)` : '';
-        const rate = Number(item.conversionRate) || 1;
-        const baseNote = (rate > 1 && item.baseUnit) ? ` <span class="text-[9.5px] font-normal text-slate-600">(${item.qty * rate} ${item.baseUnit})</span>` : '';
         return `
             <tr>
-                <td class="border border-slate-400 p-1 text-center a5-only-col col-stt">${idx + 1}</td>
-                <td class="border border-slate-400 p-1 font-semibold col-name" style="word-wrap:break-word;overflow-wrap:break-word;white-space:normal;">${item.productName}${giftLabel}${baseNote}</td>
-                <td class="border border-slate-400 p-1 text-center col-unit">${item.unitName}</td>
-                <td class="border border-slate-400 p-1 text-center font-bold col-qty">${item.qty}</td>
-                <td class="border border-slate-400 p-1 text-right col-price">${formatmoney(item.unitPrice)}</td>
-                <td class="border border-slate-400 p-1 text-right font-bold col-total">${formatmoney(item.totalPrice)}</td>
+                <td class="border border-slate-400 text-center a5-only-col col-stt" style="width:7%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${idx + 1}</td>
+                <td class="border border-slate-400 font-semibold col-name" style="width:41%; padding:2px 4px; line-height:1.15; word-wrap:break-word; overflow-wrap:break-word; white-space:normal;">${item.productName}${giftLabel}</td>
+                <td class="border border-slate-400 text-center col-unit" style="width:10%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${item.unitName}</td>
+                <td class="border border-slate-400 text-center font-bold col-qty" style="width:8%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${item.qty}</td>
+                <td class="border border-slate-400 text-right col-price" style="width:16%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${formatmoney(item.unitPrice)}</td>
+                <td class="border border-slate-400 text-right font-bold col-total" style="width:18%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${formatmoney(item.totalPrice)}</td>
             </tr>
         `;
     }).join('');
 
-    // Dòng tổng số lượng theo đúng từng ĐVT và tổng quy đổi về ĐV cơ bản (Không cộng lẫn Thùng + Lon)
-    const { unitGroupStr, convertedBaseStr } = buildInvoiceQuantitySummary(items);
-    const summaryRowHtml = items.length > 0 ? `
-        <tr class="bg-slate-50 font-bold text-[10.5px]">
-            <td colspan="2" class="border border-slate-400 p-1 text-left">Tổng SL (${items.length} dòng): ${unitGroupStr}</td>
-            <td colspan="4" class="border border-slate-400 p-1 text-right">Tổng quy đổi: ${convertedBaseStr}</td>
-        </tr>
-    ` : '';
-
-    tbody.innerHTML = rowsHtml + summaryRowHtml;
+    const totalQtyLine = document.getElementById('bill-total-qty-line');
+    if (totalQtyLine) {
+        totalQtyLine.innerText = `Tổng số lượng: ${buildInvoiceQuantitySummary(items)}`;
+    }
 
     document.getElementById('bill-detail-total').innerText = `${formatmoney(order.totalAmount)} đ`;
     document.getElementById('bill-old-debt').innerText = `${formatmoney(order.oldDebt || 0)} đ`;
@@ -2980,9 +2964,117 @@ async function openVoucherModal(type) {
 
 let activeReportCategoryTab = 'SALES';
 let currentDetailedReportType = null;
-let revenueReportSubMode = 'DAY'; // 'DAY' | 'PRODUCT'
+let revenueReportSubMode = sessionStorage.getItem('hh_rev_dim') || 'DAY';
+let profitReportSubMode = sessionStorage.getItem('hh_prof_dim') || 'DAY';
 let detailedReportLimit = 40;
 let reportSearchDebounce = null;
+let expandedReportGroupKey = null;
+let cachedReportOrdersByCode = {};
+
+const REVENUE_DIMENSIONS = [
+    { key: 'DAY', label: 'Doanh thu theo ngày' },
+    { key: 'MONTH', label: 'Doanh thu theo tháng' },
+    { key: 'YEAR', label: 'Doanh thu theo năm' },
+    { key: 'ORDER', label: 'Doanh thu theo đơn hàng' },
+    { key: 'CUSTOMER', label: 'Doanh thu theo khách hàng' },
+    { key: 'CUST_GROUP', label: 'Doanh thu theo nhóm khách hàng' },
+    { key: 'PRODUCT', label: 'Doanh thu theo sản phẩm' }
+];
+
+const PROFIT_DIMENSIONS = [
+    { key: 'DAY', label: 'Lợi nhuận theo ngày' },
+    { key: 'MONTH', label: 'Lợi nhuận theo tháng' },
+    { key: 'YEAR', label: 'Lợi nhuận theo năm' },
+    { key: 'ORDER', label: 'Lợi nhuận theo đơn hàng' },
+    { key: 'CUSTOMER', label: 'Lợi nhuận theo khách hàng' },
+    { key: 'CUST_GROUP', label: 'Lợi nhuận theo nhóm khách hàng' },
+    { key: 'PRODUCT', label: 'Lợi nhuận theo sản phẩm' }
+];
+
+function getActiveMultiDimensionKey() {
+    return currentDetailedReportType === 'SALES_PROFIT' ? profitReportSubMode : revenueReportSubMode;
+}
+
+function getActiveMultiDimensionList() {
+    return currentDetailedReportType === 'SALES_PROFIT' ? PROFIT_DIMENSIONS : REVENUE_DIMENSIONS;
+}
+
+function syncReportDimensionHeaderLabel() {
+    const lblEl = document.getElementById('dr-current-dim-label');
+    if (!lblEl) return;
+    const list = getActiveMultiDimensionList();
+    const curKey = getActiveMultiDimensionKey();
+    const found = list.find(x => x.key === curKey) || list[0];
+    lblEl.innerText = found.label;
+}
+
+function openReportDimensionSheet() {
+    const modal = document.getElementById('dr-dimension-sheet-modal');
+    const listEl = document.getElementById('dr-dimension-options-list');
+    const titleEl = document.getElementById('dr-sheet-title');
+    if (!modal || !listEl) return;
+
+    const isProfit = currentDetailedReportType === 'SALES_PROFIT';
+    if (titleEl) titleEl.innerText = isProfit ? 'Chọn loại báo cáo lợi nhuận' : 'Chọn loại báo cáo doanh thu';
+
+    const dims = getActiveMultiDimensionList();
+    const curKey = getActiveMultiDimensionKey();
+
+    listEl.innerHTML = dims.map(d => {
+        const isSelected = d.key === curKey;
+        return `
+            <button type="button" onclick="selectReportDimension('${d.key}')" class="w-full px-4 py-3.5 flex items-center justify-between text-left active:bg-slate-50 transition ${isSelected ? 'bg-blue-50/50 font-bold text-[#0088FF]' : 'text-slate-700 font-medium'}">
+                <span>${d.label}</span>
+                ${isSelected ? `<span class="text-emerald-600 font-black text-base">✓</span>` : ''}
+            </button>
+        `;
+    }).join('');
+
+    modal.classList.remove('hidden');
+}
+
+function closeReportDimensionSheet() {
+    document.getElementById('dr-dimension-sheet-modal')?.classList.add('hidden');
+}
+
+function selectReportDimension(dimKey) {
+    if (currentDetailedReportType === 'SALES_PROFIT') {
+        profitReportSubMode = dimKey;
+        sessionStorage.setItem('hh_prof_dim', dimKey);
+    } else {
+        revenueReportSubMode = dimKey;
+        sessionStorage.setItem('hh_rev_dim', dimKey);
+    }
+    expandedReportGroupKey = null;
+    syncReportDimensionHeaderLabel();
+    closeReportDimensionSheet();
+    renderDetailedReportData(true);
+}
+
+function toggleReportGroupExpand(groupKey) {
+    expandedReportGroupKey = (expandedReportGroupKey === groupKey) ? null : groupKey;
+    renderDetailedReportData(false);
+}
+
+function openOrderFromReport(orderCode) {
+    const ord = cachedReportOrdersByCode[orderCode];
+    if (ord) openPrintableInvoice(ord);
+}
+
+function formatDateVN(yyyyMmDd) {
+    if (!yyyyMmDd || !yyyyMmDd.includes('-')) return yyyyMmDd || '---';
+    const [y, m, d] = yyyyMmDd.split('-');
+    return `${d}/${m}/${y}`;
+}
+
+function isWholesaleOrderRecord(ord) {
+    if (ord.customerSnapshot && ord.customerSnapshot.type === 'WHOLESALE') return true;
+    if (ord.customerId && ord.customerId !== 'GUEST') {
+        const c = customers.find(x => x.id === ord.customerId);
+        if (c && c.type === 'WHOLESALE') return true;
+    }
+    return false;
+}
 
 function switchReportCategoryTab(cat) {
     activeReportCategoryTab = cat;
@@ -3026,7 +3118,7 @@ async function loadReportsModule() {
                 if (!itemMap[i.productName]) {
                     itemMap[i.productName] = { baseUnit: i.baseUnit || 'ĐV', baseQty: 0, rev: 0, cost: 0 };
                 }
-                itemMap[i.productName].baseQty += Number(i.baseQty) || 0;
+                itemMap[i.productName].baseQty += Number(i.baseQty) || (Number(i.qty) * (Number(i.conversionRate) || 1)) || 0;
                 itemMap[i.productName].rev += lineRev;
                 itemMap[i.productName].cost += lineCost;
             });
@@ -3071,10 +3163,10 @@ async function loadReportsModule() {
     }
 }
 
-// MỞ MÀN HÌNH BÁO CÁO CHI TIẾT ĐỘC LẬP (MODULE 5)
 function openDetailedReport(reportType) {
     currentDetailedReportType = reportType;
     detailedReportLimit = 40;
+    expandedReportGroupKey = null;
 
     const repFrom = document.getElementById('rep-date-from')?.value || '';
     const repTo = document.getElementById('rep-date-to')?.value || '';
@@ -3088,7 +3180,7 @@ function openDetailedReport(reportType) {
 
     const titles = {
         'SALES_REVENUE': 'Báo cáo doanh thu',
-        'SALES_PROFIT': 'Báo cáo lợi nhuận gộp',
+        'SALES_PROFIT': 'Báo cáo lợi nhuận',
         'SALES_PAYMENT': 'Báo cáo phương thức thanh toán',
         'INV_VALUATION': 'Báo cáo giá trị tồn kho',
         'INV_LEDGER': 'Sổ kho — Lịch sử nhập/xuất',
@@ -3101,7 +3193,10 @@ function openDetailedReport(reportType) {
     };
     document.getElementById('dr-title').innerText = titles[reportType] || 'Báo cáo chi tiết';
 
-    document.getElementById('dr-submode-wrap').classList.toggle('hidden', reportType !== 'SALES_REVENUE');
+    const isMultiDimReport = (reportType === 'SALES_REVENUE' || reportType === 'SALES_PROFIT');
+    document.getElementById('dr-submode-wrap').classList.toggle('hidden', !isMultiDimReport);
+    if (isMultiDimReport) syncReportDimensionHeaderLabel();
+
     document.getElementById('dr-extra-filter').classList.toggle('hidden', reportType !== 'INV_LEDGER');
     document.getElementById('dr-date-filter-wrap').classList.toggle('hidden', ['INV_VALUATION', 'INV_LOW_STOCK'].includes(reportType));
 
@@ -3110,15 +3205,9 @@ function openDetailedReport(reportType) {
 }
 
 function closeDetailedReport() {
+    closeReportDimensionSheet();
     document.getElementById('detailed-report-modal').classList.add('hidden');
     switchReportCategoryTab(activeReportCategoryTab);
-}
-
-function setRevenueReportSubMode(mode) {
-    revenueReportSubMode = mode;
-    document.getElementById('dr-sub-day').className = mode === 'DAY' ? "px-2.5 py-1 rounded-md bg-[#0088FF] text-white" : "px-2.5 py-1 rounded-md text-slate-600";
-    document.getElementById('dr-sub-prod').className = mode === 'PRODUCT' ? "px-2.5 py-1 rounded-md bg-[#0088FF] text-white" : "px-2.5 py-1 rounded-md text-slate-600";
-    renderDetailedReportData(true);
 }
 
 function onDebouncedReportSearch() {
@@ -3129,6 +3218,50 @@ function onDebouncedReportSearch() {
 function loadMoreDetailedReport() {
     detailedReportLimit += 40;
     renderDetailedReportData(false);
+}
+
+// Sinh danh sách chi tiết con khi người dùng bấm mở rộng (drill-down) 1 dòng báo cáo
+function buildExpandedOrdersSubListHtml(ordersArr, isProfitMode, colSpan = 2, subGroupsHtml = '') {
+    if ((!Array.isArray(ordersArr) || ordersArr.length === 0) && !subGroupsHtml) return '';
+    const rows = (ordersArr || []).slice(0, 50).map(o => {
+        const timeStr = new Date(o.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+        const cName = o.customerSnapshot?.name || 'Khách lẻ';
+        const rev = Number(o.totalAmount) || 0;
+        const cost = Number(o.totalCost) || 0;
+        const prof = rev - cost;
+        const margin = rev > 0 ? ((prof / rev) * 100).toFixed(2) + '%' : '—';
+
+        const rightInfo = isProfitMode
+            ? `<div class="text-right">
+                   <div class="font-bold text-emerald-600 text-xs">Lãi: ${formatmoney(prof)} đ (${margin})</div>
+                   <div class="text-[10.5px] text-slate-400">DT: ${formatmoney(rev)} đ • Vốn: ${formatmoney(cost)} đ</div>
+               </div>`
+            : `<div class="text-right font-bold text-[#0088FF] text-xs">${formatmoney(rev)} đ</div>`;
+
+        return `
+            <div onclick="openOrderFromReport('${o.orderCode}')" class="px-3 py-2 flex justify-between items-center bg-slate-50/90 hover:bg-blue-50/50 border-b border-slate-200/60 last:border-none cursor-pointer">
+                <div>
+                    <div class="font-bold text-[#0088FF] text-xs flex items-center gap-1.5">
+                        <span>${o.orderCode}</span>
+                        <span class="text-slate-600 font-normal">• ${cName}</span>
+                    </div>
+                    <div class="text-[10.5px] text-slate-400">${timeStr}</div>
+                </div>
+                ${rightInfo}
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <tr>
+            <td colspan="${colSpan}" class="p-0 bg-slate-100/70">
+                <div class="border-l-4 border-[#0088FF] divide-y divide-slate-200/60">
+                    ${subGroupsHtml}
+                    ${rows}
+                </div>
+            </td>
+        </tr>
+    `;
 }
 
 async function renderDetailedReportData(resetLimit = false) {
@@ -3150,77 +3283,391 @@ async function renderDetailedReportData(resetLimit = false) {
     if (moreWrap) moreWrap.classList.add('hidden');
 
     try {
-        // 1. BÁO CÁO DOANH THU (THEO NGÀY / THEO SẢN PHẨM)
-        if (currentDetailedReportType === 'SALES_REVENUE') {
-            const snap = await db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get();
-            const allOrders = snap.docs.map(d => d.data());
+        // ====================================================
+        // 1 & 2. BÁO CÁO DOANH THU & BÁO CÁO LỢI NHUẬN ĐA CHIỀU (7 CHIỀU CHUẨN SAPO)
+        // ====================================================
+        if (currentDetailedReportType === 'SALES_REVENUE' || currentDetailedReportType === 'SALES_PROFIT') {
+            const isProfitMode = (currentDetailedReportType === 'SALES_PROFIT');
+            const dim = getActiveMultiDimensionKey();
+            syncReportDimensionHeaderLabel();
 
-            if (revenueReportSubMode === 'DAY') {
-                const dayMap = {};
-                let totalNet = 0, totalRet = 0, totalGross = 0;
+            const snap = await db.collection("orders")
+                .where("dateStr", ">=", fromStr)
+                .where("dateStr", "<=", toStr)
+                .get();
 
-                allOrders.forEach(o => {
-                    if (o.status === 'PROCESSING') return;
-                    const d = o.dateStr || '---';
-                    if (!dayMap[d]) dayMap[d] = { count: 0, netSales: 0, returns: 0 };
-                    if (o.orderType === 'RETURN') {
-                        dayMap[d].returns += Number(o.totalAmount) || 0;
-                        totalRet += Number(o.totalAmount) || 0;
-                    } else {
-                        dayMap[d].count++;
-                        dayMap[d].netSales += Number(o.totalAmount) || 0;
-                        totalNet += Number(o.totalAmount) || 0;
+            cachedReportOrdersByCode = {};
+            const validSalesOrders = [];
+            let totalNetRevenue = 0;
+            let totalCostOfGoods = 0;
+            let totalReturnedVal = 0;
+            let missingCostItemCount = 0;
+
+            snap.docs.map(d => d.data()).forEach(o => {
+                cachedReportOrdersByCode[o.orderCode] = o;
+                if (o.status === 'PROCESSING') return; // Không tính đơn đang giao chưa hoàn tất vào doanh thu ghi nhận
+                if (o.orderType === 'RETURN') {
+                    totalReturnedVal += Number(o.totalAmount) || 0;
+                    return;
+                }
+                if (o.orderType === 'SALE' && (Number(o.totalAmount) || 0) > 0) {
+                    const rev = Number(o.totalAmount) || 0;
+                    const cost = Number(o.totalCost) || 0;
+                    (o.items || []).forEach(it => {
+                        if (!it.isGift && (Number(it.qty) || 0) > 0 && (Number(it.totalCost) || 0) <= 0) {
+                            missingCostItemCount++;
+                        }
+                    });
+                    totalNetRevenue += rev;
+                    totalCostOfGoods += cost;
+                    validSalesOrders.push(o);
+                }
+            });
+
+            validSalesOrders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            const totalGrossProfit = totalNetRevenue - totalCostOfGoods;
+            // Chuẩn nghiệp vụ: Tỷ suất LN = Tổng lợi nhuận gộp / Tổng doanh thu được ghi nhận * 100%
+            const totalMarginStr = totalNetRevenue > 0
+                ? ((totalGrossProfit / totalNetRevenue) * 100).toFixed(2) + '%'
+                : '—';
+
+            // MODULE 2: SUMMARY CARD PHONG CÁCH SAPO Ở ĐẦU TRANG
+            if (!isProfitMode) {
+                banner.innerHTML = `
+                    <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center flex flex-col items-center">
+                        <div class="w-10 h-10 rounded-full bg-blue-50 text-[#0088FF] flex items-center justify-center text-base mb-1.5">
+                            <i class="fa-solid fa-chart-column"></i>
+                        </div>
+                        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">DOANH THU</div>
+                        <div class="text-2xl font-black text-[#0088FF] mt-0.5">${formatmoney(totalNetRevenue)} đ</div>
+                        <div class="text-xs font-semibold text-slate-500 mt-0.5">
+                            Số đơn hàng: <b class="text-slate-800">${validSalesOrders.length}</b>
+                            ${totalReturnedVal > 0 ? `<span class="text-slate-400 ml-1">(Hoàn trả đã trừ: ${formatmoney(totalReturnedVal)}đ)</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            } else {
+                banner.innerHTML = `
+                    <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-center flex flex-col items-center">
+                        <div class="w-10 h-10 rounded-full bg-blue-50 text-[#0088FF] flex items-center justify-center text-base mb-1.5">
+                            <i class="fa-solid fa-coins"></i>
+                        </div>
+                        <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">LỢI NHUẬN GỘP</div>
+                        <div class="text-2xl font-black text-[#0088FF] mt-0.5">${formatmoney(totalGrossProfit)} đ</div>
+                        <div class="text-xs font-semibold text-slate-500 mt-0.5">
+                            Tỷ suất LN: <b class="text-emerald-600">${totalMarginStr}</b>
+                            <span class="text-slate-400 ml-1">(DT: ${formatmoney(totalNetRevenue)}đ • Giá vốn: ${formatmoney(totalCostOfGoods)}đ)</span>
+                        </div>
+                        ${missingCostItemCount > 0 ? `<div class="text-[10.5px] text-amber-600 font-semibold mt-1">Lưu ý: Có ${missingCostItemCount} dòng hàng chưa cập nhật giá vốn (0đ)</div>` : ''}
+                    </div>
+                `;
+            }
+
+            // CHIỀU 1, 2, 3: THEO NGÀY / THEO THÁNG / THEO NĂM
+            if (dim === 'DAY' || dim === 'MONTH' || dim === 'YEAR') {
+                const timeMap = {};
+                validSalesOrders.forEach(o => {
+                    const dStr = o.dateStr || '';
+                    let key = dStr;
+                    let label = formatDateVN(dStr);
+                    if (dim === 'MONTH') {
+                        key = dStr.slice(0, 7); // YYYY-MM
+                        const [y, m] = key.split('-');
+                        label = `${m}/${y}`;
+                    } else if (dim === 'YEAR') {
+                        key = dStr.slice(0, 4); // YYYY
+                        label = `Năm ${key}`;
+                    }
+                    if (!timeMap[key]) timeMap[key] = { key, label, rev: 0, cost: 0, orders: [], subMap: {} };
+                    const rev = Number(o.totalAmount) || 0;
+                    const cost = Number(o.totalCost) || 0;
+                    timeMap[key].rev += rev;
+                    timeMap[key].cost += cost;
+                    timeMap[key].orders.push(o);
+
+                    // Lưu nhóm con (Tháng mở rộng ra Ngày; Năm mở rộng ra Tháng)
+                    if (dim === 'MONTH') {
+                        const dayLbl = formatDateVN(dStr);
+                        if (!timeMap[key].subMap[dStr]) timeMap[key].subMap[dStr] = { label: dayLbl, rev: 0, cost: 0, count: 0 };
+                        timeMap[key].subMap[dStr].rev += rev;
+                        timeMap[key].subMap[dStr].cost += cost;
+                        timeMap[key].subMap[dStr].count++;
+                    } else if (dim === 'YEAR') {
+                        const mKey = dStr.slice(0, 7);
+                        const [yy, mm] = mKey.split('-');
+                        const mLbl = `Tháng ${mm}/${yy}`;
+                        if (!timeMap[key].subMap[mKey]) timeMap[key].subMap[mKey] = { label: mLbl, rev: 0, cost: 0, count: 0 };
+                        timeMap[key].subMap[mKey].rev += rev;
+                        timeMap[key].subMap[mKey].cost += cost;
+                        timeMap[key].subMap[mKey].count++;
                     }
                 });
-                totalGross = totalNet + totalRet;
 
-                banner.innerHTML = `
-                    <div class="bg-white p-3 rounded-xl border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs">
-                        <div><div class="text-slate-400">Tiền hàng</div><div class="font-bold text-slate-800 mt-0.5">${formatmoney(totalGross)} đ</div></div>
-                        <div><div class="text-slate-400">Hoàn trả</div><div class="font-bold text-red-600 mt-0.5">-${formatmoney(totalRet)} đ</div></div>
-                        <div><div class="text-slate-400">Doanh thu thuần</div><div class="font-black text-[#0088FF] mt-0.5">${formatmoney(totalNet)} đ</div></div>
-                    </div>`;
+                const keys = Object.keys(timeMap)
+                    .filter(k => !kw || timeMap[k].label.toLowerCase().includes(kw))
+                    .sort((a, b) => b.localeCompare(a));
 
-                thead.innerHTML = `<tr><th class="p-2.5">Ngày</th><th class="p-2.5 text-center">SL Đơn</th><th class="p-2.5 text-right">Tiền hàng</th><th class="p-2.5 text-right">Hoàn trả</th><th class="p-2.5 text-right">Doanh thu thuần</th></tr>`;
-                const days = Object.keys(dayMap).filter(d => !kw || d.includes(kw)).sort((a, b) => b.localeCompare(a));
-                tbody.innerHTML = days.slice(0, detailedReportLimit).map(d => {
-                    const row = dayMap[d];
-                    const gross = row.netSales + row.returns;
-                    return `<tr>
-                        <td class="p-2.5 font-bold text-slate-800">${d}</td>
-                        <td class="p-2.5 text-center font-semibold">${row.count}</td>
-                        <td class="p-2.5 text-right">${formatmoney(gross)} đ</td>
-                        <td class="p-2.5 text-right text-red-600">${formatmoney(row.returns)} đ</td>
-                        <td class="p-2.5 text-right font-black text-[#0088FF]">${formatmoney(row.netSales)} đ</td>
-                    </tr>`;
-                }).join('') || `<tr><td colspan="5" class="p-6 text-center text-slate-400">Không có dữ liệu trong kỳ</td></tr>`;
-                if (moreWrap) moreWrap.classList.toggle('hidden', days.length <= detailedReportLimit);
-            } else {
+                const colTitle = dim === 'DAY' ? 'Ngày' : (dim === 'MONTH' ? 'Tháng/Năm' : 'Năm');
+                const valTitle = isProfitMode ? 'Tổng lợi nhuận gộp' : 'Tổng doanh thu';
+                thead.innerHTML = `<tr><th class="p-3">${colTitle}</th><th class="p-3 text-right">${valTitle}</th></tr>`;
+
+                if (keys.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="2" class="p-8 text-center text-slate-400 italic">Không có dữ liệu trong khoảng thời gian này.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = keys.slice(0, detailedReportLimit).map(k => {
+                    const g = timeMap[k];
+                    const prof = g.rev - g.cost;
+                    const margin = g.rev > 0 ? ((prof / g.rev) * 100).toFixed(2) + '%' : '—';
+                    const isExp = expandedReportGroupKey === k;
+
+                    const rightCell = isProfitMode
+                        ? `<div class="font-black text-sm ${prof >= 0 ? 'text-emerald-600' : 'text-red-600'}">${formatmoney(prof)} đ</div>
+                           <div class="text-[11px] text-slate-400">DT: ${formatmoney(g.rev)}đ • Tỷ suất: <b class="text-[#0088FF]">${margin}</b></div>`
+                        : `<div class="font-black text-sm text-slate-800">${formatmoney(g.rev)} đ</div>
+                           <div class="text-[11px] text-slate-400">${g.orders.length} đơn hàng</div>`;
+
+                    let subBreakdownHtml = '';
+                    if (isExp && Object.keys(g.subMap).length > 0) {
+                        subBreakdownHtml = Object.keys(g.subMap).sort((a, b) => b.localeCompare(a)).map(sk => {
+                            const sr = g.subMap[sk];
+                            const sProf = sr.rev - sr.cost;
+                            const sMargin = sr.rev > 0 ? ((sProf / sr.rev) * 100).toFixed(1) + '%' : '—';
+                            return `<div class="px-3 py-1.5 bg-blue-50/60 flex justify-between items-center text-[11px] font-semibold text-slate-700">
+                                <span>• ${sr.label} (${sr.count} đơn)</span>
+                                <span>${isProfitMode ? `Lãi: ${formatmoney(sProf)}đ (${sMargin})` : `DT: ${formatmoney(sr.rev)}đ`}</span>
+                            </div>`;
+                        }).join('');
+                    }
+
+                    return `
+                        <tr onclick="toggleReportGroupExpand('${k}')" class="cursor-pointer hover:bg-slate-50 active:bg-slate-100">
+                            <td class="p-3 font-bold text-slate-800">
+                                <i class="fa-solid fa-chevron-${isExp ? 'down' : 'right'} text-[10px] text-slate-400 mr-1.5"></i>${g.label}
+                            </td>
+                            <td class="p-3 text-right">${rightCell}</td>
+                        </tr>
+                        ${isExp ? buildExpandedOrdersSubListHtml(g.orders, isProfitMode, 2, subBreakdownHtml) : ''}
+                    `;
+                }).join('');
+
+                if (moreWrap) moreWrap.classList.toggle('hidden', keys.length <= detailedReportLimit);
+                return;
+            }
+
+            // CHIỀU 4: THEO ĐƠN HÀNG
+            if (dim === 'ORDER') {
+                const filteredOrders = validSalesOrders.filter(o => {
+                    if (!kw) return true;
+                    const cName = (o.customerSnapshot?.name || 'Khách lẻ').toLowerCase();
+                    return o.orderCode.toLowerCase().includes(kw) || cName.includes(kw);
+                });
+
+                thead.innerHTML = `<tr><th class="p-3">Đơn hàng / Khách hàng</th><th class="p-3 text-right">${isProfitMode ? 'Lãi gộp & Tỷ suất' : 'Doanh thu đơn'}</th></tr>`;
+                if (filteredOrders.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="2" class="p-8 text-center text-slate-400 italic">Không có đơn hàng nào khớp.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = filteredOrders.slice(0, detailedReportLimit).map(o => {
+                    const timeStr = new Date(o.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+                    const cName = o.customerSnapshot?.name || 'Khách lẻ';
+                    const rev = Number(o.totalAmount) || 0;
+                    const cost = Number(o.totalCost) || 0;
+                    const prof = rev - cost;
+                    const margin = rev > 0 ? ((prof / rev) * 100).toFixed(2) + '%' : '—';
+                    const paid = Number(o.paidAmount) || 0;
+                    const payNote = paid < rev ? ` <span class="text-amber-600">(Đã thu: ${formatmoney(paid)}đ)</span>` : '';
+
+                    const rightCell = isProfitMode
+                        ? `<div class="font-black text-sm ${prof >= 0 ? 'text-emerald-600' : 'text-red-600'}">${formatmoney(prof)} đ</div>
+                           <div class="text-[11px] text-slate-400">DT: ${formatmoney(rev)}đ • Tỷ suất: <b class="text-[#0088FF]">${margin}</b></div>`
+                        : `<div class="font-black text-sm text-[#0088FF]">${formatmoney(rev)} đ</div>
+                           <div class="text-[10.5px] text-slate-400">Giá vốn: ${formatmoney(cost)}đ${payNote}</div>`;
+
+                    return `
+                        <tr onclick="openOrderFromReport('${o.orderCode}')" class="cursor-pointer hover:bg-slate-50 active:bg-slate-100">
+                            <td class="p-3">
+                                <div class="font-bold text-slate-800 text-xs">${o.orderCode}</div>
+                                <div class="text-xs text-slate-600 mt-0.5">${cName}</div>
+                                <div class="text-[10.5px] text-slate-400">${timeStr}</div>
+                            </td>
+                            <td class="p-3 text-right">${rightCell}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                if (moreWrap) moreWrap.classList.toggle('hidden', filteredOrders.length <= detailedReportLimit);
+                return;
+            }
+
+            // CHIỀU 5: THEO KHÁCH HÀNG
+            if (dim === 'CUSTOMER') {
+                const custMap = {};
+                validSalesOrders.forEach(o => {
+                    const isGuest = !o.customerId || o.customerId === 'GUEST';
+                    const cKey = isGuest ? 'GUEST_UNIDENTIFIED' : o.customerId;
+                    const cName = isGuest ? 'Khách lẻ (Không định danh)' : (o.customerSnapshot?.name || 'Khách hàng');
+
+                    if (!custMap[cKey]) custMap[cKey] = { key: cKey, name: cName, rev: 0, cost: 0, orders: [] };
+                    custMap[cKey].rev += Number(o.totalAmount) || 0;
+                    custMap[cKey].cost += Number(o.totalCost) || 0;
+                    custMap[cKey].orders.push(o);
+                });
+
+                const keys = Object.keys(custMap)
+                    .filter(k => !kw || custMap[k].name.toLowerCase().includes(kw))
+                    .sort((a, b) => isProfitMode
+                        ? ((custMap[b].rev - custMap[b].cost) - (custMap[a].rev - custMap[a].cost))
+                        : (custMap[b].rev - custMap[a].rev));
+
+                thead.innerHTML = `<tr><th class="p-3">Khách hàng</th><th class="p-3 text-center">Số đơn</th><th class="p-3 text-right">${isProfitMode ? 'Lãi gộp & Tỷ suất' : 'Tổng doanh thu'}</th></tr>`;
+
+                tbody.innerHTML = keys.slice(0, detailedReportLimit).map(k => {
+                    const c = custMap[k];
+                    const prof = c.rev - c.cost;
+                    // Tỷ suất lợi nhuận của khách = Tổng lợi nhuận gộp của khách / Tổng doanh thu của khách * 100%
+                    const margin = c.rev > 0 ? ((prof / c.rev) * 100).toFixed(2) + '%' : '—';
+                    const isExp = expandedReportGroupKey === k;
+
+                    const rightCell = isProfitMode
+                        ? `<div class="font-black text-sm ${prof >= 0 ? 'text-emerald-600' : 'text-red-600'}">${formatmoney(prof)} đ</div>
+                           <div class="text-[11px] text-slate-400">DT: ${formatmoney(c.rev)}đ • LN: <b class="text-[#0088FF]">${margin}</b></div>`
+                        : `<div class="font-black text-sm text-[#0088FF]">${formatmoney(c.rev)} đ</div>`;
+
+                    return `
+                        <tr onclick="toggleReportGroupExpand('${k}')" class="cursor-pointer hover:bg-slate-50 active:bg-slate-100">
+                            <td class="p-3 font-bold text-slate-800">
+                                <i class="fa-solid fa-chevron-${isExp ? 'down' : 'right'} text-[10px] text-slate-400 mr-1.5"></i>${c.name}
+                            </td>
+                            <td class="p-3 text-center font-semibold">${c.orders.length} đơn</td>
+                            <td class="p-3 text-right">${rightCell}</td>
+                        </tr>
+                        ${isExp ? buildExpandedOrdersSubListHtml(c.orders, isProfitMode, 3) : ''}
+                    `;
+                }).join('') || `<tr><td colspan="3" class="p-8 text-center text-slate-400 italic">Không có dữ liệu khách hàng.</td></tr>`;
+
+                if (moreWrap) moreWrap.classList.toggle('hidden', keys.length <= detailedReportLimit);
+                return;
+            }
+
+            // CHIỀU 6: THEO NHÓM KHÁCH HÀNG (TỆP KHÁCH SỈ vs TỆP KHÁCH LẺ)
+            if (dim === 'CUST_GROUP') {
+                const groups = {
+                    WHOLESALE: { key: 'WHOLESALE', name: 'Tệp Khách Sỉ', rev: 0, cost: 0, orders: [] },
+                    RETAIL: { key: 'RETAIL', name: 'Tệp Khách Lẻ', rev: 0, cost: 0, orders: [] }
+                };
+
+                validSalesOrders.forEach(o => {
+                    const gKey = isWholesaleOrderRecord(o) ? 'WHOLESALE' : 'RETAIL';
+                    groups[gKey].rev += Number(o.totalAmount) || 0;
+                    groups[gKey].cost += Number(o.totalCost) || 0;
+                    groups[gKey].orders.push(o);
+                });
+
+                thead.innerHTML = `<tr><th class="p-3">Nhóm khách hàng</th><th class="p-3 text-center">Số đơn</th><th class="p-3 text-right">${isProfitMode ? 'Doanh thu / Vốn / Lãi gộp' : 'Tổng doanh thu'}</th></tr>`;
+
+                tbody.innerHTML = ['WHOLESALE', 'RETAIL'].map(k => {
+                    const g = groups[k];
+                    const prof = g.rev - g.cost;
+                    const margin = g.rev > 0 ? ((prof / g.rev) * 100).toFixed(2) + '%' : '—';
+                    const isExp = expandedReportGroupKey === k;
+
+                    const rightCell = isProfitMode
+                        ? `<div class="font-black text-sm ${prof >= 0 ? 'text-emerald-600' : 'text-red-600'}">Lãi: ${formatmoney(prof)} đ (${margin})</div>
+                           <div class="text-[11px] text-slate-500">DT: ${formatmoney(g.rev)}đ • Giá vốn: ${formatmoney(g.cost)}đ</div>`
+                        : `<div class="font-black text-sm text-[#0088FF]">${formatmoney(g.rev)} đ</div>`;
+
+                    return `
+                        <tr onclick="toggleReportGroupExpand('${k}')" class="cursor-pointer hover:bg-slate-50 active:bg-slate-100">
+                            <td class="p-3 font-bold text-slate-800">
+                                <i class="fa-solid fa-chevron-${isExp ? 'down' : 'right'} text-[10px] text-slate-400 mr-1.5"></i>${g.name}
+                            </td>
+                            <td class="p-3 text-center font-semibold">${g.orders.length} đơn</td>
+                            <td class="p-3 text-right">${rightCell}</td>
+                        </tr>
+                        ${isExp ? buildExpandedOrdersSubListHtml(g.orders, isProfitMode, 3) : ''}
+                    `;
+                }).join('');
+                return;
+            }
+
+            // CHIỀU 7: THEO SẢN PHẨM (QUY ĐỔI ĐÚNG ĐƠN VỊ CƠ SỞ & MỞ RỘNG ĐƠN LIÊN QUAN)
+            if (dim === 'PRODUCT') {
                 const prodMap = {};
-                allOrders.forEach(o => {
-                    if (o.status === 'PROCESSING' || o.orderType === 'RETURN') return;
+                validSalesOrders.forEach(o => {
                     (o.items || []).forEach(i => {
-                        if ((Number(i.qty) || 0) <= 0) return;
-                        if (!prodMap[i.productName]) prodMap[i.productName] = { unit: i.baseUnit || i.unitName, qty: 0, rev: 0 };
-                        prodMap[i.productName].qty += Number(i.baseQty || i.qty) || 0;
-                        prodMap[i.productName].rev += Number(i.totalPrice) || 0;
+                        const rawQty = Number(i.qty) || 0;
+                        if (rawQty <= 0) return;
+                        const rate = Number(i.conversionRate) || 1;
+                        const baseQty = Number(i.baseQty) || (rawQty * rate);
+                        const rev = Number(i.totalPrice) || 0;
+                        const cost = Number(i.totalCost) || 0;
+                        const pKey = i.productId || i.productName;
+
+                        if (!prodMap[pKey]) {
+                            const invItem = inventory.find(x => x.id === i.productId || x.name === i.productName);
+                            prodMap[pKey] = {
+                                key: pKey,
+                                name: i.productName,
+                                sku: invItem?.barcode || '',
+                                baseUnit: i.baseUnit || invItem?.baseUnit || i.unitName || 'ĐV',
+                                baseQty: 0,
+                                rev: 0,
+                                cost: 0,
+                                ordersMap: {}
+                            };
+                        }
+                        prodMap[pKey].baseQty += baseQty;
+                        prodMap[pKey].rev += rev;
+                        prodMap[pKey].cost += cost;
+                        prodMap[pKey].ordersMap[o.orderCode] = o;
                     });
                 });
-                thead.innerHTML = `<tr><th class="p-2.5">Sản phẩm</th><th class="p-2.5 text-center">SL Bán</th><th class="p-2.5 text-right">Doanh thu thuần</th></tr>`;
-                const names = Object.keys(prodMap).filter(n => !kw || n.toLowerCase().includes(kw)).sort((a, b) => prodMap[b].rev - prodMap[a].rev);
-                tbody.innerHTML = names.slice(0, detailedReportLimit).map(n => `
-                    <tr>
-                        <td class="p-2.5 font-bold text-slate-800">${n}</td>
-                        <td class="p-2.5 text-center font-semibold">${prodMap[n].qty} ${prodMap[n].unit}</td>
-                        <td class="p-2.5 text-right font-black text-[#0088FF]">${formatmoney(prodMap[n].rev)} đ</td>
-                    </tr>
-                `).join('') || `<tr><td colspan="3" class="p-6 text-center text-slate-400">Không có dữ liệu</td></tr>`;
-                if (moreWrap) moreWrap.classList.toggle('hidden', names.length <= detailedReportLimit);
+
+                const keys = Object.keys(prodMap)
+                    .filter(k => !kw || prodMap[k].name.toLowerCase().includes(kw) || (prodMap[k].sku && prodMap[k].sku.toLowerCase().includes(kw)))
+                    .sort((a, b) => isProfitMode
+                        ? ((prodMap[b].rev - prodMap[b].cost) - (prodMap[a].rev - prodMap[a].cost))
+                        : (prodMap[b].rev - prodMap[a].rev));
+
+                thead.innerHTML = `<tr><th class="p-3">Sản phẩm</th><th class="p-3 text-center">SL Bán</th><th class="p-3 text-right">${isProfitMode ? 'Lãi gộp & Tỷ suất' : 'Tổng doanh thu'}</th></tr>`;
+
+                tbody.innerHTML = keys.slice(0, detailedReportLimit).map((k, idx) => {
+                    const p = prodMap[k];
+                    const prof = p.rev - p.cost;
+                    const margin = p.rev > 0 ? ((prof / p.rev) * 100).toFixed(2) + '%' : '—';
+                    const safeKey = 'PROD_' + idx;
+                    const isExp = expandedReportGroupKey === safeKey;
+                    const relatedOrders = Object.values(p.ordersMap);
+
+                    const rightCell = isProfitMode
+                        ? `<div class="font-black text-sm ${prof >= 0 ? 'text-emerald-600' : 'text-red-600'}">${formatmoney(prof)} đ (${margin})</div>
+                           <div class="text-[10.5px] text-slate-400">DT: ${formatmoney(p.rev)}đ • Giá vốn: ${formatmoney(p.cost)}đ</div>`
+                        : `<div class="font-black text-sm text-[#0088FF]">${formatmoney(p.rev)} đ</div>`;
+
+                    return `
+                        <tr onclick="toggleReportGroupExpand('${safeKey}')" class="cursor-pointer hover:bg-slate-50 active:bg-slate-100">
+                            <td class="p-3">
+                                <div class="font-bold text-slate-800 text-xs">
+                                    <i class="fa-solid fa-chevron-${isExp ? 'down' : 'right'} text-[10px] text-slate-400 mr-1"></i>${p.name}
+                                </div>
+                                ${p.sku ? `<div class="text-[10.5px] text-slate-400 ml-3">SKU: ${p.sku}</div>` : ''}
+                            </td>
+                            <td class="p-3 text-center font-semibold text-xs">${formatmoney(p.baseQty)} ${p.baseUnit}</td>
+                            <td class="p-3 text-right">${rightCell}</td>
+                        </tr>
+                        ${isExp ? buildExpandedOrdersSubListHtml(relatedOrders, isProfitMode, 3) : ''}
+                    `;
+                }).join('') || `<tr><td colspan="3" class="p-8 text-center text-slate-400 italic">Không có dữ liệu sản phẩm.</td></tr>`;
+
+                if (moreWrap) moreWrap.classList.toggle('hidden', keys.length <= detailedReportLimit);
+                return;
             }
-            return;
         }
 
-        // 2. BÁO CÁO LỢI NHUẬN GỘP & TỶ SUẤT LỢI NHUẬN (TỔNG LÃI GỘP / TỔNG DOANH THU)
+        // 2. BÁO CÁO LỢI NHUẬN GỘP & TỶ SUẤT LÃI (%)
         if (currentDetailedReportType === 'SALES_PROFIT') {
             const snap = await db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get();
             const itemMap = {};
@@ -3229,65 +3676,41 @@ async function renderDetailedReportData(resetLimit = false) {
             snap.docs.map(d => d.data()).forEach(o => {
                 if (o.orderType !== 'SALE' || o.status === 'PROCESSING' || (Number(o.totalAmount) || 0) <= 0) return;
                 (o.items || []).forEach(i => {
-                    const rawQty = Number(i.qty) || 0;
-                    if (rawQty <= 0) return;
-                    const rate = Number(i.conversionRate) || 1;
-                    const convertedBaseQty = Number(i.baseQty) || (rawQty * rate);
+                    if ((Number(i.qty) || 0) <= 0) return;
                     const rev = Number(i.totalPrice) || 0;
                     const cost = Number(i.totalCost) || 0;
-
                     sumRev += rev;
                     sumCost += cost;
-
-                    if (!itemMap[i.productName]) {
-                        itemMap[i.productName] = { unit: i.baseUnit || i.unitName || 'ĐV', baseQty: 0, rev: 0, cost: 0 };
-                    }
-                    itemMap[i.productName].baseQty += convertedBaseQty;
+                    if (!itemMap[i.productName]) itemMap[i.productName] = { unit: i.baseUnit || 'ĐV', qty: 0, rev: 0, cost: 0 };
+                    itemMap[i.productName].qty += Number(i.baseQty || i.qty) || 0;
                     itemMap[i.productName].rev += rev;
                     itemMap[i.productName].cost += cost;
                 });
             });
 
             const sumProfit = sumRev - sumCost;
-            // Chuẩn nghiệp vụ: Tỷ suất lợi nhuận toàn kỳ = (Tổng lãi gộp / Tổng doanh thu) * 100%
-            const totalProfitMargin = sumRev > 0 ? ((sumProfit / sumRev) * 100).toFixed(2) : "0.00";
-
+            const avgMargin = sumRev > 0 ? ((sumProfit / sumRev) * 100).toFixed(1) : "0.0";
             banner.innerHTML = `
-                <div class="bg-white p-3 rounded-xl border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs">
-                    <div><div class="text-slate-400">Tổng doanh thu</div><div class="font-bold text-slate-800 mt-0.5">${formatmoney(sumRev)} đ</div></div>
-                    <div><div class="text-slate-400">Tổng lãi gộp</div><div class="font-black text-emerald-600 mt-0.5">${formatmoney(sumProfit)} đ</div></div>
-                    <div><div class="text-slate-400">Tỷ suất lợi nhuận (Lãi/DT)</div><div class="font-black text-[#0088FF] mt-0.5">${totalProfitMargin}%</div></div>
+                <div class="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                    <div>Tổng lãi gộp: <b class="text-emerald-600 text-sm">${formatmoney(sumProfit)} đ</b></div>
+                    <div>Tỷ suất lãi TB: <b class="text-[#0088FF] text-sm">${avgMargin}%</b></div>
                 </div>`;
 
-            thead.innerHTML = `<tr><th class="p-2.5">Mặt hàng</th><th class="p-2.5 text-center">SL Bán (Đã quy đổi)</th><th class="p-2.5 text-right">Doanh thu</th><th class="p-2.5 text-right">Tổng giá vốn</th><th class="p-2.5 text-right">Lãi gộp</th><th class="p-2.5 text-right">Tỷ suất (%)</th></tr>`;
+            thead.innerHTML = `<tr><th class="p-2.5">Mặt hàng</th><th class="p-2.5 text-center">SL Bán</th><th class="p-2.5 text-right">Doanh thu</th><th class="p-2.5 text-right">Tổng giá vốn</th><th class="p-2.5 text-right">Lãi gộp</th><th class="p-2.5 text-right">Tỷ suất (%)</th></tr>`;
             const names = Object.keys(itemMap).filter(n => !kw || n.toLowerCase().includes(kw)).sort((a, b) => (itemMap[b].rev - itemMap[b].cost) - (itemMap[a].rev - itemMap[a].cost));
-
-            const totalRowHtml = names.length > 0 ? `
-                <tr class="bg-blue-50/60 font-black text-slate-900 border-b-2 border-slate-300">
-                    <td class="p-2.5">TỔNG CỘNG TOÀN KỲ</td>
-                    <td class="p-2.5 text-center">---</td>
-                    <td class="p-2.5 text-right">${formatmoney(sumRev)} đ</td>
-                    <td class="p-2.5 text-right">${formatmoney(sumCost)} đ</td>
-                    <td class="p-2.5 text-right text-emerald-700">${formatmoney(sumProfit)} đ</td>
-                    <td class="p-2.5 text-right text-[#0088FF]">${totalProfitMargin}%</td>
-                </tr>
-            ` : '';
-
-            const rowsHtml = names.slice(0, detailedReportLimit).map(n => {
+            tbody.innerHTML = names.slice(0, detailedReportLimit).map(n => {
                 const r = itemMap[n];
                 const prof = r.rev - r.cost;
-                const margin = r.rev > 0 ? ((prof / r.rev) * 100).toFixed(2) + '%' : '0.00%';
+                const margin = r.rev > 0 ? ((prof / r.rev) * 100).toFixed(1) + '%' : '0%';
                 return `<tr>
                     <td class="p-2.5 font-bold text-slate-800">${n}</td>
-                    <td class="p-2.5 text-center font-semibold">${formatmoney(r.baseQty)} ${r.unit}</td>
+                    <td class="p-2.5 text-center">${r.qty} ${r.unit}</td>
                     <td class="p-2.5 text-right font-semibold">${formatmoney(r.rev)} đ</td>
                     <td class="p-2.5 text-right text-slate-500">${formatmoney(r.cost)} đ</td>
                     <td class="p-2.5 text-right font-bold ${prof >= 0 ? 'text-emerald-600' : 'text-red-600'}">${formatmoney(prof)} đ</td>
                     <td class="p-2.5 text-right font-bold text-[#0088FF]">${margin}</td>
                 </tr>`;
-            }).join('');
-
-            tbody.innerHTML = (totalRowHtml + rowsHtml) || `<tr><td colspan="6" class="p-6 text-center text-slate-400">Chưa có dữ liệu</td></tr>`;
+            }).join('') || `<tr><td colspan="6" class="p-6 text-center text-slate-400">Chưa có dữ liệu</td></tr>`;
             if (moreWrap) moreWrap.classList.toggle('hidden', names.length <= detailedReportLimit);
             return;
         }
