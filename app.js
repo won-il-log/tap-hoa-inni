@@ -30,7 +30,7 @@ let html5QrCode = null;
 let currentPoItems = []; // Danh sách mặt hàng trong 1 chuyến nhập kho
 
 const DEFAULT_STORE_SETTINGS = {
-    storeName: "Đại Lý Hồng Điệp",
+    storeName: "Đại Lý HỒNG ĐIỆP",
     phone: "0909.xxx.xxx",
     address: "Đồng Nai",
     printSize: "A5",
@@ -1281,7 +1281,7 @@ async function handleImportProductsExcel(event) {
 }
 
 function applyStoreSettingsToUI() {
-    const sName = storeSettings.storeName || "Đại Lý Hồng Điệp";
+    const sName = storeSettings.storeName || "Đại Lý HỒNG ĐIỆP";
     ['sidebar-store-name', 'mobile-home-store-name', 'more-store-name'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerText = sName;
@@ -1314,7 +1314,7 @@ function closeSettingsModal() {
 
 async function saveStoreSettings() {
     const newSettings = {
-        storeName: document.getElementById('set-store-name').value.trim() || " Đại Lý Hồng Điệp",
+        storeName: document.getElementById('set-store-name').value.trim() || " Đại Lý HỒNG ĐIỆP",
         phone: document.getElementById('set-store-phone').value.trim(),
         address: document.getElementById('set-store-address').value.trim(),
         printSize: document.getElementById('set-print-size').value || "A5",

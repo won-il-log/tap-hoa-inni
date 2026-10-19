@@ -364,6 +364,39 @@ function tryAddByBarcode(code) {
 
 let posSearchDebounceTimer = null;
 let currentActivePosTierWholesale = false;
+let showPosCostGlobal = false; // Mặc định ẩn giá vốn để tránh lộ khi khách đứng cạnh
+let revealedCartCostKeys = {}; // Lưu các món được chạm vào tên để xem nhanh giá vốn
+
+function togglePosCostVisibility() {
+    showPosCostGlobal = !showPosCostGlobal;
+    if (!showPosCostGlobal) revealedCartCostKeys = {};
+
+    const btn = document.getElementById('btn-toggle-pos-cost');
+    const icon = document.getElementById('icon-toggle-pos-cost');
+    if (btn && icon) {
+        if (showPosCostGlobal) {
+            btn.className = "px-2 py-0.5 rounded-md border border-blue-300 bg-blue-50 text-[#0088FF] text-[10px] font-bold flex items-center gap-1 normal-case transition scale-active";
+            icon.className = "fa-solid fa-eye";
+        } else {
+            btn.className = "px-2 py-0.5 rounded-md border border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200 text-[10px] font-bold flex items-center gap-1 normal-case transition scale-active";
+            icon.className = "fa-solid fa-eye-slash";
+        }
+    }
+    renderSellGrid();
+}
+
+function toggleSingleCartItemCost(cartKey) {
+    if (showPosCostGlobal) return; // Nếu đang bật con mắt toàn cục thì luôn hiện
+    revealedCartCostKeys[cartKey] = !revealedCartCostKeys[cartKey];
+    const el = document.getElementById(`cart-cost-info-${cartKey}`);
+    if (el) el.classList.toggle('hidden', !revealedCartCostKeys[cartKey]);
+}
+
+function getCartItemUnitCost(cItem) {
+    const prod = inventory.find(i => i.id === cItem.productId);
+    const baseCost = prod ? (Number(prod.costPrice) || 0) : (Number(cItem.costPricePerBase) || 0);
+    return Math.round(baseCost * (Number(cItem.conversionRate) || 1));
+}
 
 function onPosSearchInput() {
     const inp = document.getElementById('sell-search-name');
@@ -447,13 +480,20 @@ function renderSellGrid() {
         const unitButtonsHtml = item.units.map((u, uIdx) => {
             const isBigUnit = u.conversionRate > 1;
             const displayPrice = getStandardUnitPrice(item, uIdx, isWholesaleCust);
+            const unitCost = Math.round((Number(item.costPrice) || 0) * (Number(u.conversionRate) || 1));
+            const costSubText = showPosCostGlobal
+                ? `<div class="text-[9.5px] ${isBigUnit ? 'text-blue-100' : 'text-slate-500'} font-normal text-left leading-tight mt-0.5">Vốn: ${formatmoney(unitCost)}đ/${u.unitName}</div>`
+                : '';
             const btnStyle = isBigUnit 
                 ? 'bg-[#0088FF] hover:bg-blue-700 text-white font-bold shadow-sm' 
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200';
             return `
-                <button onclick="addToCartWithUnit('${item.id}', ${uIdx}, 1, false)" class="w-full py-1.5 px-2 rounded-lg text-[11px] flex justify-between items-center transition scale-active ${btnStyle}">
-                    <span class="truncate">+1 ${u.unitName}${isBigUnit ? ` (${u.conversionRate})` : ''}</span>
-                    <span class="${isBigUnit ? 'text-amber-200 font-black' : 'text-red-600 font-bold'} ml-1">${formatmoney(displayPrice)}đ</span>
+                <button onclick="addToCartWithUnit('${item.id}', ${uIdx}, 1, false)" class="w-full py-1.5 px-2 rounded-lg text-[11px] flex flex-col items-stretch transition scale-active ${btnStyle}">
+                    <div class="flex justify-between items-center w-full">
+                        <span class="truncate">+1 ${u.unitName}${isBigUnit ? ` (${u.conversionRate})` : ''}</span>
+                        <span class="${isBigUnit ? 'text-amber-200 font-black' : 'text-red-600 font-bold'} ml-1">${formatmoney(displayPrice)}đ</span>
+                    </div>
+                    ${costSubText}
                 </button>
             `;
         }).join('');
@@ -698,11 +738,20 @@ function renderCart() {
             ? `<span class="bg-purple-600 text-white text-[10px] px-1.5 py-0.2 rounded font-bold ml-1">TẶNG 0Đ</span>` 
             : '';
 
+        // Quy đổi Giá vốn & Lãi theo đúng ĐVT đang chọn (VD: Thùng = Giá vốn Lon x 24)
+        const unitCost = getCartItemUnitCost(item);
+        const unitProfit = (Number(item.price) || 0) - unitCost;
+        const isCostVisible = showPosCostGlobal || !!revealedCartCostKeys[key];
+        const isBelowCost = (!item.isGift || item.manualPriceEdited) && unitCost > 0 && item.price < unitCost;
+
         list.innerHTML += `
             <li class="p-2.5 rounded-xl border ${item.isGift ? 'bg-purple-50/60 border-purple-300' : 'bg-white border-slate-200'} flex flex-col gap-2 shadow-sm">
                 <div class="flex justify-between items-start gap-2">
-                    <div class="font-bold text-slate-800 text-xs leading-snug flex-1">
-                        ${item.name} ${giftBadge}
+                    <div onclick="toggleSingleCartItemCost('${key}')" class="font-bold text-slate-800 text-xs leading-snug flex-1 cursor-pointer select-none" title="Chạm vào tên món để xem/ẩn nhanh giá vốn">
+                        <div>${item.name} ${giftBadge}</div>
+                        <div id="cart-cost-info-${key}" class="${isCostVisible ? '' : 'hidden'} text-[11px] font-semibold text-slate-500 mt-0.5">
+                            Vốn: <b class="text-slate-700">${formatmoney(unitCost)}đ</b> | Lãi: <b class="${unitProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}">${unitProfit >= 0 ? '+' : ''}${formatmoney(unitProfit)}đ/${item.unitName}</b>
+                        </div>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0">
                         <button onclick="toggleCartItemGift('${key}')" class="text-[10px] font-bold px-2 py-0.5 rounded border ${item.isGift ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-700 border-purple-300'}">
@@ -712,15 +761,20 @@ function renderCart() {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-12 gap-1.5 items-center">
+                <div class="grid grid-cols-12 gap-1.5 items-start">
                     <div class="col-span-4">
                         <select onchange="changeCartItemUnit('${key}', parseInt(this.value))" class="w-full border border-slate-300 rounded-lg p-1 text-xs font-bold bg-white text-inni-blue focus:outline-none">
                             ${unitSelectHtml}
                         </select>
                     </div>
-                    <div class="col-span-4 relative">
-                        <input type="text" value="${formatmoney(item.price)}" oninput="updateCartCustomPrice('${key}', this)" class="w-full border border-amber-400 bg-amber-50/50 focus:bg-white rounded-lg p-1 pr-4 text-xs font-black text-red-600 text-right focus:outline-none">
-                        <i class="fa-solid fa-pen text-[8px] text-amber-500 absolute right-1.5 top-2 pointer-events-none"></i>
+                    <div class="col-span-4">
+                        <div class="relative">
+                            <input type="text" value="${formatmoney(item.price)}" oninput="updateCartCustomPrice('${key}', this)" class="w-full border border-amber-400 bg-amber-50/50 focus:bg-white rounded-lg p-1 pr-4 text-xs font-black text-red-600 text-right focus:outline-none">
+                            <i class="fa-solid fa-pen text-[8px] text-amber-500 absolute right-1.5 top-2 pointer-events-none"></i>
+                        </div>
+                        <div id="below-cost-warn-${key}" class="${isBelowCost ? '' : 'hidden'} text-[10px] font-bold text-red-600 mt-0.5 leading-tight text-right">
+                            ⚠️ Thấp hơn giá vốn!
+                        </div>
                     </div>
                     <div class="col-span-4 flex items-center justify-end gap-1">
                         <button onclick="updateCartQty('${key}', -1)" class="w-6 h-6 bg-white border border-slate-300 rounded flex items-center justify-center text-slate-600"><i class="fa-solid fa-minus text-[9px]"></i></button>
@@ -748,6 +802,19 @@ function updateCartTotalsOnly() {
         subtotal += lineTotal;
         const lineEl = document.getElementById(`line-total-${key}`);
         if (lineEl) lineEl.innerText = `${formatmoney(lineTotal)} đ`;
+
+        // Cập nhật tức thời dòng Giá vốn | Lãi và Cảnh báo bán lỗ khi đang gõ sửa giá
+        const unitCost = getCartItemUnitCost(item);
+        const unitProfit = (Number(item.price) || 0) - unitCost;
+        const costInfoEl = document.getElementById(`cart-cost-info-${key}`);
+        if (costInfoEl) {
+            costInfoEl.innerHTML = `Vốn: <b class="text-slate-700">${formatmoney(unitCost)}đ</b> | Lãi: <b class="${unitProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}">${unitProfit >= 0 ? '+' : ''}${formatmoney(unitProfit)}đ/${item.unitName}</b>`;
+        }
+        const warnEl = document.getElementById(`below-cost-warn-${key}`);
+        if (warnEl) {
+            const isBelowCost = (!item.isGift || item.manualPriceEdited) && unitCost > 0 && item.price < unitCost;
+            warnEl.classList.toggle('hidden', !isBelowCost);
+        }
     }
 
     const cust = customers.find(c => c.id === selectedCustomerId);
@@ -1154,7 +1221,7 @@ function openOrdersWithFilter(filterVal) {
 async function loadOverviewDashboard() {
     const storeNameEl = document.getElementById('mobile-home-store-name');
     if (storeNameEl && typeof storeSettings !== 'undefined') {
-        storeNameEl.innerText = storeSettings.storeName || "Đại Lý Hồng Điệp";
+        storeNameEl.innerText = storeSettings.storeName || "Đại Lý HỒNG ĐIỆP";
     }
     const mobHold = document.getElementById('hold-count-badge-mob');
     if (mobHold) mobHold.innerText = holdOrders.length;
@@ -1825,7 +1892,7 @@ function toggleQuickBillHeaderEdit() {
     if (!box) return;
     box.classList.toggle('hidden');
     if (!box.classList.contains('hidden')) {
-        document.getElementById('qb-store-name').value = storeSettings.storeName || "Đại Lý Hồng Điệp";
+        document.getElementById('qb-store-name').value = storeSettings.storeName || "Đại Lý HỒNG ĐIỆP";
         document.getElementById('qb-store-phone').value = storeSettings.phone || "";
         document.getElementById('qb-store-address').value = storeSettings.address || "";
         document.getElementById('qb-bank-id').value = storeSettings.bankId || "MB";
@@ -1837,7 +1904,7 @@ function toggleQuickBillHeaderEdit() {
 }
 
 function applyQuickBillHeaderEdit() {
-    storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Đại Lý Hồng Điệp";
+    storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Đại Lý HỒNG ĐIỆP";
     storeSettings.phone = document.getElementById('qb-store-phone').value.trim();
     storeSettings.address = document.getElementById('qb-store-address').value.trim();
     storeSettings.bankId = document.getElementById('qb-bank-id').value;
@@ -1893,7 +1960,7 @@ function openPrintableInvoice(order) {
     setInvoicePrintMode(storeSettings.printSize || 'A5');
     document.getElementById('quick-bill-edit-box')?.classList.add('hidden');
 
-    document.getElementById('bill-store-name').innerText = (storeSettings.storeName || "Đại Lý Hồng Điệp").toUpperCase();
+    document.getElementById('bill-store-name').innerText = (storeSettings.storeName || "Đại Lý HỒNG ĐIỆP").toUpperCase();
     document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
     document.getElementById('bill-store-address').innerText = storeSettings.address || "";
 
