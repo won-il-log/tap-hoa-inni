@@ -1713,9 +1713,10 @@ function triggerFastAirPrint() {
     }, 180);
 }
 
-// MODULE 4: Xuất Ảnh Hóa Đơn PNG & Chia sẻ trực tiếp qua Zalo (Web Share API)
+// MODULE 4: Xuất Ảnh Hóa Đơn PNG (Clone ra khung A5 cố định, chống cắt đầu & đồng bộ style A5)
 async function exportBillToImage() {
     const billEl = document.getElementById('printable-bill');
+    const modalEl = document.getElementById('bill-detail-modal');
     const btn = document.getElementById('btn-export-bill-img');
     if (!billEl || typeof html2canvas === 'undefined') {
         return alert("Không tìm thấy thư viện chụp ảnh hóa đơn!");
@@ -1727,12 +1728,58 @@ async function exportBillToImage() {
         btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang tạo ảnh...`;
     }
 
+    let cloneWrapper = null;
     try {
-        const canvas = await html2canvas(billEl, {
+        // 1. Reset vị trí cuộn của khung bill và modal về 0
+        billEl.scrollTop = 0;
+        if (modalEl) modalEl.scrollTop = 0;
+
+        // 2. Tạo thẻ div tạm tách biệt hoàn toàn với thanh cuộn của iPhone, khóa chiều rộng chuẩn A5 (520px)
+        cloneWrapper = document.createElement('div');
+        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; height: auto; overflow: visible; background: #ffffff; padding: 16px 18px; box-sizing: border-box; z-index: -1; color: #000000; font-family: sans-serif; line-height: 1.2;";
+        cloneWrapper.innerHTML = `
+            <style>
+                .export-a5-clone * { box-sizing: border-box !important; }
+                .export-a5-clone table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; margin-bottom: 4px !important; }
+                .export-a5-clone th, .export-a5-clone td { border: 1px solid #64748b !important; padding: 2px 4px !important; line-height: 1.15 !important; font-size: 11px !important; }
+                .export-a5-clone .col-stt { width: 7% !important; white-space: nowrap !important; text-align: center !important; }
+                .export-a5-clone .col-name { width: 41% !important; word-wrap: break-word !important; white-space: normal !important; }
+                .export-a5-clone .col-unit { width: 10% !important; white-space: nowrap !important; text-align: center !important; }
+                .export-a5-clone .col-qty { width: 8% !important; white-space: nowrap !important; text-align: center !important; }
+                .export-a5-clone .col-price { width: 16% !important; white-space: nowrap !important; text-align: right !important; }
+                .export-a5-clone .col-total { width: 18% !important; white-space: nowrap !important; text-align: right !important; }
+                .export-a5-clone .vietqr-header-img { width: 65px !important; height: 65px !important; object-fit: contain !important; }
+            </style>
+            <div class="export-a5-clone">${billEl.innerHTML}</div>
+        `;
+        document.body.appendChild(cloneWrapper);
+
+        // Đảm bảo ảnh QR bên trong bản clone có crossOrigin="anonymous" và đã tải xong trước khi chụp
+        const imgs = Array.from(cloneWrapper.querySelectorAll('img'));
+        await Promise.all(imgs.map(img => {
+            if (!img.getAttribute('src')) return Promise.resolve();
+            img.crossOrigin = "anonymous";
+            if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+            return new Promise(res => {
+                img.onload = res;
+                img.onerror = res;
+            });
+        }));
+
+        // 3. Khóa tọa độ chụp trọn vẹn từ đỉnh (y: 0) đến đáy của bản clone
+        const canvas = await html2canvas(cloneWrapper, {
             scale: 2,
             useCORS: true,
-            allowTaint: false,
-            backgroundColor: '#ffffff'
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            scrollX: 0,
+            scrollY: -window.scrollY,
+            windowWidth: cloneWrapper.scrollWidth,
+            windowHeight: cloneWrapper.scrollHeight,
+            width: cloneWrapper.scrollWidth,
+            height: cloneWrapper.scrollHeight,
+            x: 0,
+            y: 0
         });
 
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
@@ -1763,6 +1810,9 @@ async function exportBillToImage() {
             alert("Lỗi khi xuất ảnh hóa đơn: " + err.message);
         }
     } finally {
+        if (cloneWrapper && cloneWrapper.parentNode) {
+            cloneWrapper.parentNode.removeChild(cloneWrapper);
+        }
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = origHtml;
@@ -1803,6 +1853,7 @@ function applyQuickBillHeaderEdit() {
 
     if (storeSettings.bankAcc && storeSettings.bankId) {
         const accName = encodeURIComponent(storeSettings.bankOwner || "");
+        qrImg.crossOrigin = "anonymous";
         qrImg.src = `https://img.vietqr.io/image/${storeSettings.bankId}-${storeSettings.bankAcc}-qr_only.png?accountName=${accName}`;
         bankInfo.innerText = `${storeSettings.bankId}: ${storeSettings.bankAcc}\n${storeSettings.bankOwner || ''}`;
         qrBox.classList.remove('hidden');
