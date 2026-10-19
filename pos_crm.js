@@ -1715,7 +1715,7 @@ function triggerFastAirPrint() {
                 /* Giữ nguyên căn lề A5 trong trang A4 đang hoạt động ổn định trên iPhone AirPrint */
                 @page {
                     size: ${is80mm ? '80mm auto' : 'A5 portrait'};
-                    margin: ${is80mm ? '4mm' : '5mm 0'};
+                    margin: ${is80mm ? '4mm' : '5mm'};
                 }
                 *, *::before, *::after { box-sizing: border-box !important; }
                 body, body * {
