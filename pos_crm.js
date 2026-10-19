@@ -11,6 +11,7 @@ let lastParsedZaloItems = [];
 let currentViewingOrder = null;
 let currentLedgerCustomerId = null;
 
+
 // Biến phục vụ tìm kiếm khách hàng bằng bàn phím (Keyboard-first)
 let filteredPosCustomers = [];
 let highlightedCustIndex = -1;
