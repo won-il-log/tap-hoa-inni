@@ -1587,6 +1587,39 @@ function syncToPreRenderedPrintArea() {
     }
 }
 
+// Hàm gộp & quy đổi chính xác số lượng Thùng / Lốc / Lon trên hóa đơn (Không cộng lẫn lộn các ĐVT khác nhau)
+function buildInvoiceQuantitySummary(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return { unitGroupStr: '0', convertedBaseStr: '0' };
+    }
+
+    const unitCounts = {};
+    const baseUnitCounts = {};
+
+    items.forEach(item => {
+        const qty = Number(item.qty) || 0;
+        if (qty <= 0) return;
+
+        const uName = (item.unitName || item.baseUnit || 'ĐV').trim();
+        const bUnit = (item.baseUnit || uName).trim();
+        const rate = Number(item.conversionRate) || 1;
+        const baseQty = Number(item.baseQty) || (qty * rate);
+
+        unitCounts[uName] = (unitCounts[uName] || 0) + qty;
+        baseUnitCounts[bUnit] = (baseUnitCounts[bUnit] || 0) + baseQty;
+    });
+
+    const unitGroupStr = Object.entries(unitCounts)
+        .map(([u, q]) => `${formatmoney(q)} ${u}`)
+        .join(' + ');
+
+    const convertedBaseStr = Object.entries(baseUnitCounts)
+        .map(([bu, bq]) => `${formatmoney(bq)} ${bu}`)
+        .join(', ');
+
+    return { unitGroupStr: unitGroupStr || '0', convertedBaseStr: convertedBaseStr || '0' };
+}
+
 function triggerFastAirPrint() {
     const editBox = document.getElementById('quick-bill-edit-box');
     if (editBox) editBox.classList.add('hidden');
@@ -1613,9 +1646,10 @@ function triggerFastAirPrint() {
             <title>In Hóa Đơn</title>
             <script src="https://cdn.tailwindcss.com"><\/script>
             <style>
+                /* Giữ nguyên căn lề A5 trong trang A4 đang hoạt động ổn định */
                 @page {
                     size: ${is80mm ? '80mm auto' : 'A4 portrait'};
-                    margin: ${is80mm ? '4mm' : '10mm 0'};
+                    margin: ${is80mm ? '3mm' : '10mm 0'};
                 }
                 *, *::before, *::after { box-sizing: border-box !important; }
                 body {
@@ -1624,39 +1658,50 @@ function triggerFastAirPrint() {
                     color: #000;
                     margin: 0;
                     padding: 0;
+                    line-height: 1.15 !important;
                 }
                 .a5-print-container {
                     width: ${is80mm ? '76mm' : '118mm'} !important;
                     max-width: ${is80mm ? '76mm' : '118mm'} !important;
                     margin: 0 auto !important;
-                    padding: 4mm !important;
+                    padding: 2.5mm 3.5mm !important;
                     box-sizing: border-box !important;
-                    font-size: 11px !important;
+                    font-size: 10.5px !important;
+                    line-height: 1.15 !important;
                     overflow: hidden !important;
                 }
+                /* Nén chiều cao các khối Header, Bảng và Chữ ký để tiết kiệm giấy dọc */
+                .a5-print-container .pb-3 { padding-bottom: 4px !important; }
+                .a5-print-container .mb-3, .a5-print-container .mb-4 { margin-bottom: 5px !important; }
+                .a5-print-container .mt-2, .a5-print-container .mt-3 { margin-top: 4px !important; }
+                .a5-print-container .pt-1\.5, .a5-print-container .pt-2 { padding-top: 3px !important; }
+                .a5-print-container .py-1, .a5-print-container .py-1\.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
+                .a5-print-container .h-14 { height: 7mm !important; }
                 table {
                     width: 100% !important;
                     table-layout: fixed !important;
                     border-collapse: collapse !important;
                     box-sizing: border-box !important;
+                    margin-bottom: 4px !important;
                 }
                 th, td {
                     border: 1px solid #64748b;
-                    padding: 3px 4px;
+                    padding: 2px 3px !important;
+                    line-height: 1.15 !important;
                     word-wrap: break-word !important;
                     overflow-wrap: break-word !important;
                     white-space: normal !important;
                 }
-                /* Tỷ lệ cột chuẩn 100%: STT 8% + Tên hàng 23% + ĐVT 12% + SL 10% + Đơn giá 22% + Thành tiền 25% = 100% */
-                .col-stt { width: 8% !important; ${is80mm ? 'display:none;' : ''} }
-                .col-name { width: ${is80mm ? '31%' : '23%'} !important; }
-                .col-unit { width: 12% !important; }
-                .col-qty { width: 10% !important; }
-                .col-price { width: 22% !important; }
-                .col-total { width: 25% !important; }
+                /* Điều chỉnh tỷ lệ cột chuẩn 100% giúp Tên hàng ít rớt dòng, số tiền rõ ràng */
+                .col-stt { width: 7% !important; ${is80mm ? 'display:none;' : ''} }
+                .col-name { width: ${is80mm ? '38%' : '31%'} !important; }
+                .col-unit { width: 10% !important; }
+                .col-qty { width: 9% !important; }
+                .col-price { width: 20% !important; }
+                .col-total { width: 23% !important; }
                 .vietqr-header-img {
-                    width: ${is80mm ? '26mm' : '30mm'} !important;
-                    height: ${is80mm ? '26mm' : '30mm'} !important;
+                    width: ${is80mm ? '22mm' : '24mm'} !important;
+                    height: ${is80mm ? '22mm' : '24mm'} !important;
                     object-fit: contain !important;
                 }
             </style>
@@ -1822,20 +1867,34 @@ function openPrintableInvoice(order) {
     document.getElementById('bill-cust-phone').innerText = snap.phone || "Không SĐT";
     document.getElementById('bill-cust-address').innerText = snap.address || "---";
 
+    const items = order.items || [];
     const tbody = document.getElementById('bill-detail-items');
-    tbody.innerHTML = (order.items || []).map((item, idx) => {
+    const rowsHtml = items.map((item, idx) => {
         const giftLabel = item.isGift ? ` (Tặng 0đ)` : '';
+        const rate = Number(item.conversionRate) || 1;
+        const baseNote = (rate > 1 && item.baseUnit) ? ` <span class="text-[9.5px] font-normal text-slate-600">(${item.qty * rate} ${item.baseUnit})</span>` : '';
         return `
             <tr>
-                <td class="border border-slate-400 p-1.5 text-center a5-only-col col-stt">${idx + 1}</td>
-                <td class="border border-slate-400 p-1.5 font-semibold col-name" style="word-wrap:break-word;overflow-wrap:break-word;white-space:normal;">${item.productName}${giftLabel}</td>
-                <td class="border border-slate-400 p-1.5 text-center col-unit">${item.unitName}</td>
-                <td class="border border-slate-400 p-1.5 text-center font-bold col-qty">${item.qty}</td>
-                <td class="border border-slate-400 p-1.5 text-right col-price">${formatmoney(item.unitPrice)}</td>
-                <td class="border border-slate-400 p-1.5 text-right font-bold col-total">${formatmoney(item.totalPrice)}</td>
+                <td class="border border-slate-400 p-1 text-center a5-only-col col-stt">${idx + 1}</td>
+                <td class="border border-slate-400 p-1 font-semibold col-name" style="word-wrap:break-word;overflow-wrap:break-word;white-space:normal;">${item.productName}${giftLabel}${baseNote}</td>
+                <td class="border border-slate-400 p-1 text-center col-unit">${item.unitName}</td>
+                <td class="border border-slate-400 p-1 text-center font-bold col-qty">${item.qty}</td>
+                <td class="border border-slate-400 p-1 text-right col-price">${formatmoney(item.unitPrice)}</td>
+                <td class="border border-slate-400 p-1 text-right font-bold col-total">${formatmoney(item.totalPrice)}</td>
             </tr>
         `;
     }).join('');
+
+    // Dòng tổng số lượng theo đúng từng ĐVT và tổng quy đổi về ĐV cơ bản (Không cộng lẫn Thùng + Lon)
+    const { unitGroupStr, convertedBaseStr } = buildInvoiceQuantitySummary(items);
+    const summaryRowHtml = items.length > 0 ? `
+        <tr class="bg-slate-50 font-bold text-[10.5px]">
+            <td colspan="2" class="border border-slate-400 p-1 text-left">Tổng SL (${items.length} dòng): ${unitGroupStr}</td>
+            <td colspan="4" class="border border-slate-400 p-1 text-right">Tổng quy đổi: ${convertedBaseStr}</td>
+        </tr>
+    ` : '';
+
+    tbody.innerHTML = rowsHtml + summaryRowHtml;
 
     document.getElementById('bill-detail-total').innerText = `${formatmoney(order.totalAmount)} đ`;
     document.getElementById('bill-old-debt').innerText = `${formatmoney(order.oldDebt || 0)} đ`;
@@ -3161,7 +3220,7 @@ async function renderDetailedReportData(resetLimit = false) {
             return;
         }
 
-        // 2. BÁO CÁO LỢI NHUẬN GỘP & TỶ SUẤT LÃI (%)
+        // 2. BÁO CÁO LỢI NHUẬN GỘP & TỶ SUẤT LỢI NHUẬN (TỔNG LÃI GỘP / TỔNG DOANH THU)
         if (currentDetailedReportType === 'SALES_PROFIT') {
             const snap = await db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get();
             const itemMap = {};
@@ -3170,41 +3229,65 @@ async function renderDetailedReportData(resetLimit = false) {
             snap.docs.map(d => d.data()).forEach(o => {
                 if (o.orderType !== 'SALE' || o.status === 'PROCESSING' || (Number(o.totalAmount) || 0) <= 0) return;
                 (o.items || []).forEach(i => {
-                    if ((Number(i.qty) || 0) <= 0) return;
+                    const rawQty = Number(i.qty) || 0;
+                    if (rawQty <= 0) return;
+                    const rate = Number(i.conversionRate) || 1;
+                    const convertedBaseQty = Number(i.baseQty) || (rawQty * rate);
                     const rev = Number(i.totalPrice) || 0;
                     const cost = Number(i.totalCost) || 0;
+
                     sumRev += rev;
                     sumCost += cost;
-                    if (!itemMap[i.productName]) itemMap[i.productName] = { unit: i.baseUnit || 'ĐV', qty: 0, rev: 0, cost: 0 };
-                    itemMap[i.productName].qty += Number(i.baseQty || i.qty) || 0;
+
+                    if (!itemMap[i.productName]) {
+                        itemMap[i.productName] = { unit: i.baseUnit || i.unitName || 'ĐV', baseQty: 0, rev: 0, cost: 0 };
+                    }
+                    itemMap[i.productName].baseQty += convertedBaseQty;
                     itemMap[i.productName].rev += rev;
                     itemMap[i.productName].cost += cost;
                 });
             });
 
             const sumProfit = sumRev - sumCost;
-            const avgMargin = sumRev > 0 ? ((sumProfit / sumRev) * 100).toFixed(1) : "0.0";
+            // Chuẩn nghiệp vụ: Tỷ suất lợi nhuận toàn kỳ = (Tổng lãi gộp / Tổng doanh thu) * 100%
+            const totalProfitMargin = sumRev > 0 ? ((sumProfit / sumRev) * 100).toFixed(2) : "0.00";
+
             banner.innerHTML = `
-                <div class="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
-                    <div>Tổng lãi gộp: <b class="text-emerald-600 text-sm">${formatmoney(sumProfit)} đ</b></div>
-                    <div>Tỷ suất lãi TB: <b class="text-[#0088FF] text-sm">${avgMargin}%</b></div>
+                <div class="bg-white p-3 rounded-xl border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs">
+                    <div><div class="text-slate-400">Tổng doanh thu</div><div class="font-bold text-slate-800 mt-0.5">${formatmoney(sumRev)} đ</div></div>
+                    <div><div class="text-slate-400">Tổng lãi gộp</div><div class="font-black text-emerald-600 mt-0.5">${formatmoney(sumProfit)} đ</div></div>
+                    <div><div class="text-slate-400">Tỷ suất lợi nhuận (Lãi/DT)</div><div class="font-black text-[#0088FF] mt-0.5">${totalProfitMargin}%</div></div>
                 </div>`;
 
-            thead.innerHTML = `<tr><th class="p-2.5">Mặt hàng</th><th class="p-2.5 text-center">SL Bán</th><th class="p-2.5 text-right">Doanh thu</th><th class="p-2.5 text-right">Tổng giá vốn</th><th class="p-2.5 text-right">Lãi gộp</th><th class="p-2.5 text-right">Tỷ suất (%)</th></tr>`;
+            thead.innerHTML = `<tr><th class="p-2.5">Mặt hàng</th><th class="p-2.5 text-center">SL Bán (Đã quy đổi)</th><th class="p-2.5 text-right">Doanh thu</th><th class="p-2.5 text-right">Tổng giá vốn</th><th class="p-2.5 text-right">Lãi gộp</th><th class="p-2.5 text-right">Tỷ suất (%)</th></tr>`;
             const names = Object.keys(itemMap).filter(n => !kw || n.toLowerCase().includes(kw)).sort((a, b) => (itemMap[b].rev - itemMap[b].cost) - (itemMap[a].rev - itemMap[a].cost));
-            tbody.innerHTML = names.slice(0, detailedReportLimit).map(n => {
+
+            const totalRowHtml = names.length > 0 ? `
+                <tr class="bg-blue-50/60 font-black text-slate-900 border-b-2 border-slate-300">
+                    <td class="p-2.5">TỔNG CỘNG TOÀN KỲ</td>
+                    <td class="p-2.5 text-center">---</td>
+                    <td class="p-2.5 text-right">${formatmoney(sumRev)} đ</td>
+                    <td class="p-2.5 text-right">${formatmoney(sumCost)} đ</td>
+                    <td class="p-2.5 text-right text-emerald-700">${formatmoney(sumProfit)} đ</td>
+                    <td class="p-2.5 text-right text-[#0088FF]">${totalProfitMargin}%</td>
+                </tr>
+            ` : '';
+
+            const rowsHtml = names.slice(0, detailedReportLimit).map(n => {
                 const r = itemMap[n];
                 const prof = r.rev - r.cost;
-                const margin = r.rev > 0 ? ((prof / r.rev) * 100).toFixed(1) + '%' : '0%';
+                const margin = r.rev > 0 ? ((prof / r.rev) * 100).toFixed(2) + '%' : '0.00%';
                 return `<tr>
                     <td class="p-2.5 font-bold text-slate-800">${n}</td>
-                    <td class="p-2.5 text-center">${r.qty} ${r.unit}</td>
+                    <td class="p-2.5 text-center font-semibold">${formatmoney(r.baseQty)} ${r.unit}</td>
                     <td class="p-2.5 text-right font-semibold">${formatmoney(r.rev)} đ</td>
                     <td class="p-2.5 text-right text-slate-500">${formatmoney(r.cost)} đ</td>
                     <td class="p-2.5 text-right font-bold ${prof >= 0 ? 'text-emerald-600' : 'text-red-600'}">${formatmoney(prof)} đ</td>
                     <td class="p-2.5 text-right font-bold text-[#0088FF]">${margin}</td>
                 </tr>`;
-            }).join('') || `<tr><td colspan="6" class="p-6 text-center text-slate-400">Chưa có dữ liệu</td></tr>`;
+            }).join('');
+
+            tbody.innerHTML = (totalRowHtml + rowsHtml) || `<tr><td colspan="6" class="p-6 text-center text-slate-400">Chưa có dữ liệu</td></tr>`;
             if (moreWrap) moreWrap.classList.toggle('hidden', names.length <= detailedReportLimit);
             return;
         }
