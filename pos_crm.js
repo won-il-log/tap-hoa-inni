@@ -1154,7 +1154,7 @@ function openOrdersWithFilter(filterVal) {
 async function loadOverviewDashboard() {
     const storeNameEl = document.getElementById('mobile-home-store-name');
     if (storeNameEl && typeof storeSettings !== 'undefined') {
-        storeNameEl.innerText = storeSettings.storeName || "Tạp Hóa Huy Hoàng";
+        storeNameEl.innerText = storeSettings.storeName || "Tạp Hóa Hồng Điệp";
     }
     const mobHold = document.getElementById('hold-count-badge-mob');
     if (mobHold) mobHold.innerText = holdOrders.length;
@@ -1916,12 +1916,12 @@ function openPrintableInvoice(order) {
         const giftLabel = item.isGift ? ` (Tặng 0đ)` : '';
         return `
             <tr>
-                <td class="border border-slate-400 text-center a5-only-col col-stt" style="width:7%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${idx + 1}</td>
-                <td class="border border-slate-400 font-semibold col-name" style="width:41%; padding:2px 4px; line-height:1.15; word-wrap:break-word; overflow-wrap:break-word; white-space:normal;">${item.productName}${giftLabel}</td>
-                <td class="border border-slate-400 text-center col-unit" style="width:10%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${item.unitName}</td>
-                <td class="border border-slate-400 text-center font-bold col-qty" style="width:8%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${item.qty}</td>
-                <td class="border border-slate-400 text-right col-price" style="width:16%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${formatmoney(item.unitPrice)}</td>
-                <td class="border border-slate-400 text-right font-bold col-total" style="width:18%; padding:2px 4px; line-height:1.15; white-space:nowrap;">${formatmoney(item.totalPrice)}</td>
+                <td class="border border-slate-400 text-center a5-only-col col-stt" style="width:7%; padding: 5px 4px 7px 4px !important; line-height: 1.4 !important; vertical-align: middle !important; white-space: nowrap;">${idx + 1}</td>
+                <td class="border border-slate-400 font-semibold col-name" style="width:41%; padding: 5px 4px 7px 4px !important; line-height: 1.4 !important; vertical-align: middle !important; word-wrap: break-word; overflow-wrap: break-word; white-space: normal;">${item.productName}${giftLabel}</td>
+                <td class="border border-slate-400 text-center col-unit" style="width:10%; padding: 5px 4px 7px 4px !important; line-height: 1.4 !important; vertical-align: middle !important; white-space: nowrap;">${item.unitName}</td>
+                <td class="border border-slate-400 text-center font-bold col-qty" style="width:8%; padding: 5px 4px 7px 4px !important; line-height: 1.4 !important; vertical-align: middle !important; white-space: nowrap;">${item.qty}</td>
+                <td class="border border-slate-400 text-right col-price" style="width:16%; padding: 5px 4px 7px 4px !important; line-height: 1.4 !important; vertical-align: middle !important; white-space: nowrap;">${formatmoney(item.unitPrice)}</td>
+                <td class="border border-slate-400 text-right font-bold col-total" style="width:18%; padding: 5px 4px 7px 4px !important; line-height: 1.4 !important; vertical-align: middle !important; white-space: nowrap;">${formatmoney(item.totalPrice)}</td>
             </tr>
         `;
     }).join('');
