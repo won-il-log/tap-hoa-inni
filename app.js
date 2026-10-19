@@ -29,7 +29,7 @@ let currentViewingProductId = null;
 let html5QrCode = null;
 let currentPoItems = []; // Danh sách mặt hàng trong 1 chuyến nhập kho
 
-let storeSettings = JSON.parse(localStorage.getItem('hh_store_settings')) || {
+const DEFAULT_STORE_SETTINGS = {
     storeName: "Tạp Hóa Huy Hoàng",
     phone: "0909.xxx.xxx",
     address: "Đồng Nai",
@@ -39,12 +39,45 @@ let storeSettings = JSON.parse(localStorage.getItem('hh_store_settings')) || {
     bankOwner: ""
 };
 
+let storeSettings = (() => {
+    try {
+        const saved = JSON.parse(localStorage.getItem('hh_store_settings') || 'null');
+        return (saved && typeof saved === 'object') ? { ...DEFAULT_STORE_SETTINGS, ...saved } : { ...DEFAULT_STORE_SETTINGS };
+    } catch (e) {
+        return { ...DEFAULT_STORE_SETTINGS };
+    }
+})();
+
+// Đồng bộ bền vững cấu hình cửa hàng & mã QR từ Firestore (chống mất cấu hình khi reload / mở PWA)
+function initStoreSettingsPersistence() {
+    db.collection("shop_data").doc("settings").onSnapshot((docSnap) => {
+        if (docSnap.exists) {
+            const cloudData = docSnap.data();
+            if (cloudData && typeof cloudData === 'object') {
+                storeSettings = { ...DEFAULT_STORE_SETTINGS, ...storeSettings, ...cloudData };
+                localStorage.setItem('hh_store_settings', JSON.stringify(storeSettings));
+                applyStoreSettingsToUI();
+            }
+        } else {
+            // Nếu trên Cloud chưa có bản ghi nhưng máy đã lưu, đẩy lên Cloud để giữ bền vững
+            const hasLocal = localStorage.getItem('hh_store_settings');
+            if (hasLocal) {
+                db.collection("shop_data").doc("settings").set(storeSettings, { merge: true }).catch(() => {});
+            }
+        }
+    }, (err) => {
+        console.warn("Không thể tải cấu hình từ Cloud, dùng cấu hình đã lưu tại máy:", err);
+    });
+}
+
 // ==========================================
 // 2. HÀM TIỆN ÍCH DÙNG CHUNG & CAMERA BARCODE SCANNER
 // ==========================================
 window.addEventListener('load', () => {
     initCategorySelects();
     applyStoreSettingsToUI();
+    initStoreSettingsPersistence();
+    initInventoryInfiniteScroll();
     setTimeout(() => {
         const splash = document.getElementById('splash-screen');
         if (splash) {
@@ -1247,19 +1280,27 @@ async function handleImportProductsExcel(event) {
     reader.readAsArrayBuffer(file);
 }
 
-// ==========================================
-// 8. CÀI ĐẶT CỬA HÀNG, KHỔ IN & VIETQR
-// ==========================================
 function applyStoreSettingsToUI() {
-    document.getElementById('sidebar-store-name').innerText = storeSettings.storeName || "Tạp Hóa Huy Hoàng";
+    const sName = storeSettings.storeName || "Tạp Hóa Huy Hoàng";
+    ['sidebar-store-name', 'mobile-home-store-name', 'more-store-name'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = sName;
+    });
+    const billNameEl = document.getElementById('bill-store-name');
+    if (billNameEl) billNameEl.innerText = sName.toUpperCase();
+    const billPhoneEl = document.getElementById('bill-store-phone');
+    if (billPhoneEl) billPhoneEl.innerText = storeSettings.phone || "---";
+    const billAddrEl = document.getElementById('bill-store-address');
+    if (billAddrEl) billAddrEl.innerText = storeSettings.address || "";
+
     document.body.classList.remove('print-mode-A5', 'print-mode-80mm');
     document.body.classList.add('print-mode-' + (storeSettings.printSize || 'A5'));
 }
 
 function openSettingsModal() {
-    document.getElementById('set-store-name').value = storeSettings.storeName;
-    document.getElementById('set-store-phone').value = storeSettings.phone;
-    document.getElementById('set-store-address').value = storeSettings.address;
+    document.getElementById('set-store-name').value = storeSettings.storeName || "";
+    document.getElementById('set-store-phone').value = storeSettings.phone || "";
+    document.getElementById('set-store-address').value = storeSettings.address || "";
     document.getElementById('set-print-size').value = storeSettings.printSize || 'A5';
     document.getElementById('set-bank-id').value = storeSettings.bankId || 'MB';
     document.getElementById('set-bank-acc').value = storeSettings.bankAcc || '';
@@ -1271,27 +1312,286 @@ function closeSettingsModal() {
     document.getElementById('settings-modal').classList.add('hidden');
 }
 
-function saveStoreSettings() {
-    storeSettings = {
+async function saveStoreSettings() {
+    const newSettings = {
         storeName: document.getElementById('set-store-name').value.trim() || "Tạp Hóa Huy Hoàng",
         phone: document.getElementById('set-store-phone').value.trim(),
         address: document.getElementById('set-store-address').value.trim(),
-        printSize: document.getElementById('set-print-size').value,
-        bankId: document.getElementById('set-bank-id').value,
+        printSize: document.getElementById('set-print-size').value || "A5",
+        bankId: document.getElementById('set-bank-id').value || "MB",
         bankAcc: document.getElementById('set-bank-acc').value.trim(),
-        bankOwner: document.getElementById('set-bank-owner').value.trim().toUpperCase()
+        bankOwner: document.getElementById('set-bank-owner').value.trim().toUpperCase(),
+        updatedAt: Date.now()
     };
+    storeSettings = { ...storeSettings, ...newSettings };
     localStorage.setItem('hh_store_settings', JSON.stringify(storeSettings));
-    db.collection("shop_data").doc("settings").set(storeSettings).catch(() => {});
     applyStoreSettingsToUI();
-    closeSettingsModal();
-    alert("Đã lưu cấu hình Cửa hàng & VietQR!");
+
+    try {
+        await db.collection("shop_data").doc("settings").set(storeSettings, { merge: true });
+        closeSettingsModal();
+        alert("✅ Đã lưu bền vững cấu hình Cửa hàng & VietQR lên hệ thống!");
+    } catch (e) {
+        closeSettingsModal();
+        alert("⚠️ Đã lưu cấu hình trên thiết bị này, nhưng chưa đồng bộ được Cloud: " + e.message);
+    }
+}
+
+// ==========================================
+// MÀN HÌNH ĐỘC LẬP TRONG MENU SẢN PHẨM: ĐƠN NHẬP HÀNG, NHÀ CUNG CẤP, KIỂM HÀNG (MODULE 6.3)
+// ==========================================
+let cachedPurchaseOrders = [];
+let poScreenLimit = 40;
+
+async function openPoListScreen() {
+    document.getElementById('po-list-screen-modal').classList.remove('hidden');
+    const listEl = document.getElementById('po-screen-flat-list');
+    listEl.innerHTML = `<div class="p-8 text-center text-slate-400 text-xs"><i class="fa-solid fa-spinner fa-spin mr-1"></i>Đang tải danh sách đơn nhập hàng...</div>`;
+
+    try {
+        const snap = await db.collection("purchase_orders").limit(100).get();
+        cachedPurchaseOrders = snap.docs.map(d => d.data()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        renderPoListScreen(true);
+    } catch (e) {
+        listEl.innerHTML = `<div class="p-6 text-center text-red-500 text-xs">Lỗi tải phiếu nhập: ${e.message}</div>`;
+    }
+}
+
+function closePoListScreen() {
+    document.getElementById('po-list-screen-modal').classList.add('hidden');
+}
+
+function renderPoListScreen(reset = false) {
+    if (reset) poScreenLimit = 40;
+    const listEl = document.getElementById('po-screen-flat-list');
+    const kw = (document.getElementById('po-screen-search')?.value || '').toLowerCase().trim();
+    if (!listEl) return;
+
+    const filtered = cachedPurchaseOrders.filter(po => {
+        if (!kw) return true;
+        return (po.poCode || '').toLowerCase().includes(kw) || (po.supplierName || '').toLowerCase().includes(kw);
+    });
+
+    document.getElementById('po-screen-count').innerText = `${filtered.length} phiếu nhập`;
+
+    if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="p-10 text-center text-slate-400 italic text-xs">Chưa có đơn nhập hàng nào khớp.</div>`;
+        return;
+    }
+
+    listEl.innerHTML = filtered.slice(0, poScreenLimit).map(po => {
+        const dStr = new Date(po.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+        const hasDebt = (Number(po.debtAmount) || 0) > 0;
+        const statusBadge = hasDebt
+            ? `<span class="text-[11px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Chưa thanh toán (${formatmoney(po.debtAmount)}đ)</span>`
+            : `<span class="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Hoàn thành</span>`;
+
+        return `
+            <div class="p-3.5 flex justify-between items-center active:bg-slate-50">
+                <div class="space-y-0.5">
+                    <div class="font-bold text-slate-800 text-sm">${po.poCode}</div>
+                    <div class="text-xs text-slate-600 font-medium">${po.supplierName || 'Nhà cung cấp lẻ'}</div>
+                    <div class="text-[11px] text-slate-400">${dStr}</div>
+                </div>
+                <div class="text-right space-y-1">
+                    <div class="font-bold text-slate-800 text-sm">${formatmoney(po.totalAmount)} đ</div>
+                    <div>${statusBadge}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function openSuppliersScreen() {
+    document.getElementById('suppliers-screen-modal').classList.remove('hidden');
+    renderSuppliersScreen();
+}
+
+function closeSuppliersScreen() {
+    document.getElementById('suppliers-screen-modal').classList.add('hidden');
+}
+
+function openSupplierCreateModal() {
+    openCustomerModal(null);
+    const typeSel = document.getElementById('cust-type');
+    if (typeSel) typeSel.value = 'SUPPLIER';
+}
+
+function renderSuppliersScreen() {
+    const listEl = document.getElementById('sup-screen-flat-list');
+    const kw = (document.getElementById('sup-screen-search')?.value || '').toLowerCase().trim();
+    if (!listEl) return;
+
+    const suppliersOnly = (typeof customers !== 'undefined' ? customers : []).filter(c => c.type === 'SUPPLIER');
+    const filtered = suppliersOnly.filter(s => {
+        if (!kw) return true;
+        return (s.name || '').toLowerCase().includes(kw) || (s.phone || '').includes(kw) || (s.address || '').toLowerCase().includes(kw);
+    });
+
+    document.getElementById('sup-screen-count').innerText = `${filtered.length} nhà cung cấp`;
+
+    if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="p-10 text-center text-slate-400 italic text-xs">Chưa có nhà cung cấp nào. Bấm nút (+) để thêm mới.</div>`;
+        return;
+    }
+
+    listEl.innerHTML = filtered.map(s => {
+        const debt = Number(s.currentDebt) || 0;
+        return `
+            <div onclick="openDebtLedgerModal('${s.id}')" class="p-3.5 flex justify-between items-center active:bg-slate-50 cursor-pointer">
+                <div class="space-y-0.5 min-w-0 flex-1 pr-2">
+                    <div class="font-bold text-slate-800 text-sm truncate">${s.name}</div>
+                    <div class="text-xs text-slate-500">${s.phone || 'Chưa có SĐT'}</div>
+                    <div class="text-[11px] text-slate-400 truncate">${s.address || 'Chưa cập nhật địa chỉ'}</div>
+                </div>
+                <div class="text-right shrink-0 space-y-1">
+                    <div class="text-[11px] text-slate-400">Nợ cần trả</div>
+                    <div class="font-bold text-sm ${debt > 0 ? 'text-red-600' : 'text-emerald-600'}">${formatmoney(debt)} đ</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function openMobileStocktakeScreen() {
+    if (inventory.length === 0) return alert("Kho chưa có sản phẩm nào!");
+    document.getElementById('st-mob-filter').value = '';
+    document.getElementById('st-mob-note').value = '';
+    filterMobileStocktakeProducts();
+    document.getElementById('stocktake-screen-modal').classList.remove('hidden');
+}
+
+function closeMobileStocktakeScreen() {
+    document.getElementById('stocktake-screen-modal').classList.add('hidden');
+}
+
+function filterMobileStocktakeProducts() {
+    const kw = (document.getElementById('st-mob-filter')?.value || '').toLowerCase().trim();
+    const sel = document.getElementById('st-mob-prod-select');
+    if (!sel) return;
+    const matched = inventory.filter(i => !kw || i.name.toLowerCase().includes(kw) || (i.barcode && i.barcode.toLowerCase().includes(kw))).slice(0, 100);
+    sel.innerHTML = matched.map(i => `<option value="${i.id}">${i.name} (Tồn: ${i.stock} ${i.baseUnit})</option>`).join('');
+    onSelectMobileStocktakeProduct(false);
+}
+
+function onSelectMobileStocktakeProduct(resetZero = false) {
+    const prodId = document.getElementById('st-mob-prod-select')?.value;
+    const item = inventory.find(i => i.id === prodId);
+    const wrap = document.getElementById('st-mob-unit-inputs');
+    if (!item || !wrap) return;
+
+    document.getElementById('st-mob-system-stock').innerText = `${item.stock} ${item.baseUnit}`;
+    const breakdown = breakdownStockByUnits(resetZero ? 0 : item.stock, item.units);
+
+    wrap.innerHTML = breakdown.map(b => `
+        <div class="bg-[#F4F6F8] p-2.5 rounded-xl border border-slate-200">
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">${b.unitName} (×${b.conversionRate} ${item.baseUnit})</label>
+            <input type="number" min="0" value="${resetZero ? '' : b.count}" placeholder="0"
+                data-unit-name="${b.unitName}" data-rate="${b.conversionRate}"
+                oninput="calcMobileStocktakeDiff()"
+                class="st-mob-qty-inp w-full bg-white border border-slate-300 rounded-lg p-2 text-center font-black text-sm text-[#0088FF]">
+        </div>
+    `).join('');
+
+    calcMobileStocktakeDiff();
+}
+
+function calcMobileStocktakeDiff() {
+    const prodId = document.getElementById('st-mob-prod-select')?.value;
+    const item = inventory.find(i => i.id === prodId);
+    if (!item) return { totalActual: 0, diff: 0, breakdownStr: '' };
+
+    let totalActual = 0;
+    const parts = [];
+    document.querySelectorAll('.st-mob-qty-inp').forEach(inp => {
+        const q = Math.max(0, parseInt(inp.value, 10) || 0);
+        const r = parseInt(inp.getAttribute('data-rate'), 10) || 1;
+        const u = inp.getAttribute('data-unit-name') || item.baseUnit;
+        totalActual += q * r;
+        if (q > 0) parts.push(`${q} ${u}`);
+    });
+
+    const diff = totalActual - item.stock;
+    const breakdownStr = parts.length > 0 ? parts.join(' + ') : `0 ${item.baseUnit}`;
+    document.getElementById('st-mob-actual-total').innerText = `${totalActual} ${item.baseUnit} (${breakdownStr})`;
+
+    const diffEl = document.getElementById('st-mob-diff-text');
+    if (diff === 0) {
+        diffEl.innerText = "Khớp tồn hệ thống (0)";
+        diffEl.className = "font-bold text-slate-600";
+    } else if (diff > 0) {
+        diffEl.innerText = `Dư thừa +${diff} ${item.baseUnit}`;
+        diffEl.className = "font-bold text-emerald-600";
+    } else {
+        diffEl.innerText = `Hao hụt ${diff} ${item.baseUnit}`;
+        diffEl.className = "font-bold text-red-600";
+    }
+    return { totalActual, diff, breakdownStr };
+}
+
+async function confirmMobileStocktakeAdjust() {
+    const prodId = document.getElementById('st-mob-prod-select')?.value;
+    const item = inventory.find(i => i.id === prodId);
+    if (!item) return;
+
+    const { totalActual, diff, breakdownStr } = calcMobileStocktakeDiff();
+    if (diff === 0) return alert("Số lượng kiểm thực tế đang khớp 100% với hệ thống!");
+
+    const note = document.getElementById('st-mob-note')?.value.trim() || "Kiểm hàng trên Mobile";
+    const diffLabel = diff > 0 ? `+${diff} ${item.baseUnit}` : `${diff} ${item.baseUnit}`;
+
+    if (!confirm(`XÁC NHẬN CÂN BẰNG KHO:\n- Sản phẩm: ${item.name}\n- Tồn hệ thống cũ: ${item.stock} ${item.baseUnit}\n- Đếm thực tế: ${breakdownStr} (= ${totalActual} ${item.baseUnit})\n- Chênh lệch: ${diffLabel}\n\nBạn có chắc chắn muốn lưu điều chỉnh tồn kho không?`)) {
+        return;
+    }
+
+    try {
+        await db.collection("inventory").doc(item.id).update({ stock: totalActual });
+        await writeInventoryLog(item.id, item.name, "ADJUST", `KIỂM-KHO (${note})`, `Thực đếm: ${breakdownStr}`, item.stock, diff, totalActual);
+        alert(`✅ Đã lưu phiếu kiểm kho và cập nhật tồn mới: ${totalActual} ${item.baseUnit}`);
+        onSelectMobileStocktakeProduct(false);
+    } catch (e) {
+        alert("Lỗi khi lưu kiểm kho: " + e.message);
+    }
+}
+
+// Debounce & Infinite Scroll tự động cho danh sách Sản phẩm khi cuộn gần đáy
+let invSearchTimer = null;
+function initInventoryInfiniteScroll() {
+    const mainEl = document.querySelector('main');
+    if (!mainEl) return;
+    mainEl.addEventListener('scroll', () => {
+        if (mainEl.scrollTop + mainEl.clientHeight >= mainEl.scrollHeight - 180) {
+            const invTab = document.getElementById('tab-inventory');
+            if (invTab && !invTab.classList.contains('hidden')) {
+                const moreWrap = document.getElementById('inv-load-more-wrap');
+                if (moreWrap && !moreWrap.classList.contains('hidden')) {
+                    loadMoreInventory();
+                }
+            }
+            const ordTab = document.getElementById('tab-orders');
+            if (ordTab && !ordTab.classList.contains('hidden') && typeof loadMoreOrders === 'function') {
+                const ordMore = document.getElementById('ord-load-more-wrap');
+                if (ordMore && !ordMore.classList.contains('hidden')) {
+                    loadMoreOrders();
+                }
+            }
+        }
+    }, { passive: true });
+
+    const invSearchInp = document.getElementById('inv-search-name');
+    if (invSearchInp) {
+        invSearchInp.removeAttribute('oninput');
+        invSearchInp.addEventListener('input', () => {
+            clearTimeout(invSearchTimer);
+            invSearchTimer = setTimeout(() => renderInventory(true), 250);
+        });
+    }
 }
 
 // ==========================================
 // 9. BẢO MẬT MÃ PIN & SAO LƯU TOÀN BỘ DỮ LIỆU (FULL BACKUP)
 // ==========================================
-const SHOP_PIN_CODE = localStorage.getItem('hh_shop_pin') || "1234"; // Mã PIN mặc định: 1234
+const SHOP_PIN_CODE = localStorage.getItem('hh_shop_pin') || "1234";
 
 window.addEventListener('DOMContentLoaded', () => {
     const isAuth = localStorage.getItem('hh_auth_remember') === 'true' || sessionStorage.getItem('hh_auth_session') === 'true';

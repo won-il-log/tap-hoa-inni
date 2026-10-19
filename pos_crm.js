@@ -362,6 +362,47 @@ function tryAddByBarcode(code) {
     return false;
 }
 
+let posSearchDebounceTimer = null;
+let currentActivePosTierWholesale = false;
+
+function onPosSearchInput() {
+    const inp = document.getElementById('sell-search-name');
+    const clearBtn = document.getElementById('btn-clear-pos-search');
+    const val = (inp?.value || '').trim();
+    if (clearBtn) clearBtn.classList.toggle('hidden', !val);
+
+    if (window.innerWidth < 768) {
+        if (val.length > 0) openMobileProductSelector();
+        else closeMobileProductSelector();
+    }
+
+    clearTimeout(posSearchDebounceTimer);
+    posSearchDebounceTimer = setTimeout(() => {
+        renderSellGrid();
+    }, 180);
+}
+
+function clearPosSearchInput() {
+    const inp = document.getElementById('sell-search-name');
+    if (inp) inp.value = '';
+    document.getElementById('btn-clear-pos-search')?.classList.add('hidden');
+    closeMobileProductSelector();
+    renderSellGrid();
+}
+
+function openMobileProductSelector() {
+    const wrapper = document.getElementById('pos-product-grid-wrapper');
+    if (wrapper) {
+        wrapper.classList.add('mobile-picker-open');
+        renderSellGrid();
+    }
+}
+
+function closeMobileProductSelector() {
+    const wrapper = document.getElementById('pos-product-grid-wrapper');
+    if (wrapper) wrapper.classList.remove('mobile-picker-open');
+}
+
 function renderSellGrid() {
     const grid = document.getElementById('sell-grid');
     const noResult = document.getElementById('sell-no-result');
@@ -371,31 +412,33 @@ function renderSellGrid() {
     const rawSearch = (document.getElementById('sell-search-name')?.value || '').trim();
     const normSearch = removeVN(rawSearch);
     const filterCat = document.getElementById('sell-search-cat')?.value || 'all';
-    const isWholesaleCust = isCurrentCustomerWholesale();
+    const isWholesaleCust = currentActivePosTierWholesale;
     let count = 0;
 
-    inventory.forEach(item => {
-        if (filterCat !== 'all' && item.category !== filterCat) return;
+    for (let i = 0; i < inventory.length; i++) {
+        const item = inventory[i];
+        if (filterCat !== 'all' && item.category !== filterCat) continue;
         if (normSearch) {
             const matchName = removeVN(item.name).includes(normSearch);
             const matchKw = item.keywords.some(k => removeVN(k).includes(normSearch));
             const matchBc = (item.barcode && item.barcode.includes(rawSearch)) || item.units.some(u => u.barcode && u.barcode.includes(rawSearch));
-            if (!matchName && !matchKw && !matchBc) return;
+            if (!matchName && !matchKw && !matchBc) continue;
         }
         count++;
+        if (count > 60) continue; // Giới hạn DOM tối đa 60 thẻ trên màn hình POS để cuộn mượt
 
         const isOut = item.stock <= 0;
         const isLow = item.stock > 0 && item.stock <= item.minStock;
 
         const imgTag = item.image 
-            ? `<div class="w-full h-20 bg-white rounded-lg mb-1.5 border border-slate-100 flex items-center justify-center overflow-hidden relative">
+            ? `<div class="w-full h-16 md:h-20 bg-white rounded-lg mb-1.5 border border-slate-100 flex items-center justify-center overflow-hidden relative">
                     <img src="${item.image}" class="max-w-full max-h-full object-contain">
                     <span class="absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800')}">
                         ${isOut ? 'Hết' : `Tồn: ${item.stock}`}
                     </span>
                </div>`
-            : `<div class="w-full h-20 bg-slate-50 rounded-lg mb-1.5 flex items-center justify-center text-slate-300 border border-slate-100 relative">
-                    <i class="fa-solid fa-box text-2xl"></i>
+            : `<div class="w-full h-16 md:h-20 bg-slate-50 rounded-lg mb-1.5 flex items-center justify-center text-slate-300 border border-slate-100 relative">
+                    <i class="fa-solid fa-box text-xl"></i>
                     <span class="absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800')}">
                         ${isOut ? 'Hết' : `Tồn: ${item.stock}`}
                     </span>
@@ -405,12 +448,12 @@ function renderSellGrid() {
             const isBigUnit = u.conversionRate > 1;
             const displayPrice = getStandardUnitPrice(item, uIdx, isWholesaleCust);
             const btnStyle = isBigUnit 
-                ? 'bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-sm' 
+                ? 'bg-[#0088FF] hover:bg-blue-700 text-white font-bold shadow-sm' 
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200';
             return `
                 <button onclick="addToCartWithUnit('${item.id}', ${uIdx}, 1, false)" class="w-full py-1.5 px-2 rounded-lg text-[11px] flex justify-between items-center transition scale-active ${btnStyle}">
                     <span class="truncate">+1 ${u.unitName}${isBigUnit ? ` (${u.conversionRate})` : ''}</span>
-                    <span class="${isBigUnit ? 'text-amber-300 font-black' : 'text-red-600 font-bold'} ml-1">${formatmoney(displayPrice)}đ</span>
+                    <span class="${isBigUnit ? 'text-amber-200 font-black' : 'text-red-600 font-bold'} ml-1">${formatmoney(displayPrice)}đ</span>
                 </button>
             `;
         }).join('');
@@ -426,7 +469,7 @@ function renderSellGrid() {
                 </div>
             </div>
         `;
-    });
+    }
 
     if (count === 0) noResult.classList.remove('hidden');
     else noResult.classList.add('hidden');
@@ -459,15 +502,8 @@ function addToCartWithUnit(productId, unitIndex = 0, addQty = 1, isGift = false,
         return alert(`Không đủ tồn kho cho "${item.name}"!\n- Tồn kho hiện tại: ${item.stock} ${item.baseUnit}\n- Trong giỏ đã có: ${currentBaseInCart} ${item.baseUnit}`);
     }
 
-    const card = document.getElementById('pos-card-' + productId);
-    if (card) {
-        card.classList.add('item-added');
-        setTimeout(() => card.classList.remove('item-added'), 250);
-    }
-
     if (!cart[cartKey]) {
-        const isWholesale = isCurrentCustomerWholesale();
-        const tierPrice = getStandardUnitPrice(item, unitIndex, isWholesale);
+        const tierPrice = getStandardUnitPrice(item, unitIndex, currentActivePosTierWholesale);
         const initialPrice = isGift ? 0 : (forcedCustomPrice !== null ? forcedCustomPrice : tierPrice);
 
         cart[cartKey] = {
@@ -488,15 +524,23 @@ function addToCartWithUnit(productId, unitIndex = 0, addQty = 1, isGift = false,
     }
 
     cart[cartKey].qty += addQty;
+
+    // Trên Mobile: Sau khi chọn sản phẩm xong -> Tự động đóng danh sách chọn hàng và trở về giao diện giỏ hàng
+    if (window.innerWidth < 768) {
+        closeMobileProductSelector();
+        const sInp = document.getElementById('sell-search-name');
+        if (sInp) sInp.value = '';
+        document.getElementById('btn-clear-pos-search')?.classList.add('hidden');
+    }
+
     renderCart();
 }
 
-// Chuyển toàn bộ giỏ hàng sang Giá Sỉ hoặc Giá Lẻ
 function applyTierPriceToAllCart(useWholesalePrice, forceResetManual = false) {
+    currentActivePosTierWholesale = !!useWholesalePrice;
     for (const key in cart) {
         const cItem = cart[key];
         if (cItem.isGift) continue;
-        // Giữ nguyên giá nếu thu ngân đã sửa tay (trừ khi bấm nút ép giá cưỡng bức)
         if (cItem.manualPriceEdited && !forceResetManual) continue;
         const prod = inventory.find(i => i.id === cItem.productId);
         if (prod) {
@@ -505,12 +549,17 @@ function applyTierPriceToAllCart(useWholesalePrice, forceResetManual = false) {
             cItem.manualPriceEdited = false;
         }
     }
-    const tierBadge = document.getElementById('pos-customer-tier-badge');
-    if (tierBadge) {
-        tierBadge.innerText = useWholesalePrice ? "Đang áp: Giá Sỉ" : "Đang áp: Giá Lẻ";
-        tierBadge.className = useWholesalePrice 
-            ? "bg-blue-600 text-white px-1.5 py-0.2 rounded text-[9px] font-bold" 
-            : "bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded text-[9px] font-bold";
+
+    const btnRet = document.getElementById('btn-tier-retail');
+    const btnWho = document.getElementById('btn-tier-wholesale');
+    if (btnRet && btnWho) {
+        if (useWholesalePrice) {
+            btnWho.className = "px-3 py-1 rounded-md text-[11px] font-bold bg-[#0088FF] text-white shadow-sm transition";
+            btnRet.className = "px-3 py-1 rounded-md text-[11px] font-bold text-slate-600 hover:text-slate-800 transition";
+        } else {
+            btnRet.className = "px-3 py-1 rounded-md text-[11px] font-bold bg-[#0088FF] text-white shadow-sm transition";
+            btnWho.className = "px-3 py-1 rounded-md text-[11px] font-bold text-slate-600 hover:text-slate-800 transition";
+        }
     }
     renderCart();
 }
@@ -525,14 +574,13 @@ function changeCartItemUnit(oldKey, newUnitIndex) {
     const otherBaseQty = getTotalBaseQtyInCart(cItem.productId, oldKey);
 
     if (otherBaseQty + (cItem.qty * newUnit.conversionRate) > prod.stock) {
-        alert(`Kho chỉ còn ${prod.stock} ${prod.baseUnit}, không đủ để đổi sang ${cItem.qty} ${newUnit.unitName} (${cItem.qty * newUnit.conversionRate} ${prod.baseUnit})!`);
+        alert(`Kho chỉ còn ${prod.stock} ${prod.baseUnit}, không đủ để đổi sang ${cItem.qty} ${newUnit.unitName}!`);
         renderCart();
         return;
     }
 
     const newKey = `${cItem.productId}_${newUnitIndex}_${cItem.isGift ? 'GIFT' : 'SALE'}`;
-    const isWholesale = isCurrentCustomerWholesale();
-    const newPrice = cItem.isGift ? 0 : getStandardUnitPrice(prod, newUnitIndex, isWholesale);
+    const newPrice = cItem.isGift ? 0 : getStandardUnitPrice(prod, newUnitIndex, currentActivePosTierWholesale);
 
     delete cart[oldKey];
     if (cart[newKey]) {
@@ -623,12 +671,14 @@ function renderCart() {
 
     if (keys.length === 0) {
         list.innerHTML = `
-            <li class="text-center py-8 flex flex-col items-center justify-center gap-2">
-                <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-xl">
+            <li class="text-center py-10 flex flex-col items-center justify-center gap-2.5">
+                <div class="w-11 h-11 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-lg">
                     <i class="fa-solid fa-basket-shopping"></i>
                 </div>
-                <div class="text-slate-400 text-xs">Giỏ hàng trống</div>
-                <button type="button" onclick="document.getElementById('sell-search-name').focus()" class="text-[#0088FF] font-bold text-xs">Chọn sản phẩm</button>
+                <div class="text-slate-400 text-xs">Đơn hàng chưa có sản phẩm nào</div>
+                <button type="button" onclick="openMobileProductSelector(); document.getElementById('sell-search-name').focus();" class="bg-blue-50 text-[#0088FF] border border-blue-200 px-4 py-1.5 rounded-lg font-bold text-xs scale-active">
+                    Chọn sản phẩm
+                </button>
             </li>`;
         updateCartTotalsOnly();
         return;
@@ -645,18 +695,17 @@ function renderCart() {
 
         const lineTotal = item.price * item.qty;
         const giftBadge = item.isGift 
-            ? `<span class="bg-purple-600 text-white text-[10px] px-1.5 py-0.2 rounded font-bold ml-1">HÀNG TẶNG 0Đ</span>` 
+            ? `<span class="bg-purple-600 text-white text-[10px] px-1.5 py-0.2 rounded font-bold ml-1">TẶNG 0Đ</span>` 
             : '';
 
         list.innerHTML += `
-            <li class="p-2.5 rounded-xl border ${item.isGift ? 'bg-purple-50/60 border-purple-300' : 'bg-white border-slate-200'} flex flex-col gap-2 animate-fade-in shadow-sm">
+            <li class="p-2.5 rounded-xl border ${item.isGift ? 'bg-purple-50/60 border-purple-300' : 'bg-white border-slate-200'} flex flex-col gap-2 shadow-sm">
                 <div class="flex justify-between items-start gap-2">
                     <div class="font-bold text-slate-800 text-xs leading-snug flex-1">
                         ${item.name} ${giftBadge}
-                        <span class="block text-[10px] text-slate-400 font-normal">Trừ kho: ${item.qty * item.conversionRate} ${item.baseUnit}</span>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0">
-                        <button onclick="toggleCartItemGift('${key}')" class="text-[10px] font-bold px-2 py-0.5 rounded border transition ${item.isGift ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-700 border-purple-300'}">
+                        <button onclick="toggleCartItemGift('${key}')" class="text-[10px] font-bold px-2 py-0.5 rounded border ${item.isGift ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-700 border-purple-300'}">
                             Tặng 0đ
                         </button>
                         <button onclick="updateCartQty('${key}', -99999)" class="text-slate-400 hover:text-red-500 px-1"><i class="fa-solid fa-xmark"></i></button>
@@ -716,9 +765,37 @@ function updateCartTotalsOnly() {
     document.getElementById('cart-total').innerText = `${formatmoney(subtotal)} đ`;
 }
 
-// ==========================================
-// TÌM KIẾM KHÁCH HÀNG BẰNG BÀN PHÍM (KEYBOARD-FIRST: MŨI TÊN + ENTER) & TỰ ÁP GIÁ SỈ/LẺ
-// ==========================================
+function togglePosCustomerSearchBox() {
+    const wrap = document.getElementById('pos-customer-search-wrap');
+    if (!wrap) return;
+    wrap.classList.toggle('hidden');
+    if (!wrap.classList.contains('hidden')) {
+        const inp = document.getElementById('pos-customer-search');
+        if (inp) {
+            inp.value = '';
+            inp.focus();
+            onInputCustomerSearch();
+        }
+    }
+}
+
+function togglePosNoteInput() {
+    const wrap = document.getElementById('pos-note-input-wrap');
+    if (!wrap) return;
+    wrap.classList.toggle('hidden');
+    if (!wrap.classList.contains('hidden')) {
+        document.getElementById('seller-name')?.focus();
+    }
+}
+
+function syncPosNoteSummary() {
+    const val = document.getElementById('seller-name')?.value.trim() || '';
+    const sumEl = document.getElementById('pos-note-summary');
+    if (sumEl) {
+        sumEl.innerHTML = val ? `<b class="text-slate-700 not-italic">${val}</b> <i class="fa-solid fa-pen text-[10px] ml-1"></i>` : `Thêm ghi chú... <i class="fa-solid fa-pen text-[10px] ml-1"></i>`;
+    }
+}
+
 function initCustomerSearchOutsideClick() {
     document.addEventListener('click', (e) => {
         const drop = document.getElementById('pos-customer-dropdown');
@@ -732,7 +809,7 @@ function initCustomerSearchOutsideClick() {
 function renderPosCustomerSelect() {
     const sel = document.getElementById('pos-customer-select');
     if (!sel) return;
-    sel.innerHTML = `<option value="GUEST">👤 Khách Lẻ (Vãng lai)</option>`;
+    sel.innerHTML = `<option value="GUEST">Khách lẻ</option>`;
     customers.filter(c => c.type !== 'SUPPLIER').forEach(c => {
         sel.innerHTML += `<option value="${c.id}">${c.name} - ${c.phone || ''}</option>`;
     });
@@ -742,30 +819,25 @@ function renderPosCustomerSelect() {
 
 function syncCustomerSearchDisplay() {
     const inp = document.getElementById('pos-customer-search');
-    const tierBadge = document.getElementById('pos-customer-tier-badge');
+    const dispName = document.getElementById('pos-customer-display-name');
     const debtBadge = document.getElementById('pos-customer-debt-badge');
+    const resetBtn = document.getElementById('btn-reset-guest-inline');
 
     if (selectedCustomerId === 'GUEST') {
-        if (inp) inp.value = "👤 Khách Lẻ (Vãng lai)";
-        if (tierBadge) {
-            tierBadge.innerText = "Giá Lẻ";
-            tierBadge.className = "bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded text-[9px] font-bold";
-        }
+        if (inp) inp.value = "";
+        if (dispName) dispName.innerText = "Khách lẻ";
         if (debtBadge) debtBadge.classList.add('hidden');
+        if (resetBtn) resetBtn.classList.add('hidden');
     } else {
         const cust = customers.find(c => c.id === selectedCustomerId);
         if (cust) {
-            const isWholesale = cust.type === 'WHOLESALE';
-            if (inp) inp.value = `${isWholesale ? '🏪' : '👤'} ${cust.name}${cust.phone ? ` (${cust.phone})` : ''}`;
-            if (tierBadge) {
-                tierBadge.innerText = isWholesale ? "Khách Sỉ (Áp Giá Sỉ)" : "Khách Lẻ (Áp Giá Lẻ)";
-                tierBadge.className = isWholesale 
-                    ? "bg-blue-600 text-white px-1.5 py-0.2 rounded text-[9px] font-bold" 
-                    : "bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded text-[9px] font-bold";
-            }
+            const label = `${cust.name}${cust.phone ? ` (${cust.phone})` : ''}`;
+            if (inp) inp.value = label;
+            if (dispName) dispName.innerText = label;
+            if (resetBtn) resetBtn.classList.remove('hidden');
             if (debtBadge) {
                 if (cust.currentDebt > 0) {
-                    debtBadge.innerText = `Nợ: ${formatmoney(cust.currentDebt)}đ`;
+                    debtBadge.innerText = `(Nợ: ${formatmoney(cust.currentDebt)}đ)`;
                     debtBadge.classList.remove('hidden');
                 } else {
                     debtBadge.classList.add('hidden');
@@ -780,19 +852,17 @@ function onInputCustomerSearch() {
     const drop = document.getElementById('pos-customer-dropdown');
     if (!inp || !drop) return;
 
-    let raw = inp.value.trim();
-    if (raw.startsWith('👤') || raw.startsWith('🏪')) raw = '';
+    const raw = inp.value.trim();
     const norm = removeVN(raw);
 
     const buyerList = customers.filter(c => c.type !== 'SUPPLIER');
     filteredPosCustomers = [
-        { id: 'GUEST', name: 'Khách Lẻ (Vãng lai)', phone: '', type: 'RETAIL', currentDebt: 0 },
+        { id: 'GUEST', name: 'Khách lẻ', phone: '', type: 'RETAIL', currentDebt: 0 },
         ...buyerList.filter(c => {
             if (!norm) return true;
             return removeVN(c.name).includes(norm) || 
                    (c.phone && c.phone.includes(raw)) || 
-                   (c.customerCode && removeVN(c.customerCode).includes(norm)) ||
-                   removeVN(c.id).includes(norm);
+                   (c.customerCode && removeVN(c.customerCode).includes(norm));
         })
     ].slice(0, 20);
 
@@ -855,9 +925,9 @@ function selectPosCustomerFromDropdown(custId) {
     const sel = document.getElementById('pos-customer-select');
     if (sel) sel.value = selectedCustomerId;
     document.getElementById('pos-customer-dropdown')?.classList.add('hidden');
+    document.getElementById('pos-customer-search-wrap')?.classList.add('hidden');
 
     syncCustomerSearchDisplay();
-    // Tự động chuyển giá trong giỏ hàng sang Giá Sỉ nếu khách thuộc tệp Khách Sỉ
     const isWholesale = isCurrentCustomerWholesale();
     applyTierPriceToAllCart(isWholesale);
     renderSellGrid();
@@ -865,8 +935,6 @@ function selectPosCustomerFromDropdown(custId) {
 
 function resetToGuestCustomer() {
     selectPosCustomerFromDropdown('GUEST');
-    const inp = document.getElementById('pos-customer-search');
-    if (inp) { inp.value = ''; inp.focus(); onInputCustomerSearch(); }
 }
 
 function onSelectPosCustomer() {
@@ -1545,20 +1613,59 @@ function triggerFastAirPrint() {
             <title>In Hóa Đơn</title>
             <script src="https://cdn.tailwindcss.com"><\/script>
             <style>
-                @page { size: ${is80mm ? '80mm auto' : 'A5'}; margin: ${is80mm ? '4mm' : '12mm'}; }
-                body { font-family: sans-serif; background: #fff; color: #000; margin: 0; padding: 0; font-size: ${is80mm ? '11px' : '12px'}; }
-                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-                th, td { border: 1px solid #64748b; padding: 4px; word-wrap: break-word; }
-                .col-stt { width: 8%; ${is80mm ? 'display:none;' : ''} }
-                .col-name { width: 38%; }
-                .col-unit { width: 12%; }
-                .col-qty { width: 10%; }
-                .col-price { width: 15%; }
-                .col-total { width: 17%; }
-                .vietqr-header-img { width: ${is80mm ? '28mm' : '32mm'}; height: ${is80mm ? '28mm' : '32mm'}; object-fit: contain; }
+                @page {
+                    size: ${is80mm ? '80mm auto' : 'A4 portrait'};
+                    margin: ${is80mm ? '4mm' : '10mm 0'};
+                }
+                *, *::before, *::after { box-sizing: border-box !important; }
+                body {
+                    font-family: sans-serif;
+                    background: #fff;
+                    color: #000;
+                    margin: 0;
+                    padding: 0;
+                }
+                .a5-print-container {
+                    width: ${is80mm ? '76mm' : '118mm'} !important;
+                    max-width: ${is80mm ? '76mm' : '118mm'} !important;
+                    margin: 0 auto !important;
+                    padding: 4mm !important;
+                    box-sizing: border-box !important;
+                    font-size: 11px !important;
+                    overflow: hidden !important;
+                }
+                table {
+                    width: 100% !important;
+                    table-layout: fixed !important;
+                    border-collapse: collapse !important;
+                    box-sizing: border-box !important;
+                }
+                th, td {
+                    border: 1px solid #64748b;
+                    padding: 3px 4px;
+                    word-wrap: break-word !important;
+                    overflow-wrap: break-word !important;
+                    white-space: normal !important;
+                }
+                /* Tỷ lệ cột chuẩn 100%: STT 8% + Tên hàng 23% + ĐVT 12% + SL 10% + Đơn giá 22% + Thành tiền 25% = 100% */
+                .col-stt { width: 8% !important; ${is80mm ? 'display:none;' : ''} }
+                .col-name { width: ${is80mm ? '31%' : '23%'} !important; }
+                .col-unit { width: 12% !important; }
+                .col-qty { width: 10% !important; }
+                .col-price { width: 22% !important; }
+                .col-total { width: 25% !important; }
+                .vietqr-header-img {
+                    width: ${is80mm ? '26mm' : '30mm'} !important;
+                    height: ${is80mm ? '26mm' : '30mm'} !important;
+                    object-fit: contain !important;
+                }
             </style>
         </head>
-        <body>${source.innerHTML}</body>
+        <body>
+            <div class="a5-print-container">
+                ${source.innerHTML}
+            </div>
+        </body>
         </html>
     `);
     doc.close();
@@ -1566,7 +1673,64 @@ function triggerFastAirPrint() {
     setTimeout(() => {
         iframe.contentWindow.focus();
         iframe.contentWindow.print();
-    }, 120);
+    }, 180);
+}
+
+// MODULE 4: Xuất Ảnh Hóa Đơn PNG & Chia sẻ trực tiếp qua Zalo (Web Share API)
+async function exportBillToImage() {
+    const billEl = document.getElementById('printable-bill');
+    const btn = document.getElementById('btn-export-bill-img');
+    if (!billEl || typeof html2canvas === 'undefined') {
+        return alert("Không tìm thấy thư viện chụp ảnh hóa đơn!");
+    }
+
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang tạo ảnh...`;
+    }
+
+    try {
+        const canvas = await html2canvas(billEl, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: '#ffffff'
+        });
+
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) throw new Error("Không thể khởi tạo file ảnh PNG");
+
+        const code = currentViewingOrder?.orderCode || 'HoaDon';
+        const fileName = `HoaDon_${code}.png`;
+        const file = new File([blob], fileName, { type: 'image/png' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                title: `Hóa đơn ${code}`,
+                text: `Hóa đơn bán hàng ${code} - ${storeSettings.storeName || ''}`,
+                files: [file]
+            });
+        } else {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }
+    } catch (err) {
+        if (err && err.name !== 'AbortError') {
+            alert("Lỗi khi xuất ảnh hóa đơn: " + err.message);
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
 }
 
 function toggleQuickBillHeaderEdit() {
@@ -1580,6 +1744,8 @@ function toggleQuickBillHeaderEdit() {
         document.getElementById('qb-bank-id').value = storeSettings.bankId || "MB";
         document.getElementById('qb-bank-acc').value = storeSettings.bankAcc || "";
         document.getElementById('qb-bank-owner').value = storeSettings.bankOwner || "";
+        const st = document.getElementById('qb-save-status');
+        if (st) st.innerText = "";
     }
 }
 
@@ -1592,12 +1758,7 @@ function applyQuickBillHeaderEdit() {
     storeSettings.bankOwner = document.getElementById('qb-bank-owner').value.trim().toUpperCase();
 
     localStorage.setItem('hh_store_settings', JSON.stringify(storeSettings));
-    db.collection("shop_data").doc("settings").set(storeSettings).catch(() => {});
     if (typeof applyStoreSettingsToUI === 'function') applyStoreSettingsToUI();
-
-    document.getElementById('bill-store-name').innerText = storeSettings.storeName.toUpperCase();
-    document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
-    document.getElementById('bill-store-address').innerText = storeSettings.address || "";
 
     const qrBox = document.getElementById('bill-vietqr-box');
     const qrImg = document.getElementById('bill-vietqr-img');
@@ -1612,6 +1773,31 @@ function applyQuickBillHeaderEdit() {
         qrBox.classList.add('hidden');
     }
     syncToPreRenderedPrintArea();
+}
+
+async function saveQuickBillHeaderConfig() {
+    applyQuickBillHeaderEdit();
+    const st = document.getElementById('qb-save-status');
+    const btn = document.getElementById('btn-save-qb-config');
+    if (st) st.innerText = "Đang lưu...";
+    if (btn) btn.disabled = true;
+
+    try {
+        storeSettings.updatedAt = Date.now();
+        localStorage.setItem('hh_store_settings', JSON.stringify(storeSettings));
+        await db.collection("shop_data").doc("settings").set(storeSettings, { merge: true });
+        if (st) {
+            st.innerText = "✅ Đã lưu cấu hình thành công!";
+            st.className = "text-[11px] text-emerald-700 font-bold";
+        }
+    } catch (e) {
+        if (st) {
+            st.innerText = "⚠️ Đã lưu tại máy (Lỗi Cloud: " + e.message + ")";
+            st.className = "text-[11px] text-amber-700 font-bold";
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 function openPrintableInvoice(order) {
@@ -2733,12 +2919,32 @@ async function openVoucherModal(type) {
     loadCashbookModule();
 }
 
+let activeReportCategoryTab = 'SALES';
+let currentDetailedReportType = null;
+let revenueReportSubMode = 'DAY'; // 'DAY' | 'PRODUCT'
+let detailedReportLimit = 40;
+let reportSearchDebounce = null;
+
+function switchReportCategoryTab(cat) {
+    activeReportCategoryTab = cat;
+    ['SALES', 'INVENTORY', 'FINANCE'].forEach(c => {
+        const grp = document.getElementById('rep-group-' + c);
+        const btn = document.getElementById('rep-cat-btn-' + c);
+        if (grp) grp.classList.toggle('hidden', c !== cat);
+        if (btn) {
+            btn.className = (c === cat)
+                ? "border-b-2 border-white pb-1.5 font-bold text-white"
+                : "text-blue-100 pb-1.5 font-semibold";
+        }
+    });
+}
+
 async function loadReportsModule() {
+    switchReportCategoryTab(activeReportCategoryTab);
     const fromStr = document.getElementById('rep-date-from')?.value || '2024-01-01';
     const toStr = document.getElementById('rep-date-to')?.value || '2060-12-31';
     const tbody = document.getElementById('rep-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tính toán báo cáo Lãi/Lỗ...</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tính toán báo cáo...</td></tr>`;
 
     try {
         const snap = await db.collection("orders")
@@ -2746,8 +2952,7 @@ async function loadReportsModule() {
             .where("dateStr", "<=", toStr)
             .get();
 
-        // Chỉ tính các đơn xuất bán còn hiệu lực (các đơn đã hoàn 100% có totalAmount = 0 sẽ tự động không tính)
-        const salesOrders = snap.docs.map(d => d.data()).filter(o => o.orderType === 'SALE' && (Number(o.totalAmount) || 0) > 0);
+        const salesOrders = snap.docs.map(d => d.data()).filter(o => o.orderType === 'SALE' && o.status !== 'PROCESSING' && (Number(o.totalAmount) || 0) > 0);
         let netRev = 0, totalCost = 0;
         const itemMap = {};
 
@@ -2774,6 +2979,7 @@ async function loadReportsModule() {
         document.getElementById('rep-stat-profit').innerText = `${formatmoney(grossProfit)} đ`;
         document.getElementById('rep-stat-orders').innerText = `${salesOrders.length} đơn`;
 
+        if (!tbody) return;
         const sortedNames = Object.keys(itemMap).sort((a, b) => (itemMap[b].rev - itemMap[b].cost) - (itemMap[a].rev - itemMap[a].cost));
         tbody.innerHTML = '';
 
@@ -2795,23 +3001,489 @@ async function loadReportsModule() {
                     <td class="p-3 text-right text-slate-600">${formatmoney(st.cost)} đ</td>
                     <td class="p-3 text-right font-black ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}">${profit >= 0 ? '+' : ''}${formatmoney(profit)} đ</td>
                     <td class="p-3 text-center whitespace-nowrap">
-                        <button onclick="editReportItem('${safeName}', ${st.baseQty}, ${st.rev}, ${st.cost})" title="Sửa Doanh thu / Tiền vốn mặt hàng này" class="text-amber-600 hover:text-amber-800 px-1.5 py-1"><i class="fa-solid fa-pen"></i></button>
-                        <button onclick="deleteReportItem('${safeName}')" title="Xóa mặt hàng này khỏi báo cáo kỳ này" class="text-red-500 hover:text-red-700 px-1.5 py-1"><i class="fa-solid fa-trash-can"></i></button>
+                        <button onclick="editReportItem('${safeName}', ${st.baseQty}, ${st.rev}, ${st.cost})" class="text-amber-600 hover:text-amber-800 px-1.5 py-1"><i class="fa-solid fa-pen"></i></button>
+                        <button onclick="deleteReportItem('${safeName}')" class="text-red-500 hover:text-red-700 px-1.5 py-1"><i class="fa-solid fa-trash-can"></i></button>
                     </td>
                 </tr>
             `;
         });
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Lỗi báo cáo: ${e.message}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Lỗi báo cáo: ${e.message}</td></tr>`;
     }
 }
 
-// Sửa trực tiếp Số lượng, Doanh thu, Tiền vốn của mặt hàng trong Báo cáo Lãi/Lỗ
+// MỞ MÀN HÌNH BÁO CÁO CHI TIẾT ĐỘC LẬP (MODULE 5)
+function openDetailedReport(reportType) {
+    currentDetailedReportType = reportType;
+    detailedReportLimit = 40;
+
+    const repFrom = document.getElementById('rep-date-from')?.value || '';
+    const repTo = document.getElementById('rep-date-to')?.value || '';
+    const drFrom = document.getElementById('dr-date-from');
+    const drTo = document.getElementById('dr-date-to');
+    if (drFrom && repFrom) drFrom.value = repFrom;
+    if (drTo && repTo) drTo.value = repTo;
+
+    const searchInp = document.getElementById('dr-search-input');
+    if (searchInp) searchInp.value = '';
+
+    const titles = {
+        'SALES_REVENUE': 'Báo cáo doanh thu',
+        'SALES_PROFIT': 'Báo cáo lợi nhuận gộp',
+        'SALES_PAYMENT': 'Báo cáo phương thức thanh toán',
+        'INV_VALUATION': 'Báo cáo giá trị tồn kho',
+        'INV_LEDGER': 'Sổ kho — Lịch sử nhập/xuất',
+        'INV_MOVEMENT': 'Báo cáo xuất nhập tồn',
+        'INV_LOW_STOCK': 'Báo cáo hàng dưới định mức',
+        'FIN_PNL': 'Báo cáo kết quả kinh doanh (Lãi/Lỗ)',
+        'FIN_CASHBOOK': 'Báo cáo Sổ quỹ thu chi',
+        'FIN_DEBT_CUST': 'Báo cáo công nợ Khách hàng',
+        'FIN_DEBT_SUP': 'Báo cáo công nợ Nhà cung cấp'
+    };
+    document.getElementById('dr-title').innerText = titles[reportType] || 'Báo cáo chi tiết';
+
+    document.getElementById('dr-submode-wrap').classList.toggle('hidden', reportType !== 'SALES_REVENUE');
+    document.getElementById('dr-extra-filter').classList.toggle('hidden', reportType !== 'INV_LEDGER');
+    document.getElementById('dr-date-filter-wrap').classList.toggle('hidden', ['INV_VALUATION', 'INV_LOW_STOCK'].includes(reportType));
+
+    document.getElementById('detailed-report-modal').classList.remove('hidden');
+    renderDetailedReportData(true);
+}
+
+function closeDetailedReport() {
+    document.getElementById('detailed-report-modal').classList.add('hidden');
+    switchReportCategoryTab(activeReportCategoryTab);
+}
+
+function setRevenueReportSubMode(mode) {
+    revenueReportSubMode = mode;
+    document.getElementById('dr-sub-day').className = mode === 'DAY' ? "px-2.5 py-1 rounded-md bg-[#0088FF] text-white" : "px-2.5 py-1 rounded-md text-slate-600";
+    document.getElementById('dr-sub-prod').className = mode === 'PRODUCT' ? "px-2.5 py-1 rounded-md bg-[#0088FF] text-white" : "px-2.5 py-1 rounded-md text-slate-600";
+    renderDetailedReportData(true);
+}
+
+function onDebouncedReportSearch() {
+    clearTimeout(reportSearchDebounce);
+    reportSearchDebounce = setTimeout(() => renderDetailedReportData(true), 250);
+}
+
+function loadMoreDetailedReport() {
+    detailedReportLimit += 40;
+    renderDetailedReportData(false);
+}
+
+async function renderDetailedReportData(resetLimit = false) {
+    if (resetLimit) detailedReportLimit = 40;
+    const thead = document.getElementById('dr-thead');
+    const tbody = document.getElementById('dr-tbody');
+    const banner = document.getElementById('dr-summary-banner');
+    const moreWrap = document.getElementById('dr-load-more-wrap');
+    if (!thead || !tbody) return;
+
+    const fromStr = document.getElementById('dr-date-from')?.value || '2024-01-01';
+    const toStr = document.getElementById('dr-date-to')?.value || '2060-12-31';
+    const fromTime = new Date(fromStr + 'T00:00:00').getTime();
+    const toTime = new Date(toStr + 'T23:59:59.999').getTime();
+    const kw = (document.getElementById('dr-search-input')?.value || '').toLowerCase().trim();
+
+    tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang truy vấn dữ liệu thực tế...</td></tr>`;
+    banner.innerHTML = '';
+    if (moreWrap) moreWrap.classList.add('hidden');
+
+    try {
+        // 1. BÁO CÁO DOANH THU (THEO NGÀY / THEO SẢN PHẨM)
+        if (currentDetailedReportType === 'SALES_REVENUE') {
+            const snap = await db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get();
+            const allOrders = snap.docs.map(d => d.data());
+
+            if (revenueReportSubMode === 'DAY') {
+                const dayMap = {};
+                let totalNet = 0, totalRet = 0, totalGross = 0;
+
+                allOrders.forEach(o => {
+                    if (o.status === 'PROCESSING') return;
+                    const d = o.dateStr || '---';
+                    if (!dayMap[d]) dayMap[d] = { count: 0, netSales: 0, returns: 0 };
+                    if (o.orderType === 'RETURN') {
+                        dayMap[d].returns += Number(o.totalAmount) || 0;
+                        totalRet += Number(o.totalAmount) || 0;
+                    } else {
+                        dayMap[d].count++;
+                        dayMap[d].netSales += Number(o.totalAmount) || 0;
+                        totalNet += Number(o.totalAmount) || 0;
+                    }
+                });
+                totalGross = totalNet + totalRet;
+
+                banner.innerHTML = `
+                    <div class="bg-white p-3 rounded-xl border border-slate-200 grid grid-cols-3 gap-2 text-center text-xs">
+                        <div><div class="text-slate-400">Tiền hàng</div><div class="font-bold text-slate-800 mt-0.5">${formatmoney(totalGross)} đ</div></div>
+                        <div><div class="text-slate-400">Hoàn trả</div><div class="font-bold text-red-600 mt-0.5">-${formatmoney(totalRet)} đ</div></div>
+                        <div><div class="text-slate-400">Doanh thu thuần</div><div class="font-black text-[#0088FF] mt-0.5">${formatmoney(totalNet)} đ</div></div>
+                    </div>`;
+
+                thead.innerHTML = `<tr><th class="p-2.5">Ngày</th><th class="p-2.5 text-center">SL Đơn</th><th class="p-2.5 text-right">Tiền hàng</th><th class="p-2.5 text-right">Hoàn trả</th><th class="p-2.5 text-right">Doanh thu thuần</th></tr>`;
+                const days = Object.keys(dayMap).filter(d => !kw || d.includes(kw)).sort((a, b) => b.localeCompare(a));
+                tbody.innerHTML = days.slice(0, detailedReportLimit).map(d => {
+                    const row = dayMap[d];
+                    const gross = row.netSales + row.returns;
+                    return `<tr>
+                        <td class="p-2.5 font-bold text-slate-800">${d}</td>
+                        <td class="p-2.5 text-center font-semibold">${row.count}</td>
+                        <td class="p-2.5 text-right">${formatmoney(gross)} đ</td>
+                        <td class="p-2.5 text-right text-red-600">${formatmoney(row.returns)} đ</td>
+                        <td class="p-2.5 text-right font-black text-[#0088FF]">${formatmoney(row.netSales)} đ</td>
+                    </tr>`;
+                }).join('') || `<tr><td colspan="5" class="p-6 text-center text-slate-400">Không có dữ liệu trong kỳ</td></tr>`;
+                if (moreWrap) moreWrap.classList.toggle('hidden', days.length <= detailedReportLimit);
+            } else {
+                const prodMap = {};
+                allOrders.forEach(o => {
+                    if (o.status === 'PROCESSING' || o.orderType === 'RETURN') return;
+                    (o.items || []).forEach(i => {
+                        if ((Number(i.qty) || 0) <= 0) return;
+                        if (!prodMap[i.productName]) prodMap[i.productName] = { unit: i.baseUnit || i.unitName, qty: 0, rev: 0 };
+                        prodMap[i.productName].qty += Number(i.baseQty || i.qty) || 0;
+                        prodMap[i.productName].rev += Number(i.totalPrice) || 0;
+                    });
+                });
+                thead.innerHTML = `<tr><th class="p-2.5">Sản phẩm</th><th class="p-2.5 text-center">SL Bán</th><th class="p-2.5 text-right">Doanh thu thuần</th></tr>`;
+                const names = Object.keys(prodMap).filter(n => !kw || n.toLowerCase().includes(kw)).sort((a, b) => prodMap[b].rev - prodMap[a].rev);
+                tbody.innerHTML = names.slice(0, detailedReportLimit).map(n => `
+                    <tr>
+                        <td class="p-2.5 font-bold text-slate-800">${n}</td>
+                        <td class="p-2.5 text-center font-semibold">${prodMap[n].qty} ${prodMap[n].unit}</td>
+                        <td class="p-2.5 text-right font-black text-[#0088FF]">${formatmoney(prodMap[n].rev)} đ</td>
+                    </tr>
+                `).join('') || `<tr><td colspan="3" class="p-6 text-center text-slate-400">Không có dữ liệu</td></tr>`;
+                if (moreWrap) moreWrap.classList.toggle('hidden', names.length <= detailedReportLimit);
+            }
+            return;
+        }
+
+        // 2. BÁO CÁO LỢI NHUẬN GỘP & TỶ SUẤT LÃI (%)
+        if (currentDetailedReportType === 'SALES_PROFIT') {
+            const snap = await db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get();
+            const itemMap = {};
+            let sumRev = 0, sumCost = 0;
+
+            snap.docs.map(d => d.data()).forEach(o => {
+                if (o.orderType !== 'SALE' || o.status === 'PROCESSING' || (Number(o.totalAmount) || 0) <= 0) return;
+                (o.items || []).forEach(i => {
+                    if ((Number(i.qty) || 0) <= 0) return;
+                    const rev = Number(i.totalPrice) || 0;
+                    const cost = Number(i.totalCost) || 0;
+                    sumRev += rev;
+                    sumCost += cost;
+                    if (!itemMap[i.productName]) itemMap[i.productName] = { unit: i.baseUnit || 'ĐV', qty: 0, rev: 0, cost: 0 };
+                    itemMap[i.productName].qty += Number(i.baseQty || i.qty) || 0;
+                    itemMap[i.productName].rev += rev;
+                    itemMap[i.productName].cost += cost;
+                });
+            });
+
+            const sumProfit = sumRev - sumCost;
+            const avgMargin = sumRev > 0 ? ((sumProfit / sumRev) * 100).toFixed(1) : "0.0";
+            banner.innerHTML = `
+                <div class="bg-white p-3 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
+                    <div>Tổng lãi gộp: <b class="text-emerald-600 text-sm">${formatmoney(sumProfit)} đ</b></div>
+                    <div>Tỷ suất lãi TB: <b class="text-[#0088FF] text-sm">${avgMargin}%</b></div>
+                </div>`;
+
+            thead.innerHTML = `<tr><th class="p-2.5">Mặt hàng</th><th class="p-2.5 text-center">SL Bán</th><th class="p-2.5 text-right">Doanh thu</th><th class="p-2.5 text-right">Tổng giá vốn</th><th class="p-2.5 text-right">Lãi gộp</th><th class="p-2.5 text-right">Tỷ suất (%)</th></tr>`;
+            const names = Object.keys(itemMap).filter(n => !kw || n.toLowerCase().includes(kw)).sort((a, b) => (itemMap[b].rev - itemMap[b].cost) - (itemMap[a].rev - itemMap[a].cost));
+            tbody.innerHTML = names.slice(0, detailedReportLimit).map(n => {
+                const r = itemMap[n];
+                const prof = r.rev - r.cost;
+                const margin = r.rev > 0 ? ((prof / r.rev) * 100).toFixed(1) + '%' : '0%';
+                return `<tr>
+                    <td class="p-2.5 font-bold text-slate-800">${n}</td>
+                    <td class="p-2.5 text-center">${r.qty} ${r.unit}</td>
+                    <td class="p-2.5 text-right font-semibold">${formatmoney(r.rev)} đ</td>
+                    <td class="p-2.5 text-right text-slate-500">${formatmoney(r.cost)} đ</td>
+                    <td class="p-2.5 text-right font-bold ${prof >= 0 ? 'text-emerald-600' : 'text-red-600'}">${formatmoney(prof)} đ</td>
+                    <td class="p-2.5 text-right font-bold text-[#0088FF]">${margin}</td>
+                </tr>`;
+            }).join('') || `<tr><td colspan="6" class="p-6 text-center text-slate-400">Chưa có dữ liệu</td></tr>`;
+            if (moreWrap) moreWrap.classList.toggle('hidden', names.length <= detailedReportLimit);
+            return;
+        }
+
+        // 3. BÁO CÁO PHƯƠNG THỨC THANH TOÁN
+        if (currentDetailedReportType === 'SALES_PAYMENT') {
+            const snap = await db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get();
+            const stats = {
+                CASH: { label: 'Tiền mặt (Đã thực thu)', count: 0, amount: 0 },
+                BANK: { label: 'Chuyển khoản (Đã thực thu)', count: 0, amount: 0 },
+                DEBT: { label: 'Ghi nợ phát sinh từ đơn hàng', count: 0, amount: 0 }
+            };
+
+            snap.docs.map(d => d.data()).forEach(o => {
+                if (o.orderType !== 'SALE' || o.status === 'PROCESSING') return;
+                const paid = Number(o.paidAmount) || 0;
+                const debtAdded = Math.max(0, (Number(o.totalAmount) || 0) - paid);
+                if (paid > 0) {
+                    if (o.paymentMethod === 'BANK') { stats.BANK.count++; stats.BANK.amount += paid; }
+                    else { stats.CASH.count++; stats.CASH.amount += paid; }
+                }
+                if (debtAdded > 0) {
+                    stats.DEBT.count++;
+                    stats.DEBT.amount += debtAdded;
+                }
+            });
+
+            thead.innerHTML = `<tr><th class="p-3">Phương thức</th><th class="p-3 text-center">Số giao dịch</th><th class="p-3 text-right">Tổng tiền</th></tr>`;
+            tbody.innerHTML = Object.values(stats).map(s => `
+                <tr>
+                    <td class="p-3 font-bold text-slate-800">${s.label}</td>
+                    <td class="p-3 text-center font-semibold">${s.count}</td>
+                    <td class="p-3 text-right font-black text-[#0088FF]">${formatmoney(s.amount)} đ</td>
+                </tr>
+            `).join('');
+            return;
+        }
+
+        // 4. BÁO CÁO TỒN KHO
+        if (currentDetailedReportType === 'INV_VALUATION') {
+            let totalCap = 0;
+            const filtered = inventory.filter(i => {
+                if (i.stock > 0) totalCap += i.stock * i.costPrice;
+                return !kw || i.name.toLowerCase().includes(kw) || (i.barcode && i.barcode.toLowerCase().includes(kw));
+            });
+
+            banner.innerHTML = `<div class="bg-white p-3.5 rounded-xl border border-slate-200 flex justify-between items-center text-xs"><span class="font-bold text-slate-600">Tổng giá trị tồn kho (Tồn × Giá vốn):</span><span class="font-black text-base text-[#0088FF]">${formatmoney(totalCap)} đ</span></div>`;
+            thead.innerHTML = `<tr><th class="p-2.5">Tên mặt hàng</th><th class="p-2.5 text-center">ĐVT</th><th class="p-2.5 text-right">Tồn hiện tại</th><th class="p-2.5 text-right">Giá vốn</th><th class="p-2.5 text-right">Tổng giá trị tồn</th></tr>`;
+            tbody.innerHTML = filtered.slice(0, detailedReportLimit).map(i => `
+                <tr>
+                    <td class="p-2.5 font-bold text-slate-800">${i.name}</td>
+                    <td class="p-2.5 text-center">${i.baseUnit}</td>
+                    <td class="p-2.5 text-right font-bold ${i.stock <= 0 ? 'text-red-600' : 'text-slate-800'}">${i.stock}</td>
+                    <td class="p-2.5 text-right">${formatmoney(i.costPrice)} đ</td>
+                    <td class="p-2.5 text-right font-black text-[#0088FF]">${formatmoney(Math.max(0, i.stock) * i.costPrice)} đ</td>
+                </tr>
+            `).join('');
+            if (moreWrap) moreWrap.classList.toggle('hidden', filtered.length <= detailedReportLimit);
+            return;
+        }
+
+        // 5. SỔ KHO — LỊCH SỬ NHẬP/XUẤT
+        if (currentDetailedReportType === 'INV_LEDGER') {
+            const typeFilter = document.getElementById('dr-extra-filter')?.value || 'ALL';
+            const snap = await db.collection("inventory_logs")
+                .where("createdAt", ">=", fromTime)
+                .where("createdAt", "<=", toTime)
+                .get();
+
+            const logs = snap.docs.map(d => d.data())
+                .filter(l => (typeFilter === 'ALL' || l.actionType === typeFilter) && (!kw || (l.productName || '').toLowerCase().includes(kw) || (l.referenceId || '').toLowerCase().includes(kw)))
+                .sort((a, b) => b.createdAt - a.createdAt);
+
+            thead.innerHTML = `<tr><th class="p-2.5">Thời gian</th><th class="p-2.5">Mã chứng từ</th><th class="p-2.5">Loại</th><th class="p-2.5">Tên hàng</th><th class="p-2.5 text-right">SL thay đổi</th><th class="p-2.5 text-right">Tồn cuối</th></tr>`;
+            tbody.innerHTML = logs.slice(0, detailedReportLimit).map(l => {
+                const dStr = new Date(l.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+                const sign = l.changeQty > 0 ? '+' : '';
+                return `<tr>
+                    <td class="p-2.5 text-slate-500 whitespace-nowrap">${dStr}</td>
+                    <td class="p-2.5 font-bold text-slate-700">${l.referenceId || '---'}</td>
+                    <td class="p-2.5">${l.actionType || ''}</td>
+                    <td class="p-2.5 font-bold text-slate-800">${l.productName || ''}</td>
+                    <td class="p-2.5 text-right font-bold ${l.changeQty >= 0 ? 'text-emerald-600' : 'text-red-600'}">${sign}${l.changeQty}</td>
+                    <td class="p-2.5 text-right font-black text-slate-800">${l.endStock}</td>
+                </tr>`;
+            }).join('') || `<tr><td colspan="6" class="p-6 text-center text-slate-400">Chưa có biến động kho trong kỳ</td></tr>`;
+            if (moreWrap) moreWrap.classList.toggle('hidden', logs.length <= detailedReportLimit);
+            return;
+        }
+
+        // 6. BÁO CÁO XUẤT NHẬP TỒN (Tồn cuối = Tồn đầu + Nhập - Xuất)
+        if (currentDetailedReportType === 'INV_MOVEMENT') {
+            const snap = await db.collection("inventory_logs").where("createdAt", ">=", fromTime).get();
+            const allRecentLogs = snap.docs.map(d => d.data());
+
+            thead.innerHTML = `<tr><th class="p-2.5">Tên hàng</th><th class="p-2.5 text-right">Tồn đầu kỳ</th><th class="p-2.5 text-right">SL Nhập</th><th class="p-2.5 text-right">SL Xuất</th><th class="p-2.5 text-right">Tồn cuối kỳ</th></tr>`;
+            const filteredProds = inventory.filter(i => !kw || i.name.toLowerCase().includes(kw));
+
+            tbody.innerHTML = filteredProds.slice(0, detailedReportLimit).map(prod => {
+                let changeAfterTo = 0;
+                let inPeriodImport = 0;
+                let inPeriodExport = 0;
+
+                allRecentLogs.forEach(l => {
+                    if (l.productId !== prod.id) return;
+                    const chg = Number(l.changeQty) || 0;
+                    if (l.createdAt > toTime) {
+                        changeAfterTo += chg;
+                    } else if (l.createdAt >= fromTime && l.createdAt <= toTime) {
+                        if (chg > 0) inPeriodImport += chg;
+                        else if (chg < 0) inPeriodExport += Math.abs(chg);
+                    }
+                });
+
+                const closingStock = prod.stock - changeAfterTo;
+                const openingStock = closingStock - inPeriodImport + inPeriodExport;
+
+                return `<tr>
+                    <td class="p-2.5 font-bold text-slate-800">${prod.name} <span class="text-[10px] text-slate-400 font-normal">(${prod.baseUnit})</span></td>
+                    <td class="p-2.5 text-right font-semibold">${openingStock}</td>
+                    <td class="p-2.5 text-right text-emerald-600 font-bold">+${inPeriodImport}</td>
+                    <td class="p-2.5 text-right text-red-600 font-bold">-${inPeriodExport}</td>
+                    <td class="p-2.5 text-right font-black text-[#0088FF]">${closingStock}</td>
+                </tr>`;
+            }).join('');
+            if (moreWrap) moreWrap.classList.toggle('hidden', filteredProds.length <= detailedReportLimit);
+            return;
+        }
+
+        // 7. BÁO CÁO DƯỚI ĐỊNH MỨC (Tồn hiện tại <= Định mức tối thiểu)
+        if (currentDetailedReportType === 'INV_LOW_STOCK') {
+            const lowItems = inventory.filter(i => i.stock <= i.minStock && (!kw || i.name.toLowerCase().includes(kw)));
+            thead.innerHTML = `<tr><th class="p-2.5">Tên hàng</th><th class="p-2.5">Mã SKU</th><th class="p-2.5 text-center">ĐVT</th><th class="p-2.5 text-right">Tồn hiện tại</th><th class="p-2.5 text-right">Định mức tối thiểu</th></tr>`;
+            tbody.innerHTML = lowItems.slice(0, detailedReportLimit).map(i => `
+                <tr>
+                    <td class="p-2.5 font-bold text-slate-800">${i.name}</td>
+                    <td class="p-2.5 text-slate-500">${i.barcode || '---'}</td>
+                    <td class="p-2.5 text-center">${i.baseUnit}</td>
+                    <td class="p-2.5 text-right font-black text-red-600">${i.stock}</td>
+                    <td class="p-2.5 text-right font-semibold text-slate-700">${i.minStock}</td>
+                </tr>
+            `).join('') || `<tr><td colspan="5" class="p-6 text-center text-emerald-600 font-bold">Không có mặt hàng nào dưới định mức tồn!</td></tr>`;
+            if (moreWrap) moreWrap.classList.toggle('hidden', lowItems.length <= detailedReportLimit);
+            return;
+        }
+
+        // 8. BÁO CÁO LÃI LỖ KẾ TOÁN (8 CHỈ TIÊU)
+        if (currentDetailedReportType === 'FIN_PNL') {
+            const [ordSnap, cbSnap] = await Promise.all([
+                db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get(),
+                db.collection("cashbook").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get()
+            ]);
+
+            let netSales = 0, returnVal = 0, cogs = 0;
+            ordSnap.docs.map(d => d.data()).forEach(o => {
+                if (o.status === 'PROCESSING') return;
+                if (o.orderType === 'RETURN') {
+                    returnVal += Number(o.totalAmount) || 0;
+                } else {
+                    netSales += Number(o.totalAmount) || 0;
+                    cogs += Number(o.totalCost) || 0;
+                }
+            });
+            const grossSales = netSales + returnVal;
+            const grossProfit = netSales - cogs;
+
+            let otherIncome = 0, otherExpense = 0;
+            cbSnap.docs.map(d => d.data()).forEach(c => {
+                if (c.category === 'OPERATING') {
+                    if (c.type === 'INCOME') otherIncome += Number(c.amount) || 0;
+                    else if (c.type === 'EXPENSE') otherExpense += Number(c.amount) || 0;
+                }
+            });
+            const netProfit = grossProfit + otherIncome - otherExpense;
+
+            thead.innerHTML = `<tr><th class="p-3">Chỉ tiêu kế toán</th><th class="p-3 text-right">Giá trị (VNĐ)</th></tr>`;
+            const rows = [
+                { name: '1. Doanh thu bán hàng', val: grossSales, cls: 'font-bold text-slate-800' },
+                { name: '2. Trừ: Giá trị hàng bán bị trả lại', val: returnVal, cls: 'text-red-600' },
+                { name: '3. Doanh thu thuần (1 - 2)', val: netSales, cls: 'font-black text-[#0088FF] bg-blue-50/40' },
+                { name: '4. Trừ: Giá vốn hàng bán', val: cogs, cls: 'text-slate-600' },
+                { name: '5. Lợi nhuận gộp (3 - 4)', val: grossProfit, cls: 'font-black text-emerald-700 bg-emerald-50/40' },
+                { name: '6. Cộng: Thu nhập khác (Phiếu thu ngoài bán hàng)', val: otherIncome, cls: 'text-emerald-600' },
+                { name: '7. Trừ: Chi phí khác (Phiếu chi vận hành)', val: otherExpense, cls: 'text-red-600' },
+                { name: '8. LỢI NHUẬN RÒNG (5 + 6 - 7)', val: netProfit, cls: 'font-black text-base text-emerald-700 bg-emerald-100/60' }
+            ];
+            tbody.innerHTML = rows.map(r => `<tr class="${r.cls}"><td class="p-3">${r.name}</td><td class="p-3 text-right">${formatmoney(r.val)} đ</td></tr>`).join('');
+            return;
+        }
+
+        // 9. BÁO CÁO SỔ QUỸ (ĐẦU KỲ, THU, CHI, TỒN CUỐI)
+        if (currentDetailedReportType === 'FIN_CASHBOOK') {
+            const snap = await db.collection("cashbook").get();
+            const allVouchers = snap.docs.map(d => d.data()).sort((a, b) => b.createdAt - a.createdAt);
+
+            let openBal = 0, periodIn = 0, periodOut = 0;
+            const periodList = [];
+
+            allVouchers.forEach(v => {
+                const amt = Number(v.amount) || 0;
+                const isInc = v.type === 'INCOME';
+                if (v.dateStr < fromStr) {
+                    openBal += isInc ? amt : -amt;
+                } else if (v.dateStr >= fromStr && v.dateStr <= toStr) {
+                    if (isInc) periodIn += amt;
+                    else periodOut += amt;
+                    if (!kw || (v.voucherCode || '').toLowerCase().includes(kw) || (v.note || '').toLowerCase().includes(kw)) {
+                        periodList.push(v);
+                    }
+                }
+            });
+            const closeBal = openBal + periodIn - periodOut;
+
+            banner.innerHTML = `
+                <div class="bg-white p-3 rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <div><div class="text-slate-400">Quỹ đầu kỳ</div><div class="font-bold text-slate-800">${formatmoney(openBal)} đ</div></div>
+                    <div><div class="text-slate-400">Tổng thu trong kỳ</div><div class="font-bold text-emerald-600">+${formatmoney(periodIn)} đ</div></div>
+                    <div><div class="text-slate-400">Tổng chi trong kỳ</div><div class="font-bold text-red-600">-${formatmoney(periodOut)} đ</div></div>
+                    <div><div class="text-slate-400">Tồn quỹ cuối kỳ</div><div class="font-black text-[#0088FF]">${formatmoney(closeBal)} đ</div></div>
+                </div>`;
+
+            thead.innerHTML = `<tr><th class="p-2.5">Ngày giờ</th><th class="p-2.5">Mã phiếu</th><th class="p-2.5">Loại</th><th class="p-2.5">Nội dung</th><th class="p-2.5 text-right">Số tiền</th></tr>`;
+            tbody.innerHTML = periodList.slice(0, detailedReportLimit).map(v => {
+                const isInc = v.type === 'INCOME';
+                return `<tr>
+                    <td class="p-2.5 text-slate-500">${v.dateStr}</td>
+                    <td class="p-2.5 font-bold">${v.voucherCode || ''}</td>
+                    <td class="p-2.5">${isInc ? '<span class="text-emerald-600 font-bold">Phiếu thu</span>' : '<span class="text-red-600 font-bold">Phiếu chi</span>'}</td>
+                    <td class="p-2.5 text-slate-700">${v.note || ''}</td>
+                    <td class="p-2.5 text-right font-black ${isInc ? 'text-emerald-600' : 'text-red-600'}">${isInc ? '+' : '-'}${formatmoney(v.amount)} đ</td>
+                </tr>`;
+            }).join('') || `<tr><td colspan="5" class="p-6 text-center text-slate-400">Không có giao dịch trong kỳ</td></tr>`;
+            if (moreWrap) moreWrap.classList.toggle('hidden', periodList.length <= detailedReportLimit);
+            return;
+        }
+
+        // 10 & 11. BÁO CÁO CÔNG NỢ KHÁCH HÀNG & CÔNG NỢ NHÀ CUNG CẤP
+        if (currentDetailedReportType === 'FIN_DEBT_CUST' || currentDetailedReportType === 'FIN_DEBT_SUP') {
+            const isSup = currentDetailedReportType === 'FIN_DEBT_SUP';
+            const debtSnap = await db.collection("debts").where("createdAt", ">=", fromTime).get();
+            const recentDebts = debtSnap.docs.map(d => d.data());
+
+            const partners = customers.filter(c => (isSup ? c.type === 'SUPPLIER' : c.type !== 'SUPPLIER') && (!kw || c.name.toLowerCase().includes(kw) || (c.phone || '').includes(kw)));
+            thead.innerHTML = `<tr><th class="p-2.5">Tên đối tác (Bấm xem lịch sử)</th><th class="p-2.5 text-right">Nợ đầu kỳ</th><th class="p-2.5 text-right">Phát sinh trong kỳ</th><th class="p-2.5 text-right">Đã trả trong kỳ</th><th class="p-2.5 text-right">Dư nợ cuối kỳ</th></tr>`;
+
+            tbody.innerHTML = partners.slice(0, detailedReportLimit).map(p => {
+                let changeAfterTo = 0, periodAdd = 0, periodPaid = 0;
+                recentDebts.forEach(d => {
+                    if (d.customerId !== p.id) return;
+                    const chg = Number(d.changeAmount) || 0;
+                    if (d.createdAt > toTime) changeAfterTo += chg;
+                    else if (d.createdAt >= fromTime && d.createdAt <= toTime) {
+                        if (chg > 0) periodAdd += chg;
+                        else if (chg < 0) periodPaid += Math.abs(chg);
+                    }
+                });
+                const closeDebt = Math.max(0, (Number(p.currentDebt) || 0) - changeAfterTo);
+                const openDebt = Math.max(0, closeDebt - periodAdd + periodPaid);
+
+                return `<tr onclick="openDebtLedgerModal('${p.id}')" class="cursor-pointer hover:bg-blue-50/50">
+                    <td class="p-2.5 font-bold text-[#0088FF] underline">${p.name}</td>
+                    <td class="p-2.5 text-right font-semibold">${formatmoney(openDebt)} đ</td>
+                    <td class="p-2.5 text-right text-red-600 font-bold">+${formatmoney(periodAdd)} đ</td>
+                    <td class="p-2.5 text-right text-emerald-600 font-bold">-${formatmoney(periodPaid)} đ</td>
+                    <td class="p-2.5 text-right font-black text-slate-800">${formatmoney(closeDebt)} đ</td>
+                </tr>`;
+            }).join('') || `<tr><td colspan="5" class="p-6 text-center text-slate-400">Không có dữ liệu đối tác</td></tr>`;
+            if (moreWrap) moreWrap.classList.toggle('hidden', partners.length <= detailedReportLimit);
+        }
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Lỗi truy vấn báo cáo: ${err.message}</td></tr>`;
+    }
+}
+
 async function editReportItem(productName, oldBaseQty, oldRev, oldCost) {
     const rawQty = prompt(`Sửa Tổng SL đã bán của "${productName}":`, oldBaseQty);
     if (rawQty === null) return;
     const newBaseQty = parseInt(rawQty.toString().replace(/\./g, '').replace(/\D/g, ''), 10) || 0;
-    if (newBaseQty <= 0) return alert("Số lượng phải lớn hơn 0! (Nếu muốn bỏ hẳn hãy bấm nút Xóa)");
+    if (newBaseQty <= 0) return alert("Số lượng phải lớn hơn 0!");
 
     const rawRev = prompt(`Sửa Tổng Doanh Thu của "${productName}" (VNĐ):`, oldRev);
     if (rawRev === null) return;
@@ -2825,124 +3497,65 @@ async function editReportItem(productName, oldBaseQty, oldRev, oldCost) {
     const toStr = document.getElementById('rep-date-to')?.value || '2060-12-31';
 
     try {
-        const snap = await db.collection("orders")
-            .where("dateStr", ">=", fromStr)
-            .where("dateStr", "<=", toStr)
-            .get();
-
+        const snap = await db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get();
         let applied = false;
         for (const doc of snap.docs) {
             const ord = doc.data();
             if (ord.orderType !== 'SALE' || (Number(ord.totalAmount) || 0) <= 0) continue;
-
             let modified = false;
             const updatedItems = [];
-
             (ord.items || []).forEach(item => {
                 if (item.productName === productName && (Number(item.qty) || 0) > 0) {
                     modified = true;
                     if (!applied) {
-                        // Gán tổng số lượng, doanh thu, tiền vốn mới vào dòng đầu tiên tìm thấy trong kỳ
                         applied = true;
                         const rate = Number(item.conversionRate) || 1;
                         const newQty = Math.max(1, Math.round(newBaseQty / rate));
                         updatedItems.push({
-                            ...item,
-                            qty: newQty,
-                            baseQty: newBaseQty,
-                            unitPrice: Math.round(newRev / newQty),
-                            totalPrice: newRev,
-                            costPricePerBase: Math.round(newCost / newBaseQty),
-                            totalCost: newCost
+                            ...item, qty: newQty, baseQty: newBaseQty,
+                            unitPrice: Math.round(newRev / newQty), totalPrice: newRev,
+                            costPricePerBase: Math.round(newCost / newBaseQty), totalCost: newCost
                         });
                     }
-                    // Nếu mặt hàng này nằm rải rác ở các đơn khác trong cùng kỳ thì gom về dòng đã gán ở trên để tổng khớp 100%
-                } else {
-                    updatedItems.push(item);
-                }
+                } else updatedItems.push(item);
             });
-
             if (modified) {
-                const newOrdTotal = updatedItems.reduce((s, i) => s + (Number(i.totalPrice) || 0), 0);
-                const newOrdCost = updatedItems.reduce((s, i) => s + (Number(i.totalCost) || 0), 0);
                 await doc.ref.update({
                     items: updatedItems,
-                    totalAmount: newOrdTotal,
-                    totalCost: newOrdCost
+                    totalAmount: updatedItems.reduce((s, i) => s + (Number(i.totalPrice) || 0), 0),
+                    totalCost: updatedItems.reduce((s, i) => s + (Number(i.totalCost) || 0), 0)
                 });
             }
         }
-
         loadReportsModule();
         if (typeof loadOverviewDashboard === 'function') loadOverviewDashboard();
-        alert(`✅ Đã cập nhật Lãi/Lỗ cho "${productName}" thành công!`);
     } catch (e) {
-        alert("Lỗi khi sửa báo cáo Lãi/Lỗ: " + e.message);
+        alert("Lỗi khi sửa báo cáo: " + e.message);
     }
 }
 
-// Xóa mặt hàng khỏi Báo cáo Lãi/Lỗ trong kỳ đang chọn
 async function deleteReportItem(productName) {
-    if (!confirm(`Bạn có chắc chắn muốn XÓA mặt hàng "${productName}" khỏi Báo cáo Lãi/Lỗ trong kỳ này?`)) return;
-
+    if (!confirm(`XÓA mặt hàng "${productName}" khỏi Báo cáo trong kỳ này?`)) return;
     const fromStr = document.getElementById('rep-date-from')?.value || '2024-01-01';
     const toStr = document.getElementById('rep-date-to')?.value || '2060-12-31';
-
     try {
-        const snap = await db.collection("orders")
-            .where("dateStr", ">=", fromStr)
-            .where("dateStr", "<=", toStr)
-            .get();
-
+        const snap = await db.collection("orders").where("dateStr", ">=", fromStr).where("dateStr", "<=", toStr).get();
         for (const doc of snap.docs) {
             const ord = doc.data();
             if (ord.orderType !== 'SALE') continue;
-
-            const origLen = (ord.items || []).length;
             const remainingItems = (ord.items || []).filter(i => i.productName !== productName);
-
-            if (remainingItems.length !== origLen) {
-                const newOrdTotal = remainingItems.reduce((s, i) => s + (Number(i.totalPrice) || 0), 0);
-                const newOrdCost = remainingItems.reduce((s, i) => s + (Number(i.totalCost) || 0), 0);
+            if (remainingItems.length !== (ord.items || []).length) {
                 await doc.ref.update({
                     items: remainingItems,
-                    totalAmount: newOrdTotal,
-                    totalCost: newOrdCost
+                    totalAmount: remainingItems.reduce((s, i) => s + (Number(i.totalPrice) || 0), 0),
+                    totalCost: remainingItems.reduce((s, i) => s + (Number(i.totalCost) || 0), 0)
                 });
             }
         }
-
         loadReportsModule();
-        if (typeof loadOverviewDashboard === 'function') loadOverviewDashboard();
-        alert(`✅ Đã xóa "${productName}" khỏi Báo cáo Lãi/Lỗ!`);
     } catch (e) {
         alert("Lỗi khi xóa dòng báo cáo: " + e.message);
     }
 }
-// ==========================================
-// TỰ ĐỘNG ẨN/HIỆN THANH CÔNG CỤ KHI CUỘN TRÊN MOBILE (CHUẨN SAPO)
-// ==========================================
-function initMobileAutoHideToolbar() {
-    const sellGrid = document.getElementById('sell-grid');
-    const subToolbar = document.getElementById('pos-sub-toolbar');
-    const searchBar = document.getElementById('pos-search-bar');
-    if (!sellGrid) return;
 
-    let lastScrollTop = 0;
-    sellGrid.addEventListener('scroll', () => {
-        if (window.innerWidth > 767) return; // Chỉ áp dụng trên màn hình điện thoại (< 768px)
-        const st = sellGrid.scrollTop;
-        if (Math.abs(st - lastScrollTop) < 15) return;
-
-        if (st > lastScrollTop && st > 40) {
-            // Vuốt màn hình xuống -> Ẩn thanh công cụ phụ & thu gọn thanh tìm kiếm để chừa chỗ hiển thị hàng
-            if (subToolbar) subToolbar.classList.add('mobile-toolbar-hidden');
-            if (searchBar) searchBar.classList.add('mobile-toolbar-hidden');
-        } else {
-            // Vuốt màn hình lên -> Hiện lại bình thường
-            if (subToolbar) subToolbar.classList.remove('mobile-toolbar-hidden');
-            if (searchBar) searchBar.classList.remove('mobile-toolbar-hidden');
-        }
-        lastScrollTop = st <= 0 ? 0 : st;
-    }, { passive: true });
-}
+function initMobileAutoHideToolbar() {}
