@@ -1154,7 +1154,7 @@ function openOrdersWithFilter(filterVal) {
 async function loadOverviewDashboard() {
     const storeNameEl = document.getElementById('mobile-home-store-name');
     if (storeNameEl && typeof storeSettings !== 'undefined') {
-        storeNameEl.innerText = storeSettings.storeName || "Tạp Hóa Hồng Điệp";
+        storeNameEl.innerText = storeSettings.storeName || "Đại Lý Hồng Điệp";
     }
     const mobHold = document.getElementById('hold-count-badge-mob');
     if (mobHold) mobHold.innerText = holdOrders.length;
@@ -1825,7 +1825,7 @@ function toggleQuickBillHeaderEdit() {
     if (!box) return;
     box.classList.toggle('hidden');
     if (!box.classList.contains('hidden')) {
-        document.getElementById('qb-store-name').value = storeSettings.storeName || "Tạp Hóa Huy Hoàng";
+        document.getElementById('qb-store-name').value = storeSettings.storeName || "Đại Lý Hồng Điệp";
         document.getElementById('qb-store-phone').value = storeSettings.phone || "";
         document.getElementById('qb-store-address').value = storeSettings.address || "";
         document.getElementById('qb-bank-id').value = storeSettings.bankId || "MB";
@@ -1837,7 +1837,7 @@ function toggleQuickBillHeaderEdit() {
 }
 
 function applyQuickBillHeaderEdit() {
-    storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Tạp Hóa Huy Hoàng";
+    storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Đại Lý Hồng Điệp";
     storeSettings.phone = document.getElementById('qb-store-phone').value.trim();
     storeSettings.address = document.getElementById('qb-store-address').value.trim();
     storeSettings.bankId = document.getElementById('qb-bank-id').value;
@@ -1893,7 +1893,7 @@ function openPrintableInvoice(order) {
     setInvoicePrintMode(storeSettings.printSize || 'A5');
     document.getElementById('quick-bill-edit-box')?.classList.add('hidden');
 
-    document.getElementById('bill-store-name').innerText = (storeSettings.storeName || "TẠP HÓA HUY HOÀNG").toUpperCase();
+    document.getElementById('bill-store-name').innerText = (storeSettings.storeName || "Đại Lý Hồng Điệp").toUpperCase();
     document.getElementById('bill-store-phone').innerText = storeSettings.phone || "---";
     document.getElementById('bill-store-address').innerText = storeSettings.address || "";
 
@@ -2310,7 +2310,7 @@ function deleteCustomer(id) {
 function downloadCustomerSampleExcel() {
     const sampleData = [
         {
-            "Tên khách hàng": "Tạp hóa Cô Tư",
+            "Tên khách hàng": "Đại Lý Cô Tư",
             "Phân loại": "Khách Sỉ",
             "SĐT": "0909123456",
             "Địa chỉ": "Chợ Biên Hòa, Đồng Nai",
