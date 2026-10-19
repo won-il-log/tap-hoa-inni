@@ -1718,8 +1718,12 @@ function triggerFastAirPrint() {
                     margin: ${is80mm ? '4mm' : '10mm 0'};
                 }
                 *, *::before, *::after { box-sizing: border-box !important; }
-                body {
-                    font-family: sans-serif;
+                body, body * {
+                    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+                }
+                .font-black {
+                    font-weight: 700 !important;
+                }
                     background: #fff;
                     color: #000;
                     margin: 0;
@@ -1803,10 +1807,11 @@ async function exportBillToImage() {
 
         // 2. Tạo thẻ div tạm tách biệt hoàn toàn với thanh cuộn của iPhone, khóa chiều rộng chuẩn A5 (520px)
         cloneWrapper = document.createElement('div');
-        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; height: auto; overflow: visible; background: #ffffff; padding: 16px 18px; box-sizing: border-box; z-index: -1; color: #000000; font-family: sans-serif; line-height: 1.2;";
+        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; height: auto; overflow: visible; background: #ffffff; padding: 16px 18px; box-sizing: border-box; z-index: -1; color: #000000; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; line-height: 1.4;";
         cloneWrapper.innerHTML = `
             <style>
-                .export-a5-clone * { box-sizing: border-box !important; }
+                .export-a5-clone, .export-a5-clone * { box-sizing: border-box !important; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; }
+                .export-a5-clone .font-black { font-weight: 700 !important; }
                 .export-a5-clone table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; margin-bottom: 4px !important; }
                 .export-a5-clone th, .export-a5-clone td { border: 1px solid #64748b !important; padding: 2px 4px !important; line-height: 1.15 !important; font-size: 11px !important; }
                 .export-a5-clone .col-stt { width: 7% !important; white-space: nowrap !important; text-align: center !important; }

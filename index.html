@@ -26,7 +26,14 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
     <link rel="manifest" href="manifest.json">
+  
     <style>
+        #printable-bill, #printable-bill * {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+        }
+        #printable-bill .font-black {
+            font-weight: 700 !important;
+        }
         .bg-inni-blue { background-color: #0088FF; }
         .text-inni-blue { color: #0088FF; }
         .border-inni-blue { border-color: #0088FF; }
@@ -1335,7 +1342,7 @@
             </div>
 
             <!-- VÙNG IN & CHỤP ẢNH HÓA ĐƠN A5 (MẬT ĐỘ CAO, NÉN CHIỀU CAO DÒNG, TIẾT KIỆM GIẤY) -->
-            <div class="flex-1 overflow-y-auto bg-white p-4 text-slate-900" id="printable-bill" style="font-family: Arial, Helvetica, sans-serif !important;">
+            <div class="flex-1 overflow-y-auto bg-white p-4 text-slate-900" id="printable-bill" style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;">
                 <!-- Header nén gọn khoảng cách dòng & Mã VietQR chuẩn 65x65px -->
                 <div class="flex justify-between items-start border-b border-slate-800 pb-1.5 mb-1.5 gap-2" style="line-height: 1.2;">
                     <div class="flex-1 min-w-0">
