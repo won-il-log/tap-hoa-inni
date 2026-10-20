@@ -91,13 +91,18 @@ function isCurrentCustomerWholesale() {
     return cust ? (cust.type === 'WHOLESALE') : false;
 }
 
-// Lấy đơn giá chuẩn của 1 đơn vị sản phẩm theo đối tượng khách (Sỉ vs Lẻ)
+// Lấy đơn giá chuẩn của 1 đơn vị sản phẩm (Lon / Lốc / Thùng) theo đối tượng khách (Sỉ vs Lẻ)
 function getStandardUnitPrice(product, unitIndex, isWholesale) {
     const u = product.units[unitIndex] || product.units[0];
-    if (u.conversionRate === 1) {
-        return isWholesale ? (Number(product.wholesalePrice) || Number(product.basePrice) || u.sellingPrice) : (Number(product.basePrice) || u.sellingPrice);
+    if (!u) return 0;
+    if (Number(u.conversionRate) === 1) {
+        return isWholesale
+            ? (Number(product.wholesalePrice) || Number(u.wholesalePrice) || Number(product.basePrice) || Number(u.sellingPrice) || 0)
+            : (Number(product.basePrice) || Number(u.sellingPrice) || Number(product.wholesalePrice) || 0);
     }
-    return isWholesale ? (Number(u.wholesalePrice) || Number(u.sellingPrice)) : Number(u.sellingPrice);
+    return isWholesale
+        ? (Number(u.wholesalePrice) || Number(u.sellingPrice) || 0)
+        : (Number(u.sellingPrice) || Number(u.wholesalePrice) || 0);
 }
 
 // ==========================================
@@ -542,8 +547,11 @@ function addToCartWithUnit(productId, unitIndex = 0, addQty = 1, isGift = false,
         return alert(`Không đủ tồn kho cho "${item.name}"!\n- Tồn kho hiện tại: ${item.stock} ${item.baseUnit}\n- Trong giỏ đã có: ${currentBaseInCart} ${item.baseUnit}`);
     }
 
+    // Tự động nhận diện Khách Sỉ hoặc chế độ Giá Sỉ đang bật để lấy đúng giá của ĐVT (Lon / Lốc / Thùng)
+    const useWholesale = currentActivePosTierWholesale || isCurrentCustomerWholesale();
+
     if (!cart[cartKey]) {
-        const tierPrice = getStandardUnitPrice(item, unitIndex, currentActivePosTierWholesale);
+        const tierPrice = getStandardUnitPrice(item, unitIndex, useWholesale);
         const initialPrice = isGift ? 0 : (forcedCustomPrice !== null ? forcedCustomPrice : tierPrice);
 
         cart[cartKey] = {
@@ -601,7 +609,7 @@ function applyTierPriceToAllCart(useWholesalePrice, forceResetManual = false) {
             btnWho.className = "px-3 py-1 rounded-md text-[11px] font-bold text-slate-600 hover:text-slate-800 transition";
         }
     }
-    renderCart();
+    renderSellGrid();
 }
 
 function changeCartItemUnit(oldKey, newUnitIndex) {
@@ -619,8 +627,9 @@ function changeCartItemUnit(oldKey, newUnitIndex) {
         return;
     }
 
+    const useWholesale = currentActivePosTierWholesale || isCurrentCustomerWholesale();
     const newKey = `${cItem.productId}_${newUnitIndex}_${cItem.isGift ? 'GIFT' : 'SALE'}`;
-    const newPrice = cItem.isGift ? 0 : getStandardUnitPrice(prod, newUnitIndex, currentActivePosTierWholesale);
+    const newPrice = cItem.isGift ? 0 : getStandardUnitPrice(prod, newUnitIndex, useWholesale);
 
     delete cart[oldKey];
     if (cart[newKey]) {
@@ -1271,8 +1280,15 @@ async function loadOverviewDashboard() {
 function getActiveCheckoutContext() {
     if (currentSettlingOrder) {
         const cust = customers.find(c => c.id === currentSettlingOrder.customerId);
+        const orderTotal = Number(currentSettlingOrder.totalAmount) || 0;
+        if (currentSettlingOrder.debtRecordedOnCreate) {
+            // Đơn Chờ giao đã cộng 100% giá trị vào currentDebt ngay từ lúc lên đơn
+            const totalCurrentDebt = cust ? (Number(cust.currentDebt) || 0) : (Number(currentSettlingOrder.newDebt) || orderTotal);
+            const oldDebt = Math.max(0, totalCurrentDebt - orderTotal);
+            return { orderTotal, cust, oldDebt };
+        }
         const oldDebt = cust ? (Number(cust.currentDebt) || 0) : (Number(currentSettlingOrder.oldDebt) || 0);
-        return { orderTotal: Number(currentSettlingOrder.totalAmount) || 0, cust, oldDebt };
+        return { orderTotal, cust, oldDebt };
     }
     let orderTotal = 0;
     for (const k in cart) orderTotal += cart[k].price * cart[k].qty;
@@ -1372,9 +1388,15 @@ function calcCheckoutDebt() {
     }
 }
 
-// Tạo đơn "Đang giao dịch" (Màu cam - Trừ kho giữ hàng, in phiếu đi giao, chưa thu tiền)
+// Tạo đơn "Đang giao dịch" (Màu cam - Trừ kho giữ hàng, TỰ ĐỘNG GHI NỢ NGAY 100% VÀO SỔ NỢ KHÁCH)
 async function createPendingDeliveryOrder() {
     if (Object.keys(cart).length === 0) return alert("Giỏ hàng đang trống!");
+
+    if (selectedCustomerId === 'GUEST') {
+        const wrap = document.getElementById('pos-customer-search-wrap');
+        if (wrap && wrap.classList.contains('hidden')) togglePosCustomerSearchBox();
+        return alert("Đơn Chờ giao / Giao hàng sẽ TỰ ĐỘNG cộng 100% giá trị vào Sổ Công Nợ ngay lúc lên đơn!\nVui lòng chọn Tên Khách Hàng trước khi bấm Chờ giao.");
+    }
 
     let orderTotal = 0, totalCost = 0;
     const orderItems = [];
@@ -1396,6 +1418,7 @@ async function createPendingDeliveryOrder() {
 
     const cust = customers.find(c => c.id === selectedCustomerId);
     const oldDebt = cust ? (Number(cust.currentDebt) || 0) : 0;
+    const newDebt = oldDebt + orderTotal;
     const now = new Date();
     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const orderCode = `BH-${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -1406,6 +1429,7 @@ async function createPendingDeliveryOrder() {
             orderCode,
             orderType: "SALE",
             status: "PROCESSING", // Đang giao dịch (Màu cam)
+            debtRecordedOnCreate: true, // Đánh dấu đã cộng 100% công nợ ngay từ lúc lên đơn
             customerId: selectedCustomerId,
             customerSnapshot: cust ? { name: cust.name, phone: cust.phone || '', address: cust.address || '', type: cust.type } : { name: "Khách Lẻ", phone: "", address: "", type: "RETAIL" },
             seller,
@@ -1414,8 +1438,8 @@ async function createPendingDeliveryOrder() {
             totalCost: totalCost,
             oldDebt: oldDebt,
             paidAmount: 0,
-            newDebt: oldDebt + orderTotal,
-            paymentMethod: "PENDING",
+            newDebt: newDebt,
+            paymentMethod: "DEBT",
             cashAmount: 0,
             bankAmount: 0,
             dateStr,
@@ -1432,10 +1456,30 @@ async function createPendingDeliveryOrder() {
                 await db.collection("inventory").doc(dbProd.id).update({ stock: endStock });
                 await writeInventoryLog(
                     dbProd.id, dbProd.name, "SALE", orderCode,
-                    `Xuất giao chờ TT: ${item.qty} ${item.unitName}${item.isGift ? ' (Tặng 0đ)' : ''}`,
+                    `Xuất giao (Đã ghi nợ): ${item.qty} ${item.unitName}${item.isGift ? ' (Tặng 0đ)' : ''}`,
                     startStock, -item.baseQty, endStock
                 );
             }
+        }
+
+        // TỰ ĐỘNG CỘNG NGAY 100% GIÁ TRỊ ĐƠN HÀNG VÀO SỔ CÔNG NỢ KHÁCH NGAY LÚC LÊN ĐƠN
+        if (cust && orderTotal > 0) {
+            await db.collection("customers").doc(cust.id).update({
+                currentDebt: newDebt,
+                updatedAt: Date.now()
+            });
+            await db.collection("debts").add({
+                customerId: cust.id,
+                customerName: cust.name,
+                ledgerType: "RECEIVABLE",
+                transactionType: "ORDER_DEBT",
+                referenceId: orderCode,
+                beforeDebt: oldDebt,
+                changeAmount: orderTotal,
+                afterDebt: newDebt,
+                note: `Tự động ghi nợ khi lên đơn giao hàng ${orderCode} (Tổng đơn: ${formatmoney(orderTotal)}đ)`,
+                createdAt: Date.now()
+            });
         }
 
         playBeepSound();
@@ -1454,12 +1498,10 @@ async function confirmPosCheckout() {
     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const seller = document.getElementById('seller-name').value.trim() || "Chủ Quán";
 
-    // CHỐT THANH TOÁN ĐƠN "ĐANG GIAO DỊCH" -> CHUYỂN SANG "HOÀN THÀNH" (MÀU XANH)
+    // CHỐT THANH TOÁN ĐƠN "ĐANG GIAO DỊCH" -> TRỪ SỐ TIỀN KHÁCH TRẢ KHỎI SỔ CÔNG NỢ & CHUYỂN SANG "HOÀN THÀNH"
     if (currentSettlingOrder) {
         const ord = currentSettlingOrder;
-        const cust = customers.find(c => c.id === ord.customerId);
-        const oldDebt = cust ? (Number(cust.currentDebt) || 0) : (Number(ord.oldDebt) || 0);
-        const orderTotal = Number(ord.totalAmount) || 0;
+        const { orderTotal, cust, oldDebt } = getActiveCheckoutContext();
         const grandTotal = orderTotal + oldDebt;
         const rawPaid = getRawNum('chk-paid-input');
         const actualPaidRecorded = Math.min(rawPaid, grandTotal);
@@ -1486,15 +1528,31 @@ async function confirmPosCheckout() {
 
             await db.collection("orders").doc(ord.orderCode).update(updatedFields);
 
-            if (cust && newDebt !== oldDebt) {
-                await db.collection("customers").doc(cust.id).update({ currentDebt: newDebt, updatedAt: Date.now() });
-                await db.collection("debts").add({
-                    customerId: cust.id, customerName: cust.name, ledgerType: "RECEIVABLE",
-                    transactionType: "ORDER_DEBT", referenceId: ord.orderCode,
-                    beforeDebt: oldDebt, changeAmount: newDebt - oldDebt, afterDebt: newDebt,
-                    note: `Chốt thanh toán đơn giao ${ord.orderCode} (Tổng: ${formatmoney(orderTotal)}đ, Trả: ${formatmoney(actualPaidRecorded)}đ)`,
-                    createdAt: Date.now()
-                });
+            if (cust) {
+                if (ord.debtRecordedOnCreate) {
+                    // Vì đơn đã cộng 100% vào nợ lúc tạo -> Khi khách trả tiền, tự động trừ số tiền khách trả khỏi Sổ Công Nợ
+                    if (actualPaidRecorded > 0) {
+                        const beforePayDebt = Number(cust.currentDebt) || grandTotal;
+                        const afterPayDebt = Math.max(0, beforePayDebt - actualPaidRecorded);
+                        await db.collection("customers").doc(cust.id).update({ currentDebt: afterPayDebt, updatedAt: Date.now() });
+                        await db.collection("debts").add({
+                            customerId: cust.id, customerName: cust.name, ledgerType: "RECEIVABLE",
+                            transactionType: "PAYMENT", referenceId: ord.orderCode,
+                            beforeDebt: beforePayDebt, changeAmount: -actualPaidRecorded, afterDebt: afterPayDebt,
+                            note: `Thu tiền đơn giao ${ord.orderCode} (Khách trả: ${formatmoney(actualPaidRecorded)}đ)`,
+                            createdAt: Date.now()
+                        });
+                    }
+                } else if (newDebt !== oldDebt) {
+                    await db.collection("customers").doc(cust.id).update({ currentDebt: newDebt, updatedAt: Date.now() });
+                    await db.collection("debts").add({
+                        customerId: cust.id, customerName: cust.name, ledgerType: "RECEIVABLE",
+                        transactionType: "ORDER_DEBT", referenceId: ord.orderCode,
+                        beforeDebt: oldDebt, changeAmount: newDebt - oldDebt, afterDebt: newDebt,
+                        note: `Chốt thanh toán đơn giao ${ord.orderCode} (Tổng: ${formatmoney(orderTotal)}đ, Trả: ${formatmoney(actualPaidRecorded)}đ)`,
+                        createdAt: Date.now()
+                    });
+                }
             }
 
             if (actualPaidRecorded > 0) {
@@ -2202,8 +2260,8 @@ async function deleteEntireOrder() {
             }
         }
 
-        // 2. Đảo ngược công nợ khách hàng (Chỉ áp dụng nếu đơn đã chốt COMPLETED, vì đơn PROCESSING chưa cộng vào nợ khách)
-        if (ord.status !== 'PROCESSING' && ord.customerId && ord.customerId !== 'GUEST') {
+        // 2. Đảo ngược công nợ khách hàng (Áp dụng cho cả đơn COMPLETED và đơn PROCESSING đã tự động ghi nợ lúc tạo)
+        if ((ord.status !== 'PROCESSING' || ord.debtRecordedOnCreate) && ord.customerId && ord.customerId !== 'GUEST') {
             const cust = customers.find(c => c.id === ord.customerId);
             const debtDiff = (ord.newDebt || 0) - (ord.oldDebt || 0);
             if (cust && debtDiff !== 0) {

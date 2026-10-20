@@ -371,7 +371,10 @@ function renderInventory(resetLimit = true) {
             ? wholesaleUnits.map(u => `
                 <div class="mb-1 last:mb-0 bg-blue-50/80 border border-blue-200 px-2.5 py-1 rounded-lg flex items-center justify-between gap-2">
                     <span class="text-xs font-bold text-slate-700">1 ${u.unitName} <span class="text-[10px] text-slate-500 font-normal">(${u.conversionRate} ${item.baseUnit})</span></span>
-                    <span class="font-black text-inni-blue text-sm whitespace-nowrap">${formatmoney(u.sellingPrice)} đ</span>
+                    <div class="text-right leading-tight whitespace-nowrap">
+                        <span class="font-bold text-red-600 text-[11px] block">Lẻ: ${formatmoney(u.sellingPrice)}đ</span>
+                        <span class="font-black text-inni-blue text-xs block">Sỉ: ${formatmoney(u.wholesalePrice || u.sellingPrice)}đ</span>
+                    </div>
                 </div>
             `).join('')
             : `<span class="text-xs text-slate-400 italic">Chỉ bán theo ${item.baseUnit}</span>`;
@@ -472,27 +475,28 @@ function renderInventory(resetLimit = true) {
     else noRes.classList.add('hidden');
 }
 
-// --- THÊM / SỬA MẶT HÀNG ĐA ĐƠN VỊ ---
-function addUnitRow(unitName = '', conversionRate = '', sellingPrice = '', barcode = '') {
+// --- THÊM / SỬA MẶT HÀNG ĐA ĐƠN VỊ (MA TRẬN GIÁ LẺ & GIÁ SỈ CHO TỪNG CẤP ĐƠN VỊ) ---
+function addUnitRow(unitName = '', conversionRate = '', sellingPrice = '', wholesalePrice = '', barcode = '') {
     const container = document.getElementById('unit-rows-container');
     const div = document.createElement('div');
-    div.className = "grid grid-cols-12 gap-2 items-center unit-row bg-white p-2 rounded-lg border border-blue-200 shadow-sm";
+    div.className = "grid grid-cols-12 gap-1.5 items-center unit-row bg-white p-2 rounded-lg border border-blue-200 shadow-sm";
     div.innerHTML = `
-        <div class="col-span-3">
-            <input type="text" placeholder="Thùng, Lốc..." value="${unitName}" class="unit-name w-full border border-slate-300 p-1.5 rounded text-xs font-bold text-slate-800">
+        <div class="col-span-2">
+            <input type="text" placeholder="Lốc, Thùng..." value="${unitName}" class="unit-name w-full border border-slate-300 p-1.5 rounded text-xs font-bold text-slate-800">
+        </div>
+        <div class="col-span-2">
+            <input type="number" placeholder="VD: 6, 24" value="${conversionRate}" class="unit-rate w-full border border-slate-300 p-1.5 rounded text-xs text-center font-bold text-emerald-700">
         </div>
         <div class="col-span-3">
-            <input type="number" placeholder="VD: 24" value="${conversionRate}" class="unit-rate w-full border border-slate-300 p-1.5 rounded text-xs text-center font-bold text-emerald-700">
+            <input type="text" oninput="formatCurrencyInput(this)" placeholder="Giá lẻ (${unitName || 'ĐV'})" value="${sellingPrice ? formatmoney(sellingPrice) : ''}" class="unit-price w-full border-2 border-red-300 focus:border-red-500 p-1.5 rounded text-xs font-black text-red-600">
         </div>
         <div class="col-span-3">
-            <input type="text" oninput="formatCurrencyInput(this)" placeholder="VD: 340.000" value="${sellingPrice ? formatmoney(sellingPrice) : ''}" class="unit-price w-full border-2 border-blue-400 p-1.5 rounded text-xs font-black text-inni-blue">
+            <input type="text" oninput="formatCurrencyInput(this)" placeholder="Giá sỉ (${unitName || 'ĐV'})" value="${wholesalePrice ? formatmoney(wholesalePrice) : ''}" class="unit-wholesale-price w-full border-2 border-blue-400 focus:border-inni-blue p-1.5 rounded text-xs font-black text-inni-blue">
         </div>
-        <div class="col-span-2 flex gap-1">
-            <input type="text" placeholder="Mã vạch" value="${barcode}" class="unit-barcode w-full border border-slate-300 p-1.5 rounded text-xs">
-            <button type="button" onclick="startBarcodeScanner(this.previousElementSibling)" title="Quét mã vạch thùng" class="bg-slate-800 text-amber-400 px-2 rounded text-xs"><i class="fa-solid fa-camera"></i></button>
-        </div>
-        <div class="col-span-1 text-center">
-            <button type="button" onclick="this.closest('.unit-row').remove()" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash-can"></i></button>
+        <div class="col-span-2 flex items-center gap-1">
+            <input type="text" placeholder="Mã" value="${barcode}" class="unit-barcode w-full border border-slate-300 p-1.5 rounded text-xs min-w-0">
+            <button type="button" onclick="startBarcodeScanner(this.previousElementSibling)" title="Quét mã vạch" class="bg-slate-800 text-amber-400 px-1.5 py-1.5 rounded text-[10px] shrink-0"><i class="fa-solid fa-camera"></i></button>
+            <button type="button" onclick="this.closest('.unit-row').remove()" title="Xóa đơn vị này" class="text-red-400 hover:text-red-600 px-1 shrink-0"><i class="fa-solid fa-trash-can"></i></button>
         </div>
     `;
     container.appendChild(div);
@@ -514,7 +518,9 @@ function openProductModal(id = null) {
         document.getElementById('prod-wholesale-price').value = '';
         document.getElementById('prod-stock').value = '0';
         document.getElementById('prod-min-stock').value = '24';
-        addUnitRow('Thùng', 24, '');
+        // Mở sẵn Cấp 2 (Lốc = 6) và Cấp 3 (Thùng = 24)
+        addUnitRow('Lốc', 6, '', '', '');
+        addUnitRow('Thùng', 24, '', '', '');
     } else {
         const item = inventory.find(i => i.id === id);
         if (!item) return;
@@ -533,10 +539,16 @@ function openProductModal(id = null) {
 
         const wholesaleUnits = item.units.filter(u => u.conversionRate > 1);
         if (wholesaleUnits.length > 0) {
-            wholesaleUnits.forEach(u => addUnitRow(u.unitName, u.conversionRate, u.sellingPrice, u.barcode || ''));
+            wholesaleUnits.forEach(u => addUnitRow(
+                u.unitName,
+                u.conversionRate,
+                u.sellingPrice,
+                u.wholesalePrice ?? u.sellingPrice,
+                u.barcode || ''
+            ));
         } else {
-            addUnitRow('Lốc', 6, '');
-            addUnitRow('Thùng', 24, '');
+            addUnitRow('Lốc', 6, '', '', '');
+            addUnitRow('Thùng', 24, '', '', '');
         }
     }
     document.getElementById('product-modal').classList.remove('hidden');
@@ -570,10 +582,19 @@ async function saveProduct() {
     document.querySelectorAll('#unit-rows-container .unit-row').forEach(row => {
         const uName = row.querySelector('.unit-name').value.trim();
         const uRate = parseInt(row.querySelector('.unit-rate').value, 10) || 0;
-        const uPrice = getRawNum(row.querySelector('.unit-price'));
+        const uRetailPrice = getRawNum(row.querySelector('.unit-price'));
+        const uWholesalePrice = getRawNum(row.querySelector('.unit-wholesale-price'));
         const uBarcode = row.querySelector('.unit-barcode').value.trim();
-        if (uName && uRate > 1 && uPrice > 0) {
-            units.push({ unitName: uName, conversionRate: uRate, sellingPrice: uPrice, wholesalePrice: uPrice, barcode: uBarcode });
+        if (uName && uRate > 1 && (uRetailPrice > 0 || uWholesalePrice > 0)) {
+            const finalRetail = uRetailPrice > 0 ? uRetailPrice : uWholesalePrice;
+            const finalWholesale = uWholesalePrice > 0 ? uWholesalePrice : uRetailPrice;
+            units.push({
+                unitName: uName,
+                conversionRate: uRate,
+                sellingPrice: finalRetail,
+                wholesalePrice: finalWholesale,
+                barcode: uBarcode
+            });
         }
     });
 

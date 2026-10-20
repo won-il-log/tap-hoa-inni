@@ -1836,22 +1836,22 @@
                     </div>
                 </div>
 
-                <!-- KHUNG 2: QUY ĐỔI ĐƠN VỊ LỚN (THÙNG, LỐC, CÂY...) -->
+                <!-- KHUNG 2: QUY ĐỔI ĐƠN VỊ LỚN (MA TRẬN GIÁ LẺ & GIÁ SỈ CHO LỐC / THÙNG) -->
                 <div class="bg-blue-50/70 p-3.5 rounded-xl border border-blue-200">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-2.5">
                         <div class="font-bold text-inni-blue text-xs uppercase flex items-center gap-1.5">
-                            <i class="fa-solid fa-boxes-packing"></i> 2. Quy đổi đơn vị lớn (VD: 1 Thùng = 24 Lon)
+                            <i class="fa-solid fa-boxes-packing"></i> 2. Quy đổi đơn vị lớn (Thiết lập Giá Lẻ & Giá Sỉ cho Lốc / Thùng)
                         </div>
                         <button type="button" onclick="addUnitRow()" class="bg-inni-blue hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm scale-active shrink-0 whitespace-nowrap">
                             <i class="fa-solid fa-plus mr-1"></i> Thêm Đơn Vị Lớn
                         </button>
                     </div>
-                    <div class="grid grid-cols-12 gap-2 text-[11px] font-bold text-slate-600 mb-1.5 px-2">
-                        <div class="col-span-3">Tên ĐV (Thùng/Lốc)</div>
-                        <div class="col-span-3 text-center">SL quy đổi</div>
-                        <div class="col-span-3">Giá Bán Thùng/Lốc</div>
-                        <div class="col-span-2">Mã vạch</div>
-                        <div class="col-span-1 text-center">Xóa</div>
+                    <div class="grid grid-cols-12 gap-1.5 text-[11px] font-bold text-slate-600 mb-1.5 px-2">
+                        <div class="col-span-2">Tên ĐV (Lốc/Thùng)</div>
+                        <div class="col-span-2 text-center">SL quy đổi</div>
+                        <div class="col-span-3 text-red-700">Giá Bán Lẻ (Lốc/Thùng)</div>
+                        <div class="col-span-3 text-inni-blue">Giá Bán Sỉ (Lốc/Thùng)</div>
+                        <div class="col-span-2 text-center">Mã vạch / Xóa</div>
                     </div>
                     <div id="unit-rows-container" class="space-y-2"></div>
                 </div>
