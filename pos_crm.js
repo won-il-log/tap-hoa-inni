@@ -1745,7 +1745,7 @@ function triggerFastAirPrint() {
     }, 180);
 }
 
-// MODULE 4: Xuất Ảnh Hóa Đơn PNG (Clone ra khung A5 cố định, chống cắt đầu & đồng bộ style A5)
+// MODULE 4: Xuất Ảnh Hóa Đơn PNG (Clone ra khung Zalo cố định, chống lỗi QR CORS)
 async function exportBillToImage() {
     const billEl = document.getElementById('printable-bill');
     const modalEl = document.getElementById('bill-detail-modal');
@@ -1762,44 +1762,54 @@ async function exportBillToImage() {
 
     let cloneWrapper = null;
     try {
-        // 1. Reset vị trí cuộn của khung bill và modal về 0
+        // 1. Reset vị trí cuộn
         billEl.scrollTop = 0;
         if (modalEl) modalEl.scrollTop = 0;
 
-        // 2. Tạo thẻ div ẩn riêng cho việc chụp ảnh (sử dụng class export-zalo-template)
+        // 2. Tạo thẻ clone ẩn, FIX LỖI BOX-SIZING để Padding (24px 28px) không phá vỡ width 520px
         cloneWrapper = document.createElement('div');
-        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; z-index: -1;";
-        // Bọc nội dung lại bằng class export-zalo-template (tái sử dụng CSS đã viết trên HTML)
+        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; box-sizing: border-box !important; z-index: -1;";
+        
+        // Bọc nội dung lại bằng class export-zalo-template
         cloneWrapper.innerHTML = `
-            <div class="export-zalo-template">
+            <div class="export-zalo-template" style="box-sizing: border-box !important;">
                 ${billEl.innerHTML}
             </div>
         `;
         document.body.appendChild(cloneWrapper);
 
-        // Xử lý nạp ảnh QR nghiêm ngặt chống lỗi CORS đen hình của html2canvas
+        // Chờ font chữ render xong
+        await document.fonts.ready;
+
+        // 3. Xử lý nạp ảnh QR cực kỳ nghiêm ngặt chống lỗi CORS đen hình
         const imgs = Array.from(cloneWrapper.querySelectorAll('img'));
         await Promise.all(imgs.map(img => {
             return new Promise(resolve => {
                 const origSrc = img.getAttribute('src');
                 if (!origSrc) return resolve();
                 
+                img.removeAttribute('src'); 
                 img.setAttribute('crossOrigin', 'anonymous');
                 img.crossOrigin = "anonymous";
                 
                 img.onload = resolve;
-                img.onerror = resolve;
+                img.onerror = resolve; // Kể cả lỗi cũng cho qua để không treo bill
                 
-                // Gắn thêm tham số thời gian để ép trình duyệt tải lại ảnh sạch kèm header CORS
-                img.src = origSrc + (origSrc.includes('?') ? '&' : '?') + 'nocache=' + Date.now();
+                // Bypass Cache cực mạnh bằng tham số thời gian
+                img.src = origSrc + (origSrc.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
             });
         }));
 
-        // 3. Khóa tọa độ chụp trọn vẹn từ đỉnh (y: 0) đến đáy của bản clone
+        // Đợi thêm 100ms cho trình duyệt vẽ xong ảnh QR vào DOM trước khi chụp
+        await new Promise(r => setTimeout(r, 100));
+
+        // 4. Chụp canvas
         const canvas = await html2canvas(cloneWrapper, {
-            scale: 2,
-            useCORS: true,
+            scale: 2, // Xuất ảnh độ phân giải gấp đôi cho sắc nét
+            useCORS: true, // BẮT BUỘC PHẢI CÓ để vẽ ảnh VietQR
+            allowTaint: false, // TUYỆT ĐỐI KHÔNG DÙNG true, sẽ làm lỗi xuất file
             backgroundColor: '#ffffff',
+            logging: false,
             scrollX: 0,
             scrollY: -window.scrollY,
             windowWidth: cloneWrapper.scrollWidth,
