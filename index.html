@@ -34,6 +34,28 @@
         #printable-bill .font-black {
             font-weight: 700 !important;
         }
+
+        /* 1. Đặt thuộc tính giãn bảng cơ bản cho tất cả chế độ hiển thị */
+        #printable-bill table { 
+            width: 100% !important; 
+            table-layout: auto !important; 
+        }
+
+        /* 2. CHỈ DÀNH CHO LỆNH IN AIRPRINT (Media Print) MỚI ÉP WIDTH 135MM VÀ CANH GIỮA TRANG GIẤY */
+        @media print {
+            .a5-print-container {
+                width: 135mm !important; 
+                max-width: 135mm !important;
+                margin: 0 auto !important; /* Căn giữa tờ giấy A4 để in lọt lòng A5 */
+                box-sizing: border-box !important;
+            }
+            .a5-print-container table th, .a5-print-container table td {
+                white-space: nowrap !important; /* Khóa rớt dòng ĐVT, SL, Đơn giá, Thành tiền */
+            }
+            .a5-print-container table .col-name {
+                white-space: normal !important; /* Riêng tên hàng vẫn cho phép xuống dòng nếu quá dài */
+            }
+        }
         .bg-inni-blue { background-color: #0088FF; }
         .text-inni-blue { color: #0088FF; }
         .border-inni-blue { border-color: #0088FF; }
@@ -1358,13 +1380,13 @@
                     </div>
 
                     <div id="bill-vietqr-box" class="flex flex-col items-center text-center shrink-0 border border-slate-200 rounded p-1 bg-white">
-                        <img id="bill-vietqr-img" crossorigin="anonymous" src="" alt="VietQR" class="vietqr-header-img" style="width: 65px; height: 65px; object-fit: contain;">
+                        <img id="bill-vietqr-img" crossorigin="anonymous" src="" alt="VietQR" class="vietqr-header-img" width="65" height="65" style="width: 65px; height: 65px; display: block;">
                         <div class="text-[8px] font-bold text-slate-800 mt-0.5 leading-tight whitespace-pre-line" id="bill-bank-info"></div>
                     </div>
                 </div>
 
                 <!-- Bảng hàng hóa 6 cột đồng bộ: STT 7% | Tên hàng 41% | ĐVT 10% | SL 8% | Đơn giá 16% | Thành tiền 18% -->
-                <table class="w-full text-[11px] border-collapse border border-slate-400 mb-1" style="table-layout: fixed;">
+                <table class="w-full text-[11px] border-collapse border border-slate-400 mb-1" style="table-layout: auto;">
                     <thead>
                         <tr class="bg-slate-100 text-slate-800 font-bold">
                             <th class="border border-slate-400 text-center a5-only-col col-stt" style="width:7%; padding: 5px 4px 7px 4px !important; line-height: 1.4 !important; vertical-align: middle !important; white-space: nowrap;">STT</th>
