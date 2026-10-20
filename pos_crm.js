@@ -11,7 +11,6 @@ let lastParsedZaloItems = [];
 let currentViewingOrder = null;
 let currentLedgerCustomerId = null;
 
-
 // Biến phục vụ tìm kiếm khách hàng bằng bàn phím (Keyboard-first)
 let filteredPosCustomers = [];
 let highlightedCustIndex = -1;
@@ -1713,10 +1712,9 @@ function triggerFastAirPrint() {
             <title>In Hóa Đơn</title>
             <script src="https://cdn.tailwindcss.com"><\/script>
             <style>
-                /* Giữ nguyên căn lề A5 trong trang A4 đang hoạt động ổn định trên iPhone AirPrint */
                 @page {
-                    size: ${is80mm ? '80mm auto' : 'A5 portrait'};
-                    margin: ${is80mm ? '4mm' : '5mm'};
+                    size: ${is80mm ? '80mm auto' : 'A4 portrait'};
+                    margin: ${is80mm ? '4mm' : '0'}; /* Reset lề trang */
                 }
                 *, *::before, *::after { box-sizing: border-box !important; }
                 body, body * {
@@ -1725,6 +1723,7 @@ function triggerFastAirPrint() {
                 .font-black {
                     font-weight: 700 !important;
                 }
+                body {
                     background: #fff;
                     color: #000;
                     margin: 0;
@@ -1732,21 +1731,24 @@ function triggerFastAirPrint() {
                     line-height: 1.2 !important;
                 }
                 .a5-print-container {
-                    width: ${is80mm ? '76mm' : '118mm'} !important;
-                    max-width: ${is80mm ? '76mm' : '118mm'} !important;
-                    margin: 0 auto !important;
-                    padding: 4mm !important;
+                    width: ${is80mm ? '76mm' : '135mm'} !important; /* Mở rộng Width lên 135mm */
+                    max-width: ${is80mm ? '76mm' : '135mm'} !important;
+                    margin: 0 auto !important; /* Canh chính giữa giấy A4 của AirPrint */
+                    padding: ${is80mm ? '4mm' : '10mm 5mm'} !important;
                     box-sizing: border-box !important;
                     font-size: 11px !important;
                     overflow: hidden !important;
                 }
                 table {
                     width: 100% !important;
-                    table-layout: fixed !important;
+                    table-layout: auto !important; /* Đổi sang auto để giãn cột tự nhiên */
                     border-collapse: collapse !important;
                     box-sizing: border-box !important;
                     margin-bottom: 3px !important;
                 }
+                /* Khóa rớt dòng các cột số liệu */
+                th, td { white-space: nowrap !important; }
+                .col-name { white-space: normal !important; } /* Cho phép tên sản phẩm dài rớt dòng */
                 th, td {
                     border: 1px solid #64748b;
                     padding: 2px 4px !important;
@@ -1813,7 +1815,9 @@ async function exportBillToImage() {
             <style>
                 .export-a5-clone, .export-a5-clone * { box-sizing: border-box !important; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; }
                 .export-a5-clone .font-black { font-weight: 700 !important; }
-                .export-a5-clone table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; margin-bottom: 4px !important; }
+                .export-a5-clone table { width: 100% !important; table-layout: auto !important; border-collapse: collapse !important; margin-bottom: 4px !important; }
+                .export-a5-clone th, .export-a5-clone td { white-space: nowrap !important; }
+                .export-a5-clone .col-name { white-space: normal !important; }
                 .export-a5-clone th, .export-a5-clone td { border: 1px solid #64748b !important; padding: 2px 4px !important; line-height: 1.15 !important; font-size: 11px !important; }
                 .export-a5-clone .col-stt { width: 7% !important; white-space: nowrap !important; text-align: center !important; }
                 .export-a5-clone .col-name { width: 41% !important; word-wrap: break-word !important; white-space: normal !important; }
