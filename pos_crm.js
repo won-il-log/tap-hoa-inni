@@ -1702,8 +1702,6 @@ function triggerFastAirPrint() {
     }
 
     const is80mm = document.body.classList.contains('print-mode-80mm');
-    
-    // Copy HTML từ source, bao bọc lại bằng class in A5 chuẩn
     const doc = iframe.contentWindow.document;
     doc.open();
     doc.write(`
@@ -1712,26 +1710,67 @@ function triggerFastAirPrint() {
         <head>
             <meta charset="UTF-8">
             <title>In Hóa Đơn</title>
-            <!-- Lấy nguyên style gốc trên file index.html -->
-            <link rel="stylesheet" href="${window.location.href.split('?')[0]}">
+            <script src="https://cdn.tailwindcss.com"><\/script>
             <style>
+                /* Giữ nguyên căn lề A5 trong trang A4 đang hoạt động ổn định trên iPhone AirPrint */
                 @page {
                     size: ${is80mm ? '80mm auto' : 'A4 portrait'};
-                    margin: ${is80mm ? '4mm' : '0'};
+                    margin: ${is80mm ? '4mm' : '10mm 0'};
                 }
-                body { margin: 0; padding: 0; background: #fff; }
-                /* Lẩn phòng trường hợp load style từ file index.html quá chậm */
-                .print-a5-template {
-                    width: ${is80mm ? '76mm' : '135mm'} !important; 
-                    max-width: ${is80mm ? '76mm' : '135mm'} !important;
-                    margin: 0 auto !important; 
-                    padding: ${is80mm ? '4mm' : '5mm'} !important;
+                *, *::before, *::after { box-sizing: border-box !important; }
+                body, body * {
+                    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+                }
+                .font-black {
+                    font-weight: 700 !important;
+                }
+                    background: #fff;
+                    color: #000;
+                    margin: 0;
+                    padding: 0;
+                    line-height: 1.2 !important;
+                }
+                .a5-print-container {
+                    width: ${is80mm ? '76mm' : '118mm'} !important;
+                    max-width: ${is80mm ? '76mm' : '118mm'} !important;
+                    margin: 0 auto !important;
+                    padding: 4mm !important;
                     box-sizing: border-box !important;
+                    font-size: 11px !important;
+                    overflow: hidden !important;
+                }
+                table {
+                    width: 100% !important;
+                    table-layout: fixed !important;
+                    border-collapse: collapse !important;
+                    box-sizing: border-box !important;
+                    margin-bottom: 3px !important;
+                }
+                th, td {
+                    border: 1px solid #64748b;
+                    padding: 2px 4px !important;
+                    line-height: 1.15 !important;
+                    font-size: 11px !important;
+                    word-wrap: break-word !important;
+                    overflow-wrap: break-word !important;
+                    white-space: normal !important;
+                }
+                /* Đồng bộ 6 cột chuẩn 100%: STT 7% | Tên hàng 41% | ĐVT 10% | SL 8% | Đơn giá 16% | Thành tiền 18% */
+                .col-stt { width: 7% !important; white-space: nowrap !important; ${is80mm ? 'display:none;' : ''} }
+                .col-name { width: ${is80mm ? '48%' : '41%'} !important; }
+                .col-unit { width: 10% !important; white-space: nowrap !important; }
+                .col-qty { width: 8% !important; white-space: nowrap !important; }
+                .col-price { width: 16% !important; white-space: nowrap !important; }
+                .col-total { width: 18% !important; white-space: nowrap !important; }
+                .vietqr-header-img {
+                    width: 65px !important;
+                    height: 65px !important;
+                    object-fit: contain !important;
                 }
             </style>
         </head>
         <body>
-            <div class="print-a5-template">
+            <div class="a5-print-container">
                 ${source.innerHTML}
             </div>
         </body>
@@ -1745,7 +1784,7 @@ function triggerFastAirPrint() {
     }, 180);
 }
 
-// MODULE 4: Xuất Ảnh Hóa Đơn PNG (Clone ra khung Zalo cố định, chống lỗi QR CORS)
+// MODULE 4: Xuất Ảnh Hóa Đơn PNG (Clone ra khung A5 cố định, chống cắt đầu & đồng bộ style A5)
 async function exportBillToImage() {
     const billEl = document.getElementById('printable-bill');
     const modalEl = document.getElementById('bill-detail-modal');
@@ -1762,54 +1801,49 @@ async function exportBillToImage() {
 
     let cloneWrapper = null;
     try {
-        // 1. Reset vị trí cuộn
+        // 1. Reset vị trí cuộn của khung bill và modal về 0
         billEl.scrollTop = 0;
         if (modalEl) modalEl.scrollTop = 0;
 
-        // 2. Tạo thẻ clone ẩn, FIX LỖI BOX-SIZING để Padding (24px 28px) không phá vỡ width 520px
+        // 2. Tạo thẻ div tạm tách biệt hoàn toàn với thanh cuộn của iPhone, khóa chiều rộng chuẩn A5 (520px)
         cloneWrapper = document.createElement('div');
-        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; box-sizing: border-box !important; z-index: -1;";
-        
-        // Bọc nội dung lại bằng class export-zalo-template
+        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; height: auto; overflow: visible; background: #ffffff; padding: 16px 18px; box-sizing: border-box; z-index: -1; color: #000000; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; line-height: 1.4;";
         cloneWrapper.innerHTML = `
-            <div class="export-zalo-template" style="box-sizing: border-box !important;">
-                ${billEl.innerHTML}
-            </div>
+            <style>
+                .export-a5-clone, .export-a5-clone * { box-sizing: border-box !important; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; }
+                .export-a5-clone .font-black { font-weight: 700 !important; }
+                .export-a5-clone table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; margin-bottom: 4px !important; }
+                .export-a5-clone th, .export-a5-clone td { border: 1px solid #64748b !important; padding: 2px 4px !important; line-height: 1.15 !important; font-size: 11px !important; }
+                .export-a5-clone .col-stt { width: 7% !important; white-space: nowrap !important; text-align: center !important; }
+                .export-a5-clone .col-name { width: 41% !important; word-wrap: break-word !important; white-space: normal !important; }
+                .export-a5-clone .col-unit { width: 10% !important; white-space: nowrap !important; text-align: center !important; }
+                .export-a5-clone .col-qty { width: 8% !important; white-space: nowrap !important; text-align: center !important; }
+                .export-a5-clone .col-price { width: 16% !important; white-space: nowrap !important; text-align: right !important; }
+                .export-a5-clone .col-total { width: 18% !important; white-space: nowrap !important; text-align: right !important; }
+                .export-a5-clone .vietqr-header-img { width: 65px !important; height: 65px !important; object-fit: contain !important; }
+            </style>
+            <div class="export-a5-clone">${billEl.innerHTML}</div>
         `;
         document.body.appendChild(cloneWrapper);
 
-        // Chờ font chữ render xong
-        await document.fonts.ready;
-
-        // 3. Xử lý nạp ảnh QR cực kỳ nghiêm ngặt chống lỗi CORS đen hình
+        // Đảm bảo ảnh QR bên trong bản clone có crossOrigin="anonymous" và đã tải xong trước khi chụp
         const imgs = Array.from(cloneWrapper.querySelectorAll('img'));
         await Promise.all(imgs.map(img => {
-            return new Promise(resolve => {
-                const origSrc = img.getAttribute('src');
-                if (!origSrc) return resolve();
-                
-                img.removeAttribute('src'); 
-                img.setAttribute('crossOrigin', 'anonymous');
-                img.crossOrigin = "anonymous";
-                
-                img.onload = resolve;
-                img.onerror = resolve; // Kể cả lỗi cũng cho qua để không treo bill
-                
-                // Bypass Cache cực mạnh bằng tham số thời gian
-                img.src = origSrc + (origSrc.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+            if (!img.getAttribute('src')) return Promise.resolve();
+            img.crossOrigin = "anonymous";
+            if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+            return new Promise(res => {
+                img.onload = res;
+                img.onerror = res;
             });
         }));
 
-        // Đợi thêm 100ms cho trình duyệt vẽ xong ảnh QR vào DOM trước khi chụp
-        await new Promise(r => setTimeout(r, 100));
-
-        // 4. Chụp canvas
+        // 3. Khóa tọa độ chụp trọn vẹn từ đỉnh (y: 0) đến đáy của bản clone
         const canvas = await html2canvas(cloneWrapper, {
-            scale: 2, // Xuất ảnh độ phân giải gấp đôi cho sắc nét
-            useCORS: true, // BẮT BUỘC PHẢI CÓ để vẽ ảnh VietQR
-            allowTaint: false, // TUYỆT ĐỐI KHÔNG DÙNG true, sẽ làm lỗi xuất file
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
             backgroundColor: '#ffffff',
-            logging: false,
             scrollX: 0,
             scrollY: -window.scrollY,
             windowWidth: cloneWrapper.scrollWidth,
