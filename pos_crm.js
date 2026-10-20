@@ -1702,6 +1702,8 @@ function triggerFastAirPrint() {
     }
 
     const is80mm = document.body.classList.contains('print-mode-80mm');
+    
+    // Copy HTML từ source, bao bọc lại bằng class in A5 chuẩn
     const doc = iframe.contentWindow.document;
     doc.open();
     doc.write(`
@@ -1710,70 +1712,26 @@ function triggerFastAirPrint() {
         <head>
             <meta charset="UTF-8">
             <title>In Hóa Đơn</title>
-            <script src="https://cdn.tailwindcss.com"><\/script>
+            <!-- Lấy nguyên style gốc trên file index.html -->
+            <link rel="stylesheet" href="${window.location.href.split('?')[0]}">
             <style>
                 @page {
                     size: ${is80mm ? '80mm auto' : 'A4 portrait'};
-                    margin: ${is80mm ? '4mm' : '0'}; /* Reset lề trang */
+                    margin: ${is80mm ? '4mm' : '0'};
                 }
-                *, *::before, *::after { box-sizing: border-box !important; }
-                body, body * {
-                    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
-                }
-                .font-black {
-                    font-weight: 700 !important;
-                }
-                body {
-                    background: #fff;
-                    color: #000;
-                    margin: 0;
-                    padding: 0;
-                    line-height: 1.2 !important;
-                }
-                .a5-print-container {
-                    width: ${is80mm ? '76mm' : '135mm'} !important; /* Mở rộng Width lên 135mm */
+                body { margin: 0; padding: 0; background: #fff; }
+                /* Lẩn phòng trường hợp load style từ file index.html quá chậm */
+                .print-a5-template {
+                    width: ${is80mm ? '76mm' : '135mm'} !important; 
                     max-width: ${is80mm ? '76mm' : '135mm'} !important;
-                    margin: 0 auto !important; /* Canh chính giữa giấy A4 của AirPrint */
-                    padding: ${is80mm ? '4mm' : '10mm 5mm'} !important;
+                    margin: 0 auto !important; 
+                    padding: ${is80mm ? '4mm' : '5mm'} !important;
                     box-sizing: border-box !important;
-                    font-size: 11px !important;
-                    overflow: hidden !important;
-                }
-                table {
-                    width: 100% !important;
-                    table-layout: auto !important; /* Đổi sang auto để giãn cột tự nhiên */
-                    border-collapse: collapse !important;
-                    box-sizing: border-box !important;
-                    margin-bottom: 3px !important;
-                }
-                /* Khóa rớt dòng các cột số liệu */
-                th, td { white-space: nowrap !important; }
-                .col-name { white-space: normal !important; } /* Cho phép tên sản phẩm dài rớt dòng */
-                th, td {
-                    border: 1px solid #64748b;
-                    padding: 2px 4px !important;
-                    line-height: 1.15 !important;
-                    font-size: 11px !important;
-                    word-wrap: break-word !important;
-                    overflow-wrap: break-word !important;
-                    white-space: normal !important;
-                }
-                /* Đồng bộ 6 cột chuẩn 100%: STT 7% | Tên hàng 41% | ĐVT 10% | SL 8% | Đơn giá 16% | Thành tiền 18% */
-                .col-stt { width: 7% !important; white-space: nowrap !important; ${is80mm ? 'display:none;' : ''} }
-                .col-name { width: ${is80mm ? '48%' : '41%'} !important; }
-                .col-unit { width: 10% !important; white-space: nowrap !important; }
-                .col-qty { width: 8% !important; white-space: nowrap !important; }
-                .col-price { width: 16% !important; white-space: nowrap !important; }
-                .col-total { width: 18% !important; white-space: nowrap !important; }
-                .vietqr-header-img {
-                    width: 65px !important;
-                    height: 65px !important;
-                    object-fit: contain !important;
                 }
             </style>
         </head>
         <body>
-            <div class="a5-print-container">
+            <div class="print-a5-template">
                 ${source.innerHTML}
             </div>
         </body>
@@ -1808,26 +1766,14 @@ async function exportBillToImage() {
         billEl.scrollTop = 0;
         if (modalEl) modalEl.scrollTop = 0;
 
-        // 2. Tạo thẻ div tạm tách biệt hoàn toàn với thanh cuộn của iPhone, khóa chiều rộng chuẩn A5 (520px)
+        // 2. Tạo thẻ div ẩn riêng cho việc chụp ảnh (sử dụng class export-zalo-template)
         cloneWrapper = document.createElement('div');
-        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; height: auto; overflow: visible; background: #ffffff; padding: 16px 18px; box-sizing: border-box; z-index: -1; color: #000000; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; line-height: 1.4;";
+        cloneWrapper.style.cssText = "position: absolute; top: 0; left: -9999px; width: 520px; max-width: 520px; z-index: -1;";
+        // Bọc nội dung lại bằng class export-zalo-template (tái sử dụng CSS đã viết trên HTML)
         cloneWrapper.innerHTML = `
-            <style>
-                .export-a5-clone, .export-a5-clone * { box-sizing: border-box !important; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; }
-                .export-a5-clone .font-black { font-weight: 700 !important; }
-                .export-a5-clone table { width: 100% !important; table-layout: auto !important; border-collapse: collapse !important; margin-bottom: 4px !important; }
-                .export-a5-clone th, .export-a5-clone td { white-space: nowrap !important; }
-                .export-a5-clone .col-name { white-space: normal !important; }
-                .export-a5-clone th, .export-a5-clone td { border: 1px solid #64748b !important; padding: 2px 4px !important; line-height: 1.15 !important; font-size: 11px !important; }
-                .export-a5-clone .col-stt { width: 7% !important; white-space: nowrap !important; text-align: center !important; }
-                .export-a5-clone .col-name { width: 41% !important; word-wrap: break-word !important; white-space: normal !important; }
-                .export-a5-clone .col-unit { width: 10% !important; white-space: nowrap !important; text-align: center !important; }
-                .export-a5-clone .col-qty { width: 8% !important; white-space: nowrap !important; text-align: center !important; }
-                .export-a5-clone .col-price { width: 16% !important; white-space: nowrap !important; text-align: right !important; }
-                .export-a5-clone .col-total { width: 18% !important; white-space: nowrap !important; text-align: right !important; }
-                .export-a5-clone .vietqr-header-img { width: 65px !important; height: 65px !important; object-fit: contain !important; }
-            </style>
-            <div class="export-a5-clone">${billEl.innerHTML}</div>
+            <div class="export-zalo-template">
+                ${billEl.innerHTML}
+            </div>
         `;
         document.body.appendChild(cloneWrapper);
 
