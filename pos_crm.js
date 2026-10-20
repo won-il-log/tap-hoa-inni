@@ -1777,15 +1777,21 @@ async function exportBillToImage() {
         `;
         document.body.appendChild(cloneWrapper);
 
-        // Đảm bảo ảnh QR bên trong bản clone có crossOrigin="anonymous" và đã tải xong trước khi chụp
+        // Xử lý nạp ảnh QR nghiêm ngặt chống lỗi CORS đen hình của html2canvas
         const imgs = Array.from(cloneWrapper.querySelectorAll('img'));
         await Promise.all(imgs.map(img => {
-            if (!img.getAttribute('src')) return Promise.resolve();
-            img.crossOrigin = "anonymous";
-            if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-            return new Promise(res => {
-                img.onload = res;
-                img.onerror = res;
+            return new Promise(resolve => {
+                const origSrc = img.getAttribute('src');
+                if (!origSrc) return resolve();
+                
+                img.setAttribute('crossOrigin', 'anonymous');
+                img.crossOrigin = "anonymous";
+                
+                img.onload = resolve;
+                img.onerror = resolve;
+                
+                // Gắn thêm tham số thời gian để ép trình duyệt tải lại ảnh sạch kèm header CORS
+                img.src = origSrc + (origSrc.includes('?') ? '&' : '?') + 'nocache=' + Date.now();
             });
         }));
 
@@ -1793,7 +1799,6 @@ async function exportBillToImage() {
         const canvas = await html2canvas(cloneWrapper, {
             scale: 2,
             useCORS: true,
-            allowTaint: true,
             backgroundColor: '#ffffff',
             scrollX: 0,
             scrollY: -window.scrollY,
