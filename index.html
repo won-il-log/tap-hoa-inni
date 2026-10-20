@@ -34,28 +34,6 @@
         #printable-bill .font-black {
             font-weight: 700 !important;
         }
-
-        /* 1. Đặt thuộc tính giãn bảng cơ bản cho tất cả chế độ hiển thị */
-        #printable-bill table { 
-            width: 100% !important; 
-            table-layout: auto !important; 
-        }
-
-        /* 2. CHỈ DÀNH CHO LỆNH IN AIRPRINT (Media Print) MỚI ÉP WIDTH 135MM VÀ CANH GIỮA TRANG GIẤY */
-        @media print {
-            .a5-print-container {
-                width: 135mm !important; 
-                max-width: 135mm !important;
-                margin: 0 auto !important; /* Căn giữa tờ giấy A4 để in lọt lòng A5 */
-                box-sizing: border-box !important;
-            }
-            .a5-print-container table th, .a5-print-container table td {
-                white-space: nowrap !important; /* Khóa rớt dòng ĐVT, SL, Đơn giá, Thành tiền */
-            }
-            .a5-print-container table .col-name {
-                white-space: normal !important; /* Riêng tên hàng vẫn cho phép xuống dòng nếu quá dài */
-            }
-        }
         .bg-inni-blue { background-color: #0088FF; }
         .text-inni-blue { color: #0088FF; }
         .border-inni-blue { border-color: #0088FF; }
