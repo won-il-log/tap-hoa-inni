@@ -132,19 +132,6 @@ function fillSampleZaloText() {
     previewZaloParse();
 }
 
-
-const QUICK_COMMON_UNITS = ['Thùng', 'Lốc', 'Cái', 'Lon', 'Chai', 'Gói', 'Bịch', 'Hộp', 'Két', 'Cây', 'Kg', 'Bao'];
-
-function mapZaloUnitHintToStandard(hint) {
-    const map = {
-        'thung': 'Thùng', 'loc': 'Lốc', 'ket': 'Két', 'cay': 'Cây',
-        'day': 'Dây', 'bich': 'Bịch', 'bao': 'Bao', 'hop': 'Hộp',
-        'lon': 'Lon', 'chai': 'Chai', 'goi': 'Gói', 'tui': 'Túi',
-        'cai': 'Cái', 'ky': 'Kg', 'kg': 'Kg', 'vi': 'Vỉ'
-    };
-    return map[hint] || 'Thùng';
-}
-
 function parseZaloTextToItems(rawText) {
     if (!rawText || !rawText.trim()) return [];
 
@@ -243,17 +230,12 @@ function parseZaloTextToItems(rawText) {
                 qty: qty
             });
         } else {
-            const cleanSuggestedName = productQuery.charAt(0).toUpperCase() + productQuery.slice(1);
             results.push({
                 rawSegment: seg,
                 matched: false,
                 product: null,
                 unitIndex: 0,
-                qty: qty,
-                customName: cleanSuggestedName,
-                customUnit: detectedUnitHint ? mapZaloUnitHintToStandard(detectedUnitHint) : 'Thùng',
-                customPrice: 0,
-                saveToInventory: true
+                qty: qty
             });
         }
     });
@@ -261,15 +243,12 @@ function parseZaloTextToItems(rawText) {
     return results;
 }
 
-function previewZaloParse(reparse = true) {
+function previewZaloParse() {
     const raw = document.getElementById('zalo-input-text').value;
     const tbody = document.getElementById('zalo-preview-tbody');
     const summaryEl = document.getElementById('zalo-match-summary');
 
-    if (reparse) {
-        lastParsedZaloItems = parseZaloTextToItems(raw);
-    }
-
+    lastParsedZaloItems = parseZaloTextToItems(raw);
     if (lastParsedZaloItems.length === 0) {
         summaryEl.innerText = "Chưa có dữ liệu";
         tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 italic">Hãy dán tin nhắn Zalo vào ô bên trên...</td></tr>`;
@@ -277,59 +256,18 @@ function previewZaloParse(reparse = true) {
     }
 
     const matchedCount = lastParsedZaloItems.filter(i => i.matched).length;
-    const unmatchedCount = lastParsedZaloItems.length - matchedCount;
-    summaryEl.innerText = unmatchedCount > 0
-        ? `Khớp ${matchedCount}/${lastParsedZaloItems.length} dòng (${unmatchedCount} món mới tạo nhanh)`
-        : `Nhận diện khớp ${matchedCount}/${lastParsedZaloItems.length} dòng`;
-    const isWholesale = currentActivePosTierWholesale || isCurrentCustomerWholesale();
+    summaryEl.innerText = `Nhận diện khớp ${matchedCount}/${lastParsedZaloItems.length} dòng`;
+    const isWholesale = isCurrentCustomerWholesale();
 
     tbody.innerHTML = lastParsedZaloItems.map((row, idx) => {
         if (!row.matched) {
-            const unitOptsHtml = QUICK_COMMON_UNITS.map(uName =>
-                `<option value="${uName}" ${uName === row.customUnit ? 'selected' : ''}>${uName}</option>`
-            ).join('');
-            const safeCustomName = (row.customName || '').replace(/"/g, '&quot;');
-
             return `
-                <tr class="bg-amber-50/70 border-l-4 border-amber-400">
-                    <td class="p-2 align-top">
-                        <div class="font-medium text-slate-700 text-xs">"${row.rawSegment}"</div>
-                        <span class="inline-block mt-1 text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">Món mới chưa có trong kho</span>
-                    </td>
-                    <td class="p-2 align-top">
-                        <input type="text" value="${safeCustomName}" placeholder="Nhập tên hàng chuẩn..."
-                            oninput="lastParsedZaloItems[${idx}].customName = this.value"
-                            class="w-full border border-amber-400 rounded-lg p-1.5 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-inni-blue">
-                        <label class="inline-flex items-center gap-1.5 mt-1.5 cursor-pointer select-none text-[11px] font-bold text-inni-blue">
-                            <input type="checkbox" ${row.saveToInventory ? 'checked' : ''}
-                                onchange="lastParsedZaloItems[${idx}].saveToInventory = this.checked"
-                                class="w-4 h-4 accent-[#0088FF] rounded cursor-pointer">
-                            <span>Lưu món này vào Kho & Thêm vào đơn</span>
-                        </label>
-                    </td>
-                    <td class="p-2 align-top text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <input type="number" value="${row.qty}" min="1"
-                                oninput="onUpdateUnmatchedZaloRow(${idx}, 'qty', this)"
-                                class="w-12 border border-slate-300 rounded-lg p-1.5 text-center font-bold text-xs bg-white">
-                            <select onchange="lastParsedZaloItems[${idx}].customUnit = this.value"
-                                class="border border-slate-300 rounded-lg p-1.5 text-xs font-bold bg-white text-inni-blue">
-                                ${unitOptsHtml}
-                            </select>
-                        </div>
-                    </td>
-                    <td class="p-2 align-top text-right">
-                        <input type="text" inputmode="numeric" value="${row.customPrice > 0 ? formatmoney(row.customPrice) : ''}" placeholder="Nhập giá bán..."
-                            oninput="onUpdateUnmatchedZaloRow(${idx}, 'price', this)"
-                            class="w-28 border-2 border-blue-400 rounded-lg p-1.5 text-right font-black text-xs text-red-600 bg-white focus:outline-none">
-                        <div class="text-[11px] font-bold text-slate-600 mt-1" id="zalo-line-total-${idx}">
-                            Thành tiền: ${formatmoney((row.customPrice || 0) * (row.qty || 1))} đ
-                        </div>
-                    </td>
+                <tr class="bg-red-50/60">
+                    <td class="p-2 font-medium text-slate-700">"${row.rawSegment}"</td>
+                    <td class="p-2 text-red-600 font-bold" colspan="3"><i class="fa-solid fa-circle-xmark mr-1"></i>Không tìm thấy tên hàng khớp trong kho</td>
                 </tr>
             `;
         }
-
         const unitPrice = getStandardUnitPrice(row.product, row.unitIndex, isWholesale);
         const unitOptions = row.product.units.map((unitObj, uIdx) => {
             const p = getStandardUnitPrice(row.product, uIdx, isWholesale);
@@ -342,8 +280,8 @@ function previewZaloParse(reparse = true) {
                 <td class="p-2 font-bold text-slate-800"><i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>${row.product.name}</td>
                 <td class="p-2 text-center">
                     <div class="flex items-center justify-center gap-1">
-                        <input type="number" value="${row.qty}" min="1" onchange="lastParsedZaloItems[${idx}].qty = parseInt(this.value)||1; previewZaloParse(false);" class="w-12 border rounded p-1 text-center font-bold">
-                        <select onchange="lastParsedZaloItems[${idx}].unitIndex = parseInt(this.value); previewZaloParse(false);" class="border rounded p-1 text-xs font-bold bg-white text-inni-blue">
+                        <input type="number" value="${row.qty}" min="1" onchange="lastParsedZaloItems[${idx}].qty = parseInt(this.value)||1; previewZaloParse();" class="w-12 border rounded p-1 text-center font-bold">
+                        <select onchange="lastParsedZaloItems[${idx}].unitIndex = parseInt(this.value); previewZaloParse();" class="border rounded p-1 text-xs font-bold bg-white text-inni-blue">
                             ${unitOptions}
                         </select>
                     </div>
@@ -354,93 +292,19 @@ function previewZaloParse(reparse = true) {
     }).join('');
 }
 
-function onUpdateUnmatchedZaloRow(idx, field, inputEl) {
-    const row = lastParsedZaloItems[idx];
-    if (!row) return;
-    if (field === 'qty') {
-        row.qty = Math.max(1, parseInt(inputEl.value, 10) || 1);
-    } else if (field === 'price') {
-        formatCurrencyInput(inputEl);
-        row.customPrice = getRawNum(inputEl);
-    }
-    const totalEl = document.getElementById(`zalo-line-total-${idx}`);
-    if (totalEl) {
-        totalEl.innerText = `Thành tiền: ${formatmoney((row.customPrice || 0) * (row.qty || 1))} đ`;
-    }
-}
-
-async function createQuickInventoryProduct(name, unitName, sellingPrice) {
-    const cleanName = name.trim();
-    const cleanUnit = (unitName || 'Cái').trim();
-    const price = Number(sellingPrice) || 0;
-    const costPrice = price > 0 ? Math.round(price * 0.85) : 0;
-
-    const productData = {
-        name: cleanName,
-        category: "Khác",
-        keywords: [removeVN(cleanName)],
-        barcode: "",
-        image: null,
-        baseUnit: cleanUnit,
-        basePrice: price,
-        wholesalePrice: price,
-        price: price,
-        costPrice: costPrice,
-        stock: 0,
-        minStock: 10,
-        units: [{
-            unitName: cleanUnit,
-            conversionRate: 1,
-            sellingPrice: price,
-            wholesalePrice: price,
-            barcode: ""
-        }],
-        createdAt: Date.now()
-    };
-
-    const docRef = await db.collection("inventory").add(productData);
-    const newProdObj = { id: docRef.id, ...productData };
-    if (!inventory.some(i => i.id === docRef.id)) {
-        inventory.unshift(newProdObj);
-    }
-    return newProdObj;
-}
-
-async function pushZaloItemsToCart() {
-    const matchedRows = lastParsedZaloItems.filter(i => i.matched && i.product);
-    const newCheckedRows = lastParsedZaloItems.filter(i => !i.matched && i.saveToInventory);
-
-    if (matchedRows.length === 0 && newCheckedRows.length === 0) {
-        return alert("Chưa có mặt hàng nào khớp hoặc được tích chọn lưu vào kho để thêm vào giỏ!");
+function pushZaloItemsToCart() {
+    const validItems = lastParsedZaloItems.filter(i => i.matched && i.product);
+    if (validItems.length === 0) {
+        return alert("Chưa có mặt hàng nào khớp để thêm vào giỏ!");
     }
 
-    for (const r of newCheckedRows) {
-        if (!r.customName || !r.customName.trim()) {
-            return alert(`Vui lòng nhập Tên hàng chuẩn cho dòng "${r.rawSegment}"!`);
-        }
-        if (!r.customPrice || r.customPrice <= 0) {
-            return alert(`Vui lòng nhập Giá bán lớn hơn 0 cho mặt hàng mới "${r.customName}"!`);
-        }
-    }
+    validItems.forEach(row => {
+        addToCartWithUnit(row.product.id, row.unitIndex, row.qty, false);
+    });
 
-    try {
-        // 1. Đẩy các món đã khớp vào giỏ
-        matchedRows.forEach(row => {
-            addToCartWithUnit(row.product.id, row.unitIndex, row.qty, false);
-        });
-
-        // 2. Tạo nhanh các món mới có tích [✓] vào Kho gốc và đẩy luôn vào Giỏ hàng
-        for (const row of newCheckedRows) {
-            const newProd = await createQuickInventoryProduct(row.customName, row.customUnit, row.customPrice);
-            addToCartWithUnit(newProd.id, 0, row.qty, false, row.customPrice);
-        }
-
-        document.getElementById('zalo-input-text').value = '';
-        closeZaloModal();
-        playBeepSound();
-    } catch (e) {
-        alert("Lỗi khi tạo nhanh mặt hàng từ đơn Zalo: " + e.message);
-    }
+    document.getElementById('zalo-input-text').value = '';
+    closeZaloModal();
+    playBeepSound();
 }
 
 // ==========================================
@@ -458,13 +322,16 @@ function handlePosSearchEnter(e) {
         return;
     }
 
-    // 2. Nếu gõ text nhanh + Enter: Tự động chọn mặt hàng khớp đầu tiên (kể cả tồn <= 0)
+    // 2. Nếu gõ text nhanh + Enter: Tự động chọn mặt hàng khớp đầu tiên đang hiển thị
     const normSearch = removeVN(query);
     const matchedProd = inventory.find(item => 
-        removeVN(item.name).includes(normSearch) || 
-        item.keywords.some(k => removeVN(k).includes(normSearch))
+        item.stock > 0 && (
+            removeVN(item.name).includes(normSearch) || 
+            item.keywords.some(k => removeVN(k).includes(normSearch))
+        )
     );
     if (matchedProd) {
+        // Nếu khách sỉ và sản phẩm có đơn vị Thùng, có thể thêm đơn vị mặc định
         addToCartWithUnit(matchedProd.id, 0, 1, false);
         playBeepSound();
         e.target.value = '';
@@ -574,46 +441,83 @@ function closeMobileProductSelector() {
     if (wrapper) wrapper.classList.remove('mobile-picker-open');
 }
 
-function addToCartWithUnit(productId, unitIndex = 0, addQty = 1, isGift = false, forcedCustomPrice = null) {
-    const item = inventory.find(i => i.id === productId);
-    if (!item) return;
+function renderSellGrid() {
+    const grid = document.getElementById('sell-grid');
+    const noResult = document.getElementById('sell-no-result');
+    if (!grid) return;
+    grid.innerHTML = '';
 
-    const u = item.units[unitIndex] || item.units[0];
-    const cartKey = `${productId}_${unitIndex}_${isGift ? 'GIFT' : 'SALE'}`;
+    const rawSearch = (document.getElementById('sell-search-name')?.value || '').trim();
+    const normSearch = removeVN(rawSearch);
+    const filterCat = document.getElementById('sell-search-cat')?.value || 'all';
+    const isWholesaleCust = currentActivePosTierWholesale;
+    let count = 0;
 
-    // Tự động nhận diện Khách Sỉ hoặc chế độ Giá Sỉ đang bật để lấy đúng giá của ĐVT (Lon / Lốc / Thùng)
-    const useWholesale = currentActivePosTierWholesale || isCurrentCustomerWholesale();
+    for (let i = 0; i < inventory.length; i++) {
+        const item = inventory[i];
+        if (filterCat !== 'all' && item.category !== filterCat) continue;
+        if (normSearch) {
+            const matchName = removeVN(item.name).includes(normSearch);
+            const matchKw = item.keywords.some(k => removeVN(k).includes(normSearch));
+            const matchBc = (item.barcode && item.barcode.includes(rawSearch)) || item.units.some(u => u.barcode && u.barcode.includes(rawSearch));
+            if (!matchName && !matchKw && !matchBc) continue;
+        }
+        count++;
+        if (count > 60) continue; // Giới hạn DOM tối đa 60 thẻ trên màn hình POS để cuộn mượt
 
-    if (!cart[cartKey]) {
-        const tierPrice = getStandardUnitPrice(item, unitIndex, useWholesale);
-        const initialPrice = isGift ? 0 : (forcedCustomPrice !== null ? forcedCustomPrice : tierPrice);
+        const isOut = item.stock <= 0;
+        const isLow = item.stock > 0 && item.stock <= item.minStock;
 
-        cart[cartKey] = {
-            cartKey,
-            productId: item.id,
-            name: item.name,
-            baseUnit: item.baseUnit,
-            unitIndex: unitIndex,
-            unitName: u.unitName,
-            conversionRate: u.conversionRate,
-            price: initialPrice,
-            originalPrice: tierPrice,
-            costPricePerBase: item.costPrice,
-            qty: 0,
-            isGift: isGift,
-            manualPriceEdited: forcedCustomPrice !== null
-        };
+        const imgTag = item.image 
+            ? `<div class="w-full h-16 md:h-20 bg-white rounded-lg mb-1.5 border border-slate-100 flex items-center justify-center overflow-hidden relative">
+                    <img src="${item.image}" class="max-w-full max-h-full object-contain">
+                    <span class="absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800')}">
+                        ${isOut ? 'Hết' : `Tồn: ${item.stock}`}
+                    </span>
+               </div>`
+            : `<div class="w-full h-16 md:h-20 bg-slate-50 rounded-lg mb-1.5 flex items-center justify-center text-slate-300 border border-slate-100 relative">
+                    <i class="fa-solid fa-box text-xl"></i>
+                    <span class="absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800')}">
+                        ${isOut ? 'Hết' : `Tồn: ${item.stock}`}
+                    </span>
+               </div>`;
+
+        const unitButtonsHtml = item.units.map((u, uIdx) => {
+            const isBigUnit = u.conversionRate > 1;
+            const displayPrice = getStandardUnitPrice(item, uIdx, isWholesaleCust);
+            const unitCost = Math.round((Number(item.costPrice) || 0) * (Number(u.conversionRate) || 1));
+            const costSubText = showPosCostGlobal
+                ? `<div class="text-[9.5px] ${isBigUnit ? 'text-blue-100' : 'text-slate-500'} font-normal text-left leading-tight mt-0.5">Vốn: ${formatmoney(unitCost)}đ/${u.unitName}</div>`
+                : '';
+            const btnStyle = isBigUnit 
+                ? 'bg-[#0088FF] hover:bg-blue-700 text-white font-bold shadow-sm' 
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200';
+            return `
+                <button onclick="addToCartWithUnit('${item.id}', ${uIdx}, 1, false)" class="w-full py-1.5 px-2 rounded-lg text-[11px] flex flex-col items-stretch transition scale-active ${btnStyle}">
+                    <div class="flex justify-between items-center w-full">
+                        <span class="truncate">+1 ${u.unitName}${isBigUnit ? ` (${u.conversionRate})` : ''}</span>
+                        <span class="${isBigUnit ? 'text-amber-200 font-black' : 'text-red-600 font-bold'} ml-1">${formatmoney(displayPrice)}đ</span>
+                    </div>
+                    ${costSubText}
+                </button>
+            `;
+        }).join('');
+
+        grid.innerHTML += `
+            <div id="pos-card-${item.id}" class="bg-white border border-slate-200 rounded-xl p-2 shadow-sm flex flex-col justify-between hover:border-inni-blue transition ${isOut ? 'opacity-50 pointer-events-none' : ''}">
+                <div>
+                    ${imgTag}
+                    <div class="font-bold text-slate-800 text-xs line-clamp-2 leading-snug h-8 mb-1.5" title="${item.name}">${item.name}</div>
+                </div>
+                <div class="space-y-1 mt-auto">
+                    ${unitButtonsHtml}
+                </div>
+            </div>
+        `;
     }
 
-    cart[cartKey].qty += addQty;
-
-    // Trên Mobile: Sau khi chọn sản phẩm xong -> Tự động đóng danh sách chọn hàng và trở về giao diện giỏ hàng
-    if (window.innerWidth < 768) {
-        closeMobileProductSelector();
-        const sInp = document.getElementById('sell-search-name');
-        if (sInp) sInp.value = '';
-        document.getElementById('btn-clear-pos-search')?.classList.add('hidden');
-    }
+    if (count === 0) noResult.classList.remove('hidden');
+    else noResult.classList.add('hidden');
 
     renderCart();
 }
@@ -715,6 +619,14 @@ function changeCartItemUnit(oldKey, newUnitIndex) {
     if (!prod || !prod.units[newUnitIndex]) return;
 
     const newUnit = prod.units[newUnitIndex];
+    const otherBaseQty = getTotalBaseQtyInCart(cItem.productId, oldKey);
+
+    if (otherBaseQty + (cItem.qty * newUnit.conversionRate) > prod.stock) {
+        alert(`Kho chỉ còn ${prod.stock} ${prod.baseUnit}, không đủ để đổi sang ${cItem.qty} ${newUnit.unitName}!`);
+        renderCart();
+        return;
+    }
+
     const useWholesale = currentActivePosTierWholesale || isCurrentCustomerWholesale();
     const newKey = `${cItem.productId}_${newUnitIndex}_${cItem.isGift ? 'GIFT' : 'SALE'}`;
     const newPrice = cItem.isGift ? 0 : getStandardUnitPrice(prod, newUnitIndex, useWholesale);
@@ -734,21 +646,6 @@ function changeCartItemUnit(oldKey, newUnitIndex) {
             manualPriceEdited: false
         };
     }
-    renderCart();
-}
-
-function updateCartQty(cartKey, delta, exactVal = null) {
-    const cItem = cart[cartKey];
-    if (!cItem) return;
-
-    const newQty = exactVal !== null ? (parseInt(exactVal, 10) || 0) : (cItem.qty + delta);
-    if (newQty <= 0) {
-        delete cart[cartKey];
-        renderCart();
-        return;
-    }
-
-    cItem.qty = newQty;
     renderCart();
 }
 
@@ -1253,21 +1150,33 @@ function copyOrderToPos(order) {
 
     order.items.forEach(oldItem => {
         const prod = inventory.find(i => i.id === oldItem.productId) || inventory.find(i => i.name === oldItem.productName);
-        if (!prod) {
-            warnings.push(`- ${oldItem.productName}: Đã bị xóa khỏi danh mục kho`);
+        if (!prod || prod.stock <= 0) {
+            warnings.push(`- ${oldItem.productName}: Đã hết hàng trong kho`);
             return;
         }
 
         let uIdx = prod.units.findIndex(u => u.unitName === oldItem.unitName);
         if (uIdx === -1) uIdx = 0;
 
-        addToCartWithUnit(prod.id, uIdx, oldItem.qty, !!oldItem.isGift, oldItem.unitPrice);
+        const u = prod.units[uIdx];
+        const maxPossibleQty = Math.floor(prod.stock / u.conversionRate);
+        if (maxPossibleQty <= 0) {
+            warnings.push(`- ${prod.name}: Không đủ tồn kho cho đơn vị ${u.unitName} (Tồn: ${prod.stock} ${prod.baseUnit})`);
+            return;
+        }
+
+        const finalQty = Math.min(oldItem.qty, maxPossibleQty);
+        if (finalQty < oldItem.qty) {
+            warnings.push(`- ${prod.name}: Đơn cũ ${oldItem.qty} ${u.unitName} -> Chỉ lấy được ${finalQty} ${u.unitName} do giới hạn tồn kho`);
+        }
+
+        addToCartWithUnit(prod.id, uIdx, finalQty, !!oldItem.isGift, oldItem.unitPrice);
         copiedCount++;
     });
 
     switchTab('tab-sell');
     renderSellGrid();
-    const warnMsg = warnings.length > 0 ? `\n\n⚠️ LƯU Ý:\n${warnings.join('\n')}` : '';
+    const warnMsg = warnings.length > 0 ? `\n\n⚠️ LƯU Ý CÁC MÓN THIẾU TỒN:\n${warnings.join('\n')}` : '';
     alert(`📋 Đã sao chép ${copiedCount}/${order.items.length} mặt hàng từ đơn ${order.orderCode} ra màn hình POS!\nBạn chỉ cần chỉnh lại số lượng/giá mới rồi bấm In.${warnMsg}`);
 }
 
