@@ -1595,12 +1595,30 @@
                 </div>
 
                 <!-- Thanh chọn mặt hàng thêm vào Phiếu Nhập -->
+                <!-- Thanh chọn mặt hàng thêm vào Phiếu Nhập (Tích hợp Import Excel & Hệ Số Quy Đổi) -->
                 <div class="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
-                    <div class="text-xs font-bold text-emerald-900 uppercase mb-2">+ Thêm mặt hàng vào chuyến nhập này:</div>
+                    <div class="flex flex-wrap justify-between items-center gap-2 mb-2.5 pb-2 border-b border-emerald-200/80">
+                        <div class="text-xs font-bold text-emerald-900 uppercase flex items-center gap-1.5">
+                            <i class="fa-solid fa-boxes-packing text-emerald-700"></i> + Thêm mặt hàng vào chuyến nhập này:
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <input type="file" id="po-excel-input" accept=".xlsx,.xls,.csv" onchange="handleImportPoExcel(event)" class="hidden">
+                            <button type="button" onclick="document.getElementById('po-excel-input').click()" class="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 shadow-sm scale-active">
+                                <i class="fa-solid fa-file-excel"></i> Import File Excel
+                            </button>
+                            <button type="button" onclick="downloadPoSampleExcel()" class="bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 scale-active" title="Tải file Excel mẫu có cột Hệ Số Quy Đổi">
+                                <i class="fa-solid fa-download"></i> File Mẫu Nhập
+                            </button>
+                            <button type="button" onclick="clearPoItemsList()" class="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 scale-active" title="Làm trống danh sách bên dưới">
+                                <i class="fa-solid fa-trash-can"></i> Xóa DS
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                        <div class="sm:col-span-5">
+                        <div class="sm:col-span-4">
                             <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Chọn mặt hàng</label>
-                            <input type="text" id="po-product-filter" oninput="filterPoProductDropdown()" placeholder="Gõ tên hàng hoặc mã vạch để lọc nhanh..." class="w-full border border-slate-300 p-1.5 mb-1 rounded-lg bg-white text-xs">
+                            <input type="text" id="po-product-filter" oninput="filterPoProductDropdown()" placeholder="Gõ tên hàng hoặc mã vạch để lọc..." class="w-full border border-slate-300 p-1.5 mb-1 rounded-lg bg-white text-xs">
                             <select id="po-product-id" onchange="onChangePoProduct()" class="w-full border border-slate-300 p-2 rounded-lg bg-white font-bold text-xs"></select>
                         </div>
                         <div class="sm:col-span-2">
@@ -1608,11 +1626,15 @@
                             <select id="po-unit-select" onchange="onChangePoUnit()" class="w-full border border-slate-300 p-2 rounded-lg bg-white font-bold text-inni-blue text-xs"></select>
                         </div>
                         <div class="sm:col-span-2">
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Số lượng</label>
+                            <label class="block text-[11px] font-bold text-amber-800 mb-0.5" title="1 Đơn vị nhập bằng bao nhiêu ĐVT gốc?">Hệ số quy đổi *</label>
+                            <input type="number" id="po-conversion-rate" value="1" min="1" oninput="onChangePoConversionRate()" class="w-full border-2 border-amber-400 p-1.5 rounded-lg font-black text-center text-xs bg-white text-amber-900" title="VD: 1 Bao = 8 Lốc thì điền 8">
+                        </div>
+                        <div class="sm:col-span-1">
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">SL Nhập</label>
                             <input type="number" id="po-qty" value="1" min="1" class="w-full border border-slate-300 p-2 rounded-lg font-bold text-center text-xs bg-white">
                         </div>
                         <div class="sm:col-span-2">
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Giá nhập / 1 ĐV</label>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Đơn giá nhập</label>
                             <input type="text" id="po-import-price" oninput="formatCurrencyInput(this)" placeholder="310.000" class="w-full border border-slate-300 p-2 rounded-lg font-bold text-emerald-700 text-xs bg-white">
                         </div>
                         <div class="sm:col-span-1">

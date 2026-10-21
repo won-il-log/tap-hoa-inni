@@ -939,7 +939,6 @@ async function quickAddSupplierFromPo() {
 }
 
 function openPurchaseOrderModal() {
-    if (inventory.length === 0) return alert("Kho chưa có mặt hàng nào. Hãy thêm mặt hàng trước!");
     currentPoItems = [];
     renderPoSupplierSelect();
     document.getElementById('po-invoice-no').value = '';
@@ -951,7 +950,9 @@ function openPurchaseOrderModal() {
     }
 
     const prodSel = document.getElementById('po-product-id');
-    prodSel.innerHTML = inventory.map(i => `<option value="${i.id}">${i.name} (Tồn: ${i.stock} ${i.baseUnit})</option>`).join('');
+    if (prodSel) {
+        prodSel.innerHTML = inventory.map(i => `<option value="${i.id}">${i.name} (Tồn: ${i.stock} ${i.baseUnit})</option>`).join('');
+    }
     onChangePoProduct();
     renderPoItemsTable();
     document.getElementById('po-modal').classList.remove('hidden');
@@ -973,62 +974,200 @@ function closePurchaseOrderModal() {
 }
 
 function onChangePoProduct() {
-    const prodId = document.getElementById('po-product-id').value;
+    const prodId = document.getElementById('po-product-id')?.value;
     const item = inventory.find(i => i.id === prodId);
-    if (!item) return;
-
     const unitSel = document.getElementById('po-unit-select');
-    unitSel.innerHTML = item.units.map((u, idx) => `<option value="${idx}">${u.unitName} (${u.conversionRate} ${item.baseUnit})</option>`).join('');
+    if (!item || !unitSel) {
+        if (unitSel) unitSel.innerHTML = '';
+        return;
+    }
+
+    unitSel.innerHTML = item.units.map((u, idx) => `<option value="${idx}">${u.unitName} (${u.conversionRate} ${item.baseUnit})</option>`).join('') +
+        `<option value="CUSTOM">+ Đơn vị lớn khác (Bao/Thùng...)</option>`;
     if (item.units.length > 1) unitSel.selectedIndex = item.units.length - 1;
     onChangePoUnit();
 }
 
 function onChangePoUnit() {
-    const prodId = document.getElementById('po-product-id').value;
+    const prodId = document.getElementById('po-product-id')?.value;
     const item = inventory.find(i => i.id === prodId);
-    const uIdx = parseInt(document.getElementById('po-unit-select').value, 10) || 0;
-    if (!item || !item.units[uIdx]) return;
+    const unitVal = document.getElementById('po-unit-select')?.value;
+    const rateInp = document.getElementById('po-conversion-rate');
+    if (!item) return;
 
-    const u = item.units[uIdx];
-    const suggestedCost = item.costPrice * u.conversionRate;
-    document.getElementById('po-import-price').value = formatmoney(suggestedCost);
+    if (unitVal === 'CUSTOM') {
+        const customUName = prompt(`Nhập tên Đơn Vị Nhập mới cho "${item.name}" (VD: Bao, Thùng, Kiện...):`, "Bao");
+        if (!customUName || !customUName.trim()) {
+            document.getElementById('po-unit-select').selectedIndex = 0;
+            return onChangePoUnit();
+        }
+        const customRateRaw = prompt(`1 ${customUName.trim()} bằng bao nhiêu ${item.baseUnit} (Hệ số quy đổi)?`, "8");
+        const customRate = Math.max(1, parseInt(customRateRaw, 10) || 1);
+
+        const unitSel = document.getElementById('po-unit-select');
+        const newOpt = document.createElement('option');
+        newOpt.value = `NEW_${customUName.trim()}_${customRate}`;
+        newOpt.text = `${customUName.trim()} (${customRate} ${item.baseUnit})`;
+        newOpt.dataset.unitName = customUName.trim();
+        newOpt.dataset.rate = customRate;
+        unitSel.insertBefore(newOpt, unitSel.lastElementChild);
+        unitSel.value = newOpt.value;
+
+        if (rateInp) rateInp.value = customRate;
+        const suggestedCost = (Number(item.costPrice) || 0) * customRate;
+        document.getElementById('po-import-price').value = suggestedCost > 0 ? formatmoney(suggestedCost) : '';
+        return;
+    }
+
+    if (unitVal && unitVal.startsWith('NEW_')) {
+        const selOpt = document.getElementById('po-unit-select').selectedOptions[0];
+        const cRate = Math.max(1, parseInt(selOpt?.dataset?.rate, 10) || 1);
+        if (rateInp) rateInp.value = cRate;
+        const suggestedCost = (Number(item.costPrice) || 0) * cRate;
+        document.getElementById('po-import-price').value = suggestedCost > 0 ? formatmoney(suggestedCost) : '';
+        return;
+    }
+
+    const uIdx = parseInt(unitVal, 10) || 0;
+    const u = item.units[uIdx] || item.units[0];
+    if (!u) return;
+
+    const rate = Math.max(1, Number(u.conversionRate) || 1);
+    if (rateInp) rateInp.value = rate;
+    const suggestedCost = (Number(item.costPrice) || 0) * rate;
+    document.getElementById('po-import-price').value = suggestedCost > 0 ? formatmoney(suggestedCost) : '';
+}
+
+function onChangePoConversionRate() {
+    const prodId = document.getElementById('po-product-id')?.value;
+    const item = inventory.find(i => i.id === prodId);
+    const rate = Math.max(1, parseInt(document.getElementById('po-conversion-rate')?.value, 10) || 1);
+    if (item && item.costPrice > 0) {
+        document.getElementById('po-import-price').value = formatmoney(item.costPrice * rate);
+    }
 }
 
 function addPoItemToList() {
-    const prodId = document.getElementById('po-product-id').value;
+    const prodId = document.getElementById('po-product-id')?.value;
     const item = inventory.find(i => i.id === prodId);
-    const uIdx = parseInt(document.getElementById('po-unit-select').value, 10) || 0;
-    const qty = parseInt(document.getElementById('po-qty').value, 10) || 0;
+    const unitSel = document.getElementById('po-unit-select');
+    const unitVal = unitSel?.value || '0';
+    const qty = parseInt(document.getElementById('po-qty')?.value, 10) || 0;
     const importPrice = getRawNum('po-import-price');
+    const manualRate = Math.max(1, parseInt(document.getElementById('po-conversion-rate')?.value, 10) || 1);
 
     if (!item || qty <= 0 || importPrice <= 0) {
         return alert("Vui lòng nhập số lượng và đơn giá nhập hợp lệ!");
     }
 
-    const u = item.units[uIdx];
-    const baseQty = qty * u.conversionRate;
+    let unitName = item.baseUnit;
+    if (unitVal.startsWith('NEW_')) {
+        unitName = unitSel.selectedOptions[0]?.dataset?.unitName || "Bao";
+    } else {
+        const uIdx = parseInt(unitVal, 10) || 0;
+        unitName = item.units[uIdx] ? item.units[uIdx].unitName : item.baseUnit;
+    }
+
+    const conversionRate = manualRate;
+    // Công thức chuẩn bán sỉ:
+    // 1. Tồn kho cộng thêm = [Số Lượng Nhập] x [Hệ Số Quy Đổi]
+    const baseQty = qty * conversionRate;
+    // 2. Giá vốn nhập (của ĐVT gốc) = [Đơn Giá Nhập] / [Hệ Số Quy Đổi]
+    const costPerBaseAtImport = Math.round(importPrice / conversionRate);
     const totalCost = qty * importPrice;
 
-    currentPoItems.push({
-        productId: item.id,
-        productName: item.name,
-        baseUnit: item.baseUnit,
-        unitName: u.unitName,
-        conversionRate: u.conversionRate,
-        qty,
-        baseQty,
-        importPrice,
-        costPerBaseAtImport: Math.round(importPrice / u.conversionRate),
-        totalCost
-    });
+    const existingIdx = currentPoItems.findIndex(x => x.productId === item.id && x.unitName.toLowerCase() === unitName.toLowerCase() && Number(x.conversionRate) === conversionRate);
+    if (existingIdx !== -1) {
+        currentPoItems[existingIdx].qty += qty;
+        currentPoItems[existingIdx].baseQty = currentPoItems[existingIdx].qty * conversionRate;
+        currentPoItems[existingIdx].importPrice = importPrice;
+        currentPoItems[existingIdx].costPerBaseAtImport = costPerBaseAtImport;
+        currentPoItems[existingIdx].totalCost = currentPoItems[existingIdx].qty * importPrice;
+    } else {
+        currentPoItems.push({
+            productId: item.id,
+            barcode: item.barcode || "",
+            productName: item.name,
+            baseUnit: item.baseUnit,
+            unitName: unitName,
+            conversionRate: conversionRate,
+            qty,
+            baseQty,
+            importPrice,
+            costPerBaseAtImport,
+            totalCost,
+            isNewProduct: false
+        });
+    }
 
     document.getElementById('po-qty').value = 1;
     renderPoItemsTable();
 }
 
+function clearPoItemsList() {
+    if (currentPoItems.length === 0) return;
+    if (confirm("Xóa toàn bộ mặt hàng đang có trong bảng danh sách phiếu nhập này?")) {
+        currentPoItems = [];
+        renderPoItemsTable();
+    }
+}
+
 function removePoItem(idx) {
     currentPoItems.splice(idx, 1);
     renderPoItemsTable();
+}
+
+// Cho phép sửa trực tiếp Tên ĐVT nhập, Hệ số quy đổi, SL nhập và Đơn giá nhập ngay trên bảng
+function updatePoTableItemUnitName(idx, newUnitName) {
+    const row = currentPoItems[idx];
+    if (!row) return;
+    row.unitName = (newUnitName || '').trim() || row.baseUnit || 'Cái';
+    renderPoItemsTable();
+}
+
+function updatePoTableItemRate(idx, newRateVal) {
+    const row = currentPoItems[idx];
+    if (!row) return;
+    const rate = Math.max(1, parseInt(newRateVal, 10) || 1);
+    row.conversionRate = rate;
+    // Tính lại Tồn kho cộng thêm = SL Nhập x Hệ Số Quy Đổi
+    row.baseQty = row.qty * rate;
+    // Tính lại Giá vốn của ĐVT gốc = Đơn Giá Nhập / Hệ Số Quy Đổi
+    row.costPerBaseAtImport = Math.round((Number(row.importPrice) || 0) / rate);
+    renderPoItemsTable();
+}
+
+function updatePoTableItemQty(idx, val) {
+    const row = currentPoItems[idx];
+    if (!row) return;
+    const newQty = Math.max(1, parseInt(val, 10) || 1);
+    const rate = Math.max(1, Number(row.conversionRate) || 1);
+    row.qty = newQty;
+    row.baseQty = newQty * rate;
+    row.totalCost = newQty * (Number(row.importPrice) || 0);
+    renderPoItemsTable();
+}
+
+function updatePoTableItemPrice(idx, inputEl) {
+    formatCurrencyInput(inputEl);
+    const row = currentPoItems[idx];
+    if (!row) return;
+    const newPrice = getRawNum(inputEl);
+    const rate = Math.max(1, Number(row.conversionRate) || 1);
+    row.importPrice = newPrice;
+    // Giá vốn nhập (của ĐVT gốc) = [Đơn Giá Nhập] / [Hệ Số Quy Đổi]
+    row.costPerBaseAtImport = Math.round(newPrice / rate);
+    row.totalCost = row.qty * newPrice;
+
+    const lineTotalEl = document.getElementById(`po-line-total-${idx}`);
+    if (lineTotalEl) lineTotalEl.innerText = `${formatmoney(row.totalCost)} đ`;
+    const baseCostEl = document.getElementById(`po-base-cost-${idx}`);
+    if (baseCostEl) baseCostEl.innerText = `Vốn ĐVT gốc: ${formatmoney(row.costPerBaseAtImport)}đ/${row.baseUnit}`;
+
+    const grandTotal = currentPoItems.reduce((s, i) => s + i.totalCost, 0);
+    document.getElementById('po-grand-total').innerText = `${formatmoney(grandTotal)} đ`;
+    document.getElementById('po-paid-input').value = formatmoney(grandTotal);
+    calcPoDebtPreview();
 }
 
 function renderPoItemsTable() {
@@ -1038,21 +1177,51 @@ function renderPoItemsTable() {
 
     let grandTotal = 0;
     if (currentPoItems.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400 italic">Chưa có mặt hàng nào trong phiếu nhập. Hãy chọn mặt hàng ở trên và bấm "Thêm"!</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400 italic">Chưa có mặt hàng nào trong phiếu nhập. Hãy chọn mặt hàng ở trên hoặc bấm <b>"Import File Excel"</b>!</td></tr>`;
     } else {
         currentPoItems.forEach((row, idx) => {
             grandTotal += row.totalCost;
+            const rate = Math.max(1, Number(row.conversionRate) || 1);
+            const newBadge = row.isNewProduct
+                ? `<span class="ml-1.5 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-bold">Mới (Tự tạo trong kho)</span>`
+                : '';
+
             tbody.innerHTML += `
                 <tr class="hover:bg-slate-50">
-                    <td class="p-2.5 text-center font-bold">${idx + 1}</td>
-                    <td class="p-2.5 font-bold text-slate-800">${row.productName}</td>
-                    <td class="p-2.5 text-center font-semibold text-inni-blue">${row.unitName}</td>
-                    <td class="p-2.5 text-center font-black">${row.qty}</td>
-                    <td class="p-2.5 text-center text-emerald-700 font-semibold">+${row.baseQty} ${row.baseUnit}</td>
-                    <td class="p-2.5 text-right">${formatmoney(row.importPrice)} đ</td>
-                    <td class="p-2.5 text-right font-black text-red-600">${formatmoney(row.totalCost)} đ</td>
-                    <td class="p-2.5 text-center">
-                        <button onclick="removePoItem(${idx})" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash-can"></i></button>
+                    <td class="p-2 text-center font-bold">${idx + 1}</td>
+                    <td class="p-2 font-bold text-slate-800">
+                        <div>${row.productName}${newBadge}</div>
+                        <div class="text-[10.5px] text-slate-500 font-normal">
+                            ĐVT gốc trên web: <b class="text-slate-700">${row.baseUnit}</b>
+                            ${row.barcode ? ` • <i class="fa-solid fa-barcode mr-0.5"></i>${row.barcode}` : ''}
+                        </div>
+                    </td>
+                    <td class="p-2 text-center">
+                        <div class="flex flex-col items-center gap-1">
+                            <input type="text" value="${row.unitName}" onchange="updatePoTableItemUnitName(${idx}, this.value)" class="w-20 border border-slate-300 rounded p-1 text-center text-xs font-bold text-inni-blue bg-white" title="Đơn vị nhập trên hóa đơn NPP">
+                            <div class="flex items-center gap-1 text-[10px] text-amber-800 font-bold">
+                                <span>×</span>
+                                <input type="number" min="1" value="${rate}" onchange="updatePoTableItemRate(${idx}, this.value)" class="w-12 border border-amber-400 bg-amber-50 rounded px-1 py-0.5 text-center font-black text-amber-900" title="Hệ số quy đổi ra ${row.baseUnit}">
+                                <span>${row.baseUnit}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="p-2 text-center">
+                        <input type="number" min="1" value="${row.qty}" onchange="updatePoTableItemQty(${idx}, this.value)" class="w-14 border border-slate-300 rounded p-1 text-center font-black text-xs bg-white">
+                    </td>
+                    <td class="p-2 text-center">
+                        <div class="text-emerald-700 font-black whitespace-nowrap">+${row.baseQty} ${row.baseUnit}</div>
+                        <div class="text-[10px] text-slate-400">(${row.qty} ${row.unitName} × ${rate})</div>
+                    </td>
+                    <td class="p-2 text-right">
+                        <input type="text" value="${formatmoney(row.importPrice)}" oninput="updatePoTableItemPrice(${idx}, this)" class="w-24 border border-emerald-400 bg-emerald-50/30 focus:bg-white rounded p-1 text-right font-bold text-emerald-700 text-xs focus:outline-none">
+                        <div class="text-[10px] text-slate-500 mt-0.5 whitespace-nowrap" id="po-base-cost-${idx}">
+                            Vốn ĐVT gốc: <b class="text-slate-700">${formatmoney(row.costPerBaseAtImport)}đ/${row.baseUnit}</b>
+                        </div>
+                    </td>
+                    <td class="p-2 text-right font-black text-red-600 whitespace-nowrap" id="po-line-total-${idx}">${formatmoney(row.totalCost)} đ</td>
+                    <td class="p-2 text-center">
+                        <button onclick="removePoItem(${idx})" class="text-red-500 hover:text-red-700 px-1.5 py-1"><i class="fa-solid fa-trash-can"></i></button>
                     </td>
                 </tr>
             `;
@@ -1062,6 +1231,257 @@ function renderPoItemsTable() {
     document.getElementById('po-grand-total').innerText = `${formatmoney(grandTotal)} đ`;
     document.getElementById('po-paid-input').value = formatmoney(grandTotal);
     calcPoDebtPreview();
+}
+
+// 1. Sửa lại File Excel mẫu Phiếu Nhập: Bắt buộc có cột "Hệ Số Quy Đổi" và ví dụ thực tế Snack 5k (1 Bao = 8 Lốc)
+function downloadPoSampleExcel() {
+    const sampleRows = [
+        {
+            "Mã Hàng": "SNACK5K",
+            "Tên Hàng Hóa": "Snack 5k",
+            "ĐVT Gốc (Trên Web)": "Lốc",
+            "Đơn Vị Nhập": "Bao",
+            "Hệ Số Quy Đổi": 8,
+            "Số Lượng Nhập": 5,
+            "Đơn Giá Nhập": 280000
+        },
+        {
+            "Mã Hàng": "893482211234",
+            "Tên Hàng Hóa": "Bia Sài Gòn Lager",
+            "ĐVT Gốc (Trên Web)": "Lon",
+            "Đơn Vị Nhập": "Thùng",
+            "Hệ Số Quy Đổi": 24,
+            "Số Lượng Nhập": 20,
+            "Đơn Giá Nhập": 276000
+        }
+    ];
+    const ws = XLSX.utils.json_to_sheet(sampleRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Mau_Phieu_Nhap");
+    XLSX.writeFile(wb, "File_Mau_Phieu_Nhap_Hang.xlsx");
+}
+
+// 2. Viết lại hàm xử lý Import Phiếu Nhập Hàng trên web với cơ chế Hệ Số Quy Đổi
+function handleImportPoExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+
+            if (rows.length === 0) {
+                event.target.value = '';
+                return alert("File Excel trống, không có dữ liệu!");
+            }
+
+            let matchedCount = 0;
+            let newProdCount = 0;
+
+            rows.forEach(r => {
+                const normRow = {};
+                Object.keys(r).forEach(colName => {
+                    const nk = normalizeExcelColKey(colName);
+                    if (nk && (normRow[nk] === undefined || normRow[nk] === "")) {
+                        normRow[nk] = r[colName];
+                    }
+                });
+
+                const barcode = getExcelColVal(normRow, [
+                    "mahang", "mahanghoa", "mavach", "masku", "sku", "barcode", "masp", "masanpham", "ma"
+                ]).toString().trim();
+
+                const name = getExcelColVal(normRow, [
+                    "tenhanghoa", "tenhang", "tensanpham", "tenmathang", "ten", "name", "sanpham", "hanghoa"
+                ]).toString().trim();
+
+                if (!barcode && !name) return;
+
+                const rawBaseUnitFromExcel = getExcelColVal(normRow, [
+                    "dvtgoctrenweb", "dvtgoc", "donvigoc", "donvile", "donvicoban", "baseunit"
+                ]).toString().trim();
+
+                const rawUnit = getExcelColVal(normRow, [
+                    "donvinhap", "donvitinh", "dvt", "donvi", "unit", "quycach", "donvithung"
+                ]).toString().trim();
+
+                // Đọc cột "Hệ Số Quy Đổi" (hoặc Quy đổi, Tỷ lệ) từ file Excel
+                const rawExcelRate = parseExcelNum(getExcelColVal(normRow, [
+                    "hesoquydoi", "quydoi", "quydoiradvtgoc", "tylequydoi", "tilequydoi", "tyle", "tile", "heso", "slquydoi", "conversionrate", "rate"
+                ]));
+
+                const rawQty = parseExcelNum(getExcelColVal(normRow, [
+                    "soluongnhap", "soluong", "slnhap", "sl", "qty", "quantity", "soluongton"
+                ]));
+                const qty = rawQty > 0 ? rawQty : 1;
+
+                const rawPrice = parseExcelNum(getExcelColVal(normRow, [
+                    "dongianhap", "gianhap", "dongia", "giavon", "gia", "importprice", "cost", "costprice", "price"
+                ]));
+
+                const rawTotal = parseExcelNum(getExcelColVal(normRow, [
+                    "thanhtien", "tongtien", "total", "amount"
+                ]));
+
+                // Tìm mặt hàng trong kho theo Mã hàng / Mã vạch hoặc Tên hàng hóa
+                const normBc = barcode.toLowerCase();
+                const normName = name.toLowerCase();
+                let matchedProd = null;
+                let matchedUnitByBarcodeIdx = -1;
+
+                if (normBc) {
+                    for (const item of inventory) {
+                        if (item.barcode && item.barcode.toLowerCase() === normBc) {
+                            matchedProd = item;
+                            break;
+                        }
+                        if (Array.isArray(item.units)) {
+                            const uIdx = item.units.findIndex(u => u.barcode && u.barcode.toLowerCase() === normBc);
+                            if (uIdx !== -1) {
+                                matchedProd = item;
+                                matchedUnitByBarcodeIdx = uIdx;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!matchedProd && normName) {
+                    matchedProd = inventory.find(item => (item.name || '').trim().toLowerCase() === normName);
+                }
+
+                if (matchedProd) {
+                    // Xác định Tên Đơn Vị Nhập & Hệ Số Quy Đổi:
+                    // Ưu tiên 1: Nếu file Excel có điền cột [Hệ Số Quy Đổi] (> 0) thì lấy chính xác theo Excel (VD: Bao = 8 Lốc)
+                    // Ưu tiên 2: Nếu Excel bỏ trống cột Hệ Số Quy Đổi, tự động dò trong danh sách units của sản phẩm
+                    let unitName = rawUnit;
+                    let convRate = rawExcelRate;
+
+                    const existingUnitObj = rawUnit
+                        ? (matchedProd.units || []).find(u => (u.unitName || '').trim().toLowerCase() === rawUnit.toLowerCase())
+                        : (matchedUnitByBarcodeIdx !== -1 ? matchedProd.units[matchedUnitByBarcodeIdx] : null);
+
+                    if (!unitName) {
+                        if (existingUnitObj) {
+                            unitName = existingUnitObj.unitName;
+                        } else if (convRate === 1) {
+                            unitName = matchedProd.baseUnit;
+                        } else if (matchedProd.units && matchedProd.units.length > 1) {
+                            unitName = matchedProd.units[matchedProd.units.length - 1].unitName;
+                        } else {
+                            unitName = matchedProd.baseUnit;
+                        }
+                    }
+
+                    if (convRate <= 0) {
+                        if (existingUnitObj && Number(existingUnitObj.conversionRate) > 0) {
+                            convRate = Number(existingUnitObj.conversionRate);
+                        } else if (unitName.toLowerCase() === (matchedProd.baseUnit || '').toLowerCase()) {
+                            convRate = 1;
+                        } else if (!rawUnit && matchedProd.units && matchedProd.units.length > 1) {
+                            convRate = Number(matchedProd.units[matchedProd.units.length - 1].conversionRate) || 1;
+                        } else {
+                            convRate = 1;
+                        }
+                    }
+
+                    let importPrice = rawPrice;
+                    if (importPrice <= 0 && rawTotal > 0 && qty > 0) {
+                        importPrice = Math.round(rawTotal / qty);
+                    }
+                    if (importPrice <= 0) {
+                        importPrice = (Number(matchedProd.costPrice) || 0) * convRate;
+                    }
+
+                    // ÁP DỤNG CÔNG THỨC CHUẨN BÁN SỈ:
+                    // - Tồn kho cộng thêm = [Số Lượng Nhập] x [Hệ Số Quy Đổi]
+                    const baseQty = qty * convRate;
+                    // - Giá vốn nhập (của ĐVT gốc) = [Đơn Giá Nhập] / [Hệ Số Quy Đổi]
+                    const costPerBaseAtImport = Math.round(importPrice / convRate);
+                    const totalCost = qty * importPrice;
+
+                    const existIdx = currentPoItems.findIndex(
+                        x => x.productId === matchedProd.id &&
+                             x.unitName.toLowerCase() === unitName.toLowerCase() &&
+                             Number(x.conversionRate) === convRate
+                    );
+
+                    if (existIdx !== -1) {
+                        currentPoItems[existIdx].qty += qty;
+                        currentPoItems[existIdx].baseQty = currentPoItems[existIdx].qty * convRate;
+                        if (importPrice > 0) {
+                            currentPoItems[existIdx].importPrice = importPrice;
+                            currentPoItems[existIdx].costPerBaseAtImport = costPerBaseAtImport;
+                        }
+                        currentPoItems[existIdx].totalCost = currentPoItems[existIdx].qty * currentPoItems[existIdx].importPrice;
+                    } else {
+                        currentPoItems.push({
+                            productId: matchedProd.id,
+                            barcode: barcode || matchedProd.barcode || "",
+                            productName: matchedProd.name,
+                            baseUnit: matchedProd.baseUnit,
+                            unitName: unitName,
+                            conversionRate: convRate,
+                            qty: qty,
+                            baseQty: baseQty,
+                            importPrice: importPrice,
+                            costPerBaseAtImport: costPerBaseAtImport,
+                            totalCost: totalCost,
+                            isNewProduct: false
+                        });
+                    }
+                    matchedCount++;
+                } else {
+                    // Nếu mặt hàng hoàn toàn mới chưa có trên web -> Vẫn tính đúng quy đổi ra ĐVT gốc
+                    const convRate = rawExcelRate > 0 ? rawExcelRate : 1;
+                    const unitName = rawUnit || (convRate > 1 ? "Thùng" : "Cái");
+                    const baseUnit = rawBaseUnitFromExcel || (convRate > 1 ? "Lốc" : unitName);
+
+                    let importPrice = rawPrice;
+                    if (importPrice <= 0 && rawTotal > 0 && qty > 0) {
+                        importPrice = Math.round(rawTotal / qty);
+                    }
+
+                    const baseQty = qty * convRate;
+                    const costPerBaseAtImport = Math.round(importPrice / convRate);
+                    const totalCost = qty * importPrice;
+
+                    currentPoItems.push({
+                        productId: "NEW_" + Date.now() + "_" + Math.floor(Math.random() * 10000),
+                        barcode: barcode,
+                        productName: name || `Hàng mã ${barcode}`,
+                        baseUnit: baseUnit,
+                        unitName: unitName,
+                        conversionRate: convRate,
+                        qty: qty,
+                        baseQty: baseQty,
+                        importPrice: importPrice,
+                        costPerBaseAtImport: costPerBaseAtImport,
+                        totalCost: totalCost,
+                        isNewProduct: true
+                    });
+                    newProdCount++;
+                }
+            });
+
+            event.target.value = '';
+            renderPoItemsTable();
+            alert(
+                `✅ Đã Import File Excel Phiếu Nhập Hàng thành công!\n` +
+                `- Khớp sản phẩm trong kho: ${matchedCount} dòng\n` +
+                (newProdCount > 0 ? `- Sản phẩm mới (sẽ tự tạo vào kho khi chốt): ${newProdCount} dòng\n` : '') +
+                `\nĐã tự động nhân [Hệ Số Quy Đổi] để tính số lượng cộng kho và chia [Đơn Giá Nhập] để ra Giá vốn ĐVT gốc!`
+            );
+        } catch (err) {
+            event.target.value = '';
+            alert("Lỗi đọc file Excel phiếu nhập: " + err.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
 }
 
 function calcPoDebtPreview() {
@@ -1097,6 +1517,106 @@ async function submitPurchaseOrder() {
     const poCode = `PN-${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     try {
+        for (const pItem of currentPoItems) {
+            const convRate = Math.max(1, Number(pItem.conversionRate) || 1);
+            // Đảm bảo tính chuẩn xác một lần nữa trước khi ghi vào Database:
+            // - Tồn kho cộng thêm = [Số Lượng Nhập] x [Hệ Số Quy Đổi]
+            pItem.baseQty = pItem.qty * convRate;
+            // - Giá vốn nhập của ĐVT gốc = [Đơn Giá Nhập] / [Hệ Số Quy Đổi]
+            pItem.costPerBaseAtImport = Math.round((Number(pItem.importPrice) || 0) / convRate);
+            pItem.totalCost = pItem.qty * (Number(pItem.importPrice) || 0);
+
+            let dbProd = inventory.find(i => i.id === pItem.productId);
+
+            // Trường hợp 1: Mặt hàng mới tinh trong file Excel -> Tự động tạo sản phẩm mới vào Kho với đúng ĐVT gốc & ĐVT quy đổi
+            if (!dbProd) {
+                const baseUnitName = pItem.baseUnit || "Lốc";
+                const defaultBaseSellPrice = pItem.costPerBaseAtImport > 0 ? Math.round(pItem.costPerBaseAtImport * 1.15) : 0;
+                const unitsArr = [{
+                    unitName: baseUnitName,
+                    conversionRate: 1,
+                    sellingPrice: defaultBaseSellPrice,
+                    wholesalePrice: defaultBaseSellPrice,
+                    barcode: pItem.barcode || ""
+                }];
+
+                if (convRate > 1 && pItem.unitName && pItem.unitName.toLowerCase() !== baseUnitName.toLowerCase()) {
+                    const bigSellPrice = defaultBaseSellPrice * convRate;
+                    unitsArr.push({
+                        unitName: pItem.unitName,
+                        conversionRate: convRate,
+                        sellingPrice: bigSellPrice,
+                        wholesalePrice: bigSellPrice,
+                        barcode: ""
+                    });
+                }
+
+                const newProdData = {
+                    name: pItem.productName,
+                    category: "Khác",
+                    barcode: pItem.barcode || "",
+                    keywords: [],
+                    image: null,
+                    baseUnit: baseUnitName,
+                    costPrice: pItem.costPerBaseAtImport || 0,
+                    basePrice: defaultBaseSellPrice,
+                    wholesalePrice: defaultBaseSellPrice,
+                    price: defaultBaseSellPrice,
+                    stock: pItem.baseQty,
+                    minStock: 24,
+                    units: unitsArr,
+                    createdAt: Date.now()
+                };
+                const newDocRef = await db.collection("inventory").add(newProdData);
+                pItem.productId = newDocRef.id;
+                await writeInventoryLog(
+                    newDocRef.id, pItem.productName, "IMPORT", `${poCode} (${supplierName})`,
+                    `+${pItem.qty} ${pItem.unitName} (×${convRate} = +${pItem.baseQty} ${baseUnitName})`,
+                    0, pItem.baseQty, pItem.baseQty
+                );
+            } else {
+                // Trường hợp 2: Mặt hàng đã có trong kho -> Cộng tồn theo baseQty và cập nhật Giá vốn ĐVT gốc
+                const curStock = Math.max(0, Number(dbProd.stock) || 0);
+                const oldCost = Number(dbProd.costPrice) || 0;
+
+                // Tính giá vốn bình quân gia quyền cho 1 ĐVT gốc (hoặc lấy luôn giá vốn mới nếu trước đó giá vốn = 0)
+                const newMacCost = (curStock > 0 && oldCost > 0)
+                    ? Math.round(((curStock * oldCost) + (pItem.baseQty * pItem.costPerBaseAtImport)) / (curStock + pItem.baseQty))
+                    : pItem.costPerBaseAtImport;
+
+                const newStock = (Number(dbProd.stock) || 0) + pItem.baseQty;
+
+                // Nếu Đơn vị nhập (VD: "Bao", quy đổi = 8) chưa có trong danh mục đơn vị của sản phẩm thì tự động lưu thêm vào units để lần sau dùng luôn
+                const updatedUnits = Array.isArray(dbProd.units) ? dbProd.units.map(u => ({ ...u })) : [];
+                if (convRate > 1 && pItem.unitName) {
+                    const existUIdx = updatedUnits.findIndex(u => (u.unitName || '').toLowerCase() === pItem.unitName.toLowerCase());
+                    if (existUIdx === -1) {
+                        const baseRetail = Number(dbProd.basePrice) || pItem.costPerBaseAtImport;
+                        const baseWhole = Number(dbProd.wholesalePrice) || baseRetail;
+                        updatedUnits.push({
+                            unitName: pItem.unitName,
+                            conversionRate: convRate,
+                            sellingPrice: baseRetail * convRate,
+                            wholesalePrice: baseWhole * convRate,
+                            barcode: ""
+                        });
+                    }
+                }
+
+                await db.collection("inventory").doc(dbProd.id).update({
+                    stock: newStock,
+                    costPrice: newMacCost > 0 ? newMacCost : oldCost,
+                    units: updatedUnits
+                });
+
+                await writeInventoryLog(
+                    dbProd.id, dbProd.name, "IMPORT", `${poCode} (${supplierName})`,
+                    `+${pItem.qty} ${pItem.unitName} (×${convRate} = +${pItem.baseQty} ${dbProd.baseUnit} • Vốn nhập: ${formatmoney(pItem.costPerBaseAtImport)}đ/${dbProd.baseUnit})`,
+                    dbProd.stock, pItem.baseQty, newStock
+                );
+            }
+        }
+
         await db.collection("purchase_orders").doc(poCode).set({
             poCode,
             invoiceNo: invoiceNo || poCode,
@@ -1110,25 +1630,6 @@ async function submitPurchaseOrder() {
             dateStr,
             createdAt: Date.now()
         });
-
-        for (const pItem of currentPoItems) {
-            const dbProd = inventory.find(i => i.id === pItem.productId);
-            if (dbProd) {
-                const curStock = Math.max(0, dbProd.stock);
-                const newMacCost = Math.round(((curStock * dbProd.costPrice) + pItem.totalCost) / (curStock + pItem.baseQty));
-                const newStock = dbProd.stock + pItem.baseQty;
-
-                await db.collection("inventory").doc(dbProd.id).update({
-                    stock: newStock,
-                    costPrice: newMacCost
-                });
-                await writeInventoryLog(
-                    dbProd.id, dbProd.name, "IMPORT", `${poCode} (${supplierName})`,
-                    `+${pItem.qty} ${pItem.unitName} (${pItem.baseQty} ${pItem.baseUnit})`,
-                    dbProd.stock, pItem.baseQty, newStock
-                );
-            }
-        }
 
         if (supObj && remainDebt > 0) {
             const oldDebt = Number(supObj.currentDebt) || 0;
