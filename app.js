@@ -1226,6 +1226,24 @@ function downloadProductSampleExcel() {
     XLSX.writeFile(wb, "File_Mau_Import_Kho_Hang_Huy_Hoang.xlsx");
 }
 
+// Hàm chuẩn hóa tên cột Excel (Bỏ dấu tiếng Việt, bỏ khoảng trắng thừa, đưa về chữ thường để không bao giờ trượt tên cột)
+function normalizeExcelColKey(str) {
+    if (!str) return '';
+    return str.toString().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd').replace(/[^a-z0-9]/g, '');
+}
+
+function getExcelColVal(normRow, candidateKeys) {
+    for (const k of candidateKeys) {
+        const val = normRow[k];
+        if (val !== undefined && val !== null && val.toString().trim() !== "") {
+            return val;
+        }
+    }
+    return "";
+}
+
 async function handleImportProductsExcel(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -1255,25 +1273,66 @@ async function handleImportProductsExcel(event) {
                 const batch = db.batch();
 
                 chunk.forEach(r => {
-                    const name = (r["Tên Hàng Hóa"] || r["Tên hàng hóa"] || r["Tên hàng"] || r["Ten hang"] || r["Tên sản phẩm"] || r["Name"] || "").toString().trim();
+                    // Chuẩn hóa toàn bộ tiêu đề cột của dòng hiện tại (chống lỗi chữ HOA/thường & dấu cách thừa)
+                    const normRow = {};
+                    Object.keys(r).forEach(colName => {
+                        const nk = normalizeExcelColKey(colName);
+                        if (nk && (normRow[nk] === undefined || normRow[nk] === "")) {
+                            normRow[nk] = r[colName];
+                        }
+                    });
+
+                    const name = getExcelColVal(normRow, [
+                        "tenhanghoa", "tenhang", "tensanpham", "tenmathang", "ten", "name", "sanpham"
+                    ]).toString().trim();
                     if (!name) return;
 
-                    const category = (r["Phân loại"] || r["Loại sản phẩm"] || "Khác").toString().trim();
-                    const barcode = (r["Mã Vạch"] || r["Mã vạch"] || r["Ma vach"] || r["Barcode"] || "").toString().trim();
-                    const baseUnit = (r["Đơn vị lẻ"] || r["Đơn vị tính"] || r["ĐVT"] || r["DVT"] || "Lon").toString().trim();
+                    const category = getExcelColVal(normRow, [
+                        "phanloai", "loaisanpham", "nhomhang", "danhmuc", "loai", "category"
+                    ]).toString().trim() || "Khác";
 
-                    // Tự động tính Giá vốn kho lõi = Giá Vốn / Tỷ Lệ (Nếu Tỷ Lệ bỏ trống hoặc <= 0 thì mặc định chia 1)
-                    const rawCost = parseExcelNum(r["Giá Vốn"] || r["Giá vốn"] || r["Gia von"] || r["Giá nhập"] || r["Gia nhap"]);
-                    const rawRatio = parseExcelNum(r["Tỷ Lệ"] || r["Tỷ lệ"] || r["Ty le"] || r["Hệ số"] || r["Quy đổi"]);
+                    const barcode = getExcelColVal(normRow, [
+                        "mavach", "masku", "sku", "barcode", "mahang", "mahanghoa"
+                    ]).toString().trim();
+
+                    const baseUnit = getExcelColVal(normRow, [
+                        "donvile", "donvitinh", "donvi", "dvt", "donvicoban", "donvinho", "unit"
+                    ]).toString().trim() || "Cái";
+
+                    // 1. Tự động tính Giá vốn kho lõi = Giá Vốn / Tỷ Lệ
+                    const rawCost = parseExcelNum(getExcelColVal(normRow, [
+                        "giavon", "gianhap", "dongianhap", "giavonthung", "giavonloc", "cost", "costprice"
+                    ]));
+                    const rawRatio = parseExcelNum(getExcelColVal(normRow, [
+                        "tyle", "tile", "heso", "quydoi", "tylequydoi", "slquydoi", "rate"
+                    ]));
                     const ratio = rawRatio > 0 ? rawRatio : 1;
                     const calculatedCoreCost = rawCost > 0 ? Math.round(rawCost / ratio) : 0;
 
-                    const rawSellPrice = parseExcelNum(r["Giá Bán"] || r["Giá bán"] || r["Gia ban"] || r["Giá lẻ"] || r["Giá bán lẻ"]);
-                    const rawWholesalePrice = parseExcelNum(r["Giá Sỉ"] || r["Giá sỉ"] || r["Gia si"] || r["Giá bán sỉ"]);
-                    const hasStockCol = (r["Số lượng tồn"] !== undefined && r["Số lượng tồn"] !== "") || (r["Tồn kho"] !== undefined && r["Tồn kho"] !== "");
-                    const stock = parseExcelNum(r["Số lượng tồn"] || r["Tồn kho"]);
-                    const kwStr = (r["Từ khóa Zalo"] || "").toString();
+                    // 2. Đọc Giá Bán Lẻ & Giá Bán Sỉ (hỗ trợ mọi kiểu đặt tên cột trong Excel)
+                    const rawSellPrice = parseExcelNum(getExcelColVal(normRow, [
+                        "giaban", "giabanle", "giale", "dongia", "dongiaban", "giabanthung", "gia", "price", "sellingprice"
+                    ]));
+                    const rawWholesalePrice = parseExcelNum(getExcelColVal(normRow, [
+                        "giasi", "giabansi", "dongiasi", "giasile", "wholesaleprice"
+                    ]));
+
+                    const rawStockStr = getExcelColVal(normRow, [
+                        "soluongton", "tonkho", "ton", "soluong", "slton", "stock"
+                    ]);
+                    const hasStockCol = rawStockStr !== "";
+                    const stock = parseExcelNum(rawStockStr);
+
+                    const kwStr = getExcelColVal(normRow, ["tukhoazalo", "tukhoa", "keywords"]).toString();
                     const keywords = kwStr ? kwStr.split(',').map(k => k.trim().toLowerCase()).filter(Boolean) : [];
+
+                    const packUnit = getExcelColVal(normRow, ["donviloc", "dvloc"]).toString().trim();
+                    const packRate = parseExcelNum(getExcelColVal(normRow, ["quydoiloc", "tyleloc"]));
+                    const rawPackPrice = parseExcelNum(getExcelColVal(normRow, ["giabanloc", "gialoc"]));
+
+                    const bigUnit = getExcelColVal(normRow, ["donvithung", "dvthung"]).toString().trim();
+                    const bigRate = parseExcelNum(getExcelColVal(normRow, ["quydoithung", "tylethung"]));
+                    const rawBigPrice = parseExcelNum(getExcelColVal(normRow, ["giabanthung", "giathung"]));
 
                     // Tìm sản phẩm trùng theo Mã Vạch hoặc Tên Hàng Hóa
                     const normName = name.toLowerCase();
@@ -1285,27 +1344,25 @@ async function handleImportProductsExcel(event) {
                     });
 
                     if (existingItem) {
-                        // ĐÃ CÓ TRONG KHO -> Cập nhật đè Giá Vốn và Giá Bán lên mặt hàng đang có (Không tạo dòng trùng)
+                        // ĐÃ CÓ TRONG KHO -> Cập nhật đè Giá Vốn, Giá Bán và ĐVT lên mặt hàng đang có
                         const finalCostPrice = calculatedCoreCost > 0 ? calculatedCoreCost : (existingItem.costPrice || 0);
                         const finalBasePrice = rawSellPrice > 0 ? rawSellPrice : (existingItem.basePrice || 0);
                         const finalWholesalePrice = rawWholesalePrice > 0 ? rawWholesalePrice : (rawSellPrice > 0 ? rawSellPrice : (existingItem.wholesalePrice || finalBasePrice));
+                        const finalBaseUnit = baseUnit || existingItem.baseUnit || "Cái";
 
                         let updatedUnits = Array.isArray(existingItem.units) && existingItem.units.length > 0
                             ? existingItem.units.map(u => ({ ...u }))
-                            : [{ unitName: existingItem.baseUnit || baseUnit, conversionRate: 1, sellingPrice: finalBasePrice, wholesalePrice: finalWholesalePrice, barcode: existingItem.barcode || barcode }];
+                            : [{ unitName: finalBaseUnit, conversionRate: 1, sellingPrice: finalBasePrice, wholesalePrice: finalWholesalePrice, barcode: existingItem.barcode || barcode }];
 
-                        // Cập nhật đơn vị cơ sở (conversionRate === 1)
                         const baseUnitIdx = updatedUnits.findIndex(u => Number(u.conversionRate) === 1);
                         if (baseUnitIdx !== -1) {
+                            updatedUnits[baseUnitIdx].unitName = finalBaseUnit;
                             updatedUnits[baseUnitIdx].sellingPrice = finalBasePrice;
                             updatedUnits[baseUnitIdx].wholesalePrice = finalWholesalePrice;
                             if (barcode) updatedUnits[baseUnitIdx].barcode = barcode;
                         }
 
-                        // Cập nhật đơn vị Lốc nếu file Excel có cột Đơn vị lốc
-                        const packUnit = (r["Đơn vị lốc"] || "").toString().trim();
-                        const packRate = parseExcelNum(r["Quy đổi lốc"]);
-                        const packPrice = parseExcelNum(r["Giá bán lốc"]) || (packRate > 1 ? finalWholesalePrice * packRate : 0);
+                        const packPrice = rawPackPrice || (packRate > 1 ? finalWholesalePrice * packRate : 0);
                         if (packUnit && packRate > 1 && packPrice > 0) {
                             const pIdx = updatedUnits.findIndex(u => u.unitName.toLowerCase() === packUnit.toLowerCase() || Number(u.conversionRate) === packRate);
                             if (pIdx !== -1) {
@@ -1315,10 +1372,7 @@ async function handleImportProductsExcel(event) {
                             }
                         }
 
-                        // Cập nhật đơn vị Thùng nếu file Excel có cột Đơn vị thùng
-                        const bigUnit = (r["Đơn vị thùng"] || "").toString().trim();
-                        const bigRate = parseExcelNum(r["Quy đổi thùng"]);
-                        const bigPrice = parseExcelNum(r["Giá bán thùng"]) || (bigRate > 1 ? finalWholesalePrice * bigRate : 0);
+                        const bigPrice = rawBigPrice || (bigRate > 1 ? finalWholesalePrice * bigRate : 0);
                         if (bigUnit && bigRate > 1 && bigPrice > 0) {
                             const bIdx = updatedUnits.findIndex(u => u.unitName.toLowerCase() === bigUnit.toLowerCase() || Number(u.conversionRate) === bigRate);
                             if (bIdx !== -1) {
@@ -1329,6 +1383,7 @@ async function handleImportProductsExcel(event) {
                         }
 
                         const updatePayload = {
+                            baseUnit: finalBaseUnit,
                             costPrice: finalCostPrice,
                             basePrice: finalBasePrice,
                             wholesalePrice: finalWholesalePrice,
@@ -1341,7 +1396,6 @@ async function handleImportProductsExcel(event) {
                         const docRef = db.collection("inventory").doc(existingItem.id);
                         batch.update(docRef, updatePayload);
 
-                        // Đồng bộ vào bản đồ tạm để các dòng trùng tiếp theo trong cùng file Excel vẫn cập nhật vào đúng ID này
                         Object.assign(existingItem, updatePayload);
                         updatedCount++;
                     } else {
@@ -1352,16 +1406,12 @@ async function handleImportProductsExcel(event) {
 
                         const units = [{ unitName: baseUnit, conversionRate: 1, sellingPrice: finalBasePrice, wholesalePrice: finalWholesalePrice, barcode }];
 
-                        const packUnit = (r["Đơn vị lốc"] || "").toString().trim();
-                        const packRate = parseExcelNum(r["Quy đổi lốc"]);
-                        const packPrice = parseExcelNum(r["Giá bán lốc"]) || (finalWholesalePrice * packRate);
+                        const packPrice = rawPackPrice || (finalWholesalePrice * packRate);
                         if (packUnit && packRate > 1 && packPrice > 0) {
                             units.push({ unitName: packUnit, conversionRate: packRate, sellingPrice: packPrice, wholesalePrice: packPrice, barcode: "" });
                         }
 
-                        const bigUnit = (r["Đơn vị thùng"] || "").toString().trim();
-                        const bigRate = parseExcelNum(r["Quy đổi thùng"]);
-                        const bigPrice = parseExcelNum(r["Giá bán thùng"]) || (finalWholesalePrice * bigRate);
+                        const bigPrice = rawBigPrice || (finalWholesalePrice * bigRate);
                         if (bigUnit && bigRate > 1 && bigPrice > 0) {
                             units.push({ unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigPrice, wholesalePrice: bigPrice, barcode: "" });
                         }
