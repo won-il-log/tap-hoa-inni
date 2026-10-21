@@ -22,24 +22,26 @@ const CATEGORIES = [
     "Nước giải khát & Nước lọc",
     "Bia, Rượu & Đồ uống có cồn",
     "Trà, Cà phê & Đồ uống hòa tan",
-    
-    // 2. Thực phẩm khô & Ăn liền
-    "Mì, Phở, Cháo & Đồ ăn liền",
-    "Bánh kẹo, Snack & Bim bim",
     "Sữa & Chế phẩm từ sữa",
-    "Đồ khô, Ngũ cốc & Hạt dinh dưỡng",
-    "Gia vị, Dầu ăn, Nước mắm & Hạt nêm",
     
-    // 3. Hóa mỹ phẩm & Giặt giũ
+    // 2. Thực phẩm khô, Gia vị & Đồ ăn liền
+    "Mì, Phở, Cháo & Đồ ăn liền",
+    "Gia vị, Dầu ăn, Nước chấm & Bột nấu ăn", // <-- Bột chiên giòn, bột chiên xù, bột ngọt, hạt nêm vào đây
+    "Gạo, Bột các loại, Đồ khô & Ngũ cốc",   // <-- Bột mì, bột năng, đậu, bún/miến khô, nấm mèo vào đây
+    "Đồ hộp, Xúc xích & Thực phẩm chế biến",  // <-- MỚI: Cá hộp, thịt hộp, xúc xích, lạp xưởng
+    "Bánh kẹo, Snack, Bim bim & Hạt",
+    
+    // 3. Hóa mỹ phẩm, Giấy & Chăm sóc cá nhân
     "Xà bông, Bột giặt & Nước giặt xả",
-    "Nước rửa chén & Vệ sinh nhà cửa",
+    "Nước rửa chén, Lau sàn & Vệ sinh nhà cửa",
     "Chăm sóc cá nhân (Dầu gội, Sữa tắm, Kem đánh răng)",
-    "Giấy vệ sinh, Khăn giấy & Đồ dùng một lần",
+    "Bỉm tã, Băng vệ sinh & Chăm sóc em bé",  // <-- MỚI: Tã em bé, BVS, khăn ướt
+    "Giấy vệ sinh, Khăn giấy & Đồ dùng một lần", // <-- Ly nhựa, ống hút, hộp xốp, bọc xốp
     
-    // 4. Các mặt hàng khác
-    "Kem & Đồ đông lạnh",
-    "Thuốc lá & Phụ kiện",
-    "Đồ dùng gia đình & Tiện ích",
+    // 4. Các mặt hàng đại lý khác
+    "Kem, Đá viên & Đồ đông lạnh",
+    "Thuốc lá, Hộp quẹt & Phụ kiện",
+    "Đồ dùng gia đình, Pin, Bóng đèn & Tiện ích", // <-- Dao cạo râu, keo 502, nhang muỗi, bật lửa
     "Khác"
 ];
 
