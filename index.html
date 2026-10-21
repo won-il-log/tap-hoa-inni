@@ -634,12 +634,16 @@
         <!-- TAB 2: MÀN HÌNH DANH SÁCH ĐƠN HÀNG (FLAT LIST TRÊN MOBILE) -->
         <!-- ========================================== -->
         <section id="tab-orders" class="tab-content hidden animate-fade-in">
-            <!-- Thanh tiêu đề có mũi tên quay lại (<) trên Mobile -->
-            <div class="flex md:hidden items-center gap-3 mb-3 px-1">
-                <button onclick="switchTab('tab-orders-hub')" class="text-slate-700 text-lg"><i class="fa-solid fa-chevron-left"></i></button>
-                <h2 class="font-bold text-base text-slate-800">Danh sách đơn hàng</h2>
+            <!-- Thanh tiêu đề có mũi tên quay lại (<) & nút Xuất Excel trên Mobile -->
+            <div class="flex md:hidden items-center justify-between gap-2 mb-3 px-1">
+                <div class="flex items-center gap-2.5">
+                    <button onclick="switchTab('tab-orders-hub')" class="text-slate-700 text-lg"><i class="fa-solid fa-chevron-left"></i></button>
+                    <h2 class="font-bold text-base text-slate-800">Danh sách đơn hàng</h2>
+                </div>
+                <button onclick="exportOrdersToCSV()" class="bg-emerald-600 text-white font-bold py-1.5 px-2.5 rounded-lg text-[11px] flex items-center gap-1">
+                    <i class="fa-solid fa-file-excel"></i> Xuất Excel
+                </button>
             </div>
-
             <!-- Header trên PC -->
             <div class="hidden md:flex flex-col lg:flex-row justify-between items-start lg:items-center mb-4 gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                 <h2 class="text-xl font-black text-slate-800 flex items-center gap-2">
@@ -711,10 +715,20 @@
         <!-- TAB 3: MÀN HÌNH QUẢN LÝ KHO (FLAT LIST TRÊN MOBILE, KHÔNG DÙNG TABLE) -->
         <!-- ========================================== -->
         <section id="tab-inventory" class="tab-content hidden animate-fade-in">
-            <!-- Thanh tiêu đề có mũi tên quay lại (<) trên Mobile -->
-            <div class="flex md:hidden items-center gap-3 mb-3 px-1">
-                <button onclick="switchTab('tab-products-hub')" class="text-slate-700 text-lg"><i class="fa-solid fa-chevron-left"></i></button>
-                <h2 class="font-bold text-base text-slate-800">Danh sách sản phẩm</h2>
+            <!-- Thanh tiêu đề có mũi tên quay lại (<) & nút Nhập/Xuất Excel trên Mobile -->
+            <div class="flex md:hidden items-center justify-between gap-2 mb-3 px-1">
+                <div class="flex items-center gap-2.5">
+                    <button onclick="switchTab('tab-products-hub')" class="text-slate-700 text-lg"><i class="fa-solid fa-chevron-left"></i></button>
+                    <h2 class="font-bold text-base text-slate-800">Danh sách sản phẩm</h2>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <button onclick="document.getElementById('excel-product-input').click()" class="bg-teal-600 text-white font-bold py-1.5 px-2.5 rounded-lg text-[11px] flex items-center gap-1">
+                        <i class="fa-solid fa-file-import"></i> Nhập Excel
+                    </button>
+                    <button onclick="exportProductsToExcel()" class="bg-indigo-600 text-white font-bold py-1.5 px-2.5 rounded-lg text-[11px] flex items-center gap-1">
+                        <i class="fa-solid fa-file-export"></i> Xuất Excel
+                    </button>
+                </div>
             </div>
 
             <!-- Thanh công cụ trên PC -->
@@ -733,11 +747,14 @@
                         <i class="fa-solid fa-clock-rotate-left"></i> Lịch Sử Phiếu Nhập
                     </button>
                     <input type="file" id="excel-product-input" accept=".xlsx,.xls,.csv" onchange="handleImportProductsExcel(event)" class="hidden">
-                    <button onclick="document.getElementById('excel-product-input').click()" class="bg-teal-600 text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center gap-1.5">
+                    <button onclick="document.getElementById('excel-product-input').click()" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center gap-1.5 shadow-sm scale-active">
                         <i class="fa-solid fa-file-import"></i> Nhập Kho từ Excel
                     </button>
+                    <button onclick="exportProductsToExcel()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center gap-1.5 shadow-sm scale-active">
+                        <i class="fa-solid fa-file-excel"></i> Xuất Kho ra Excel
+                    </button>
                     <button onclick="downloadProductSampleExcel()" class="bg-teal-50 text-teal-800 border border-teal-300 font-bold py-2 px-3 rounded-lg text-xs flex items-center gap-1">
-                        <i class="fa-solid fa-download"></i> Tải File Mẫu Kho
+                        <i class="fa-solid fa-download"></i> File Mẫu Trống
                     </button>
                 </div>
             </div>
@@ -827,9 +844,19 @@
         <!-- TAB 4: KHÁCH HÀNG & NHÀ CUNG CẤP -->
         <!-- ========================================== -->
         <section id="tab-crm" class="tab-content hidden animate-fade-in">
-            <div class="flex md:hidden items-center gap-3 mb-3 px-1">
-                <button onclick="switchTab('tab-more')" class="text-slate-700 text-lg"><i class="fa-solid fa-chevron-left"></i></button>
-                <h2 class="font-bold text-base text-slate-800">Khách hàng & Nhà cung cấp</h2>
+            <div class="flex md:hidden items-center justify-between gap-2 mb-3 px-1">
+                <div class="flex items-center gap-2.5">
+                    <button onclick="switchTab('tab-more')" class="text-slate-700 text-lg"><i class="fa-solid fa-chevron-left"></i></button>
+                    <h2 class="font-bold text-base text-slate-800">Khách hàng & NCC</h2>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <button onclick="document.getElementById('excel-customer-input').click()" class="bg-teal-600 text-white font-bold py-1.5 px-2.5 rounded-lg text-[11px] flex items-center gap-1">
+                        <i class="fa-solid fa-file-import"></i> Nhập Excel
+                    </button>
+                    <button onclick="exportCustomersToExcel()" class="bg-indigo-600 text-white font-bold py-1.5 px-2.5 rounded-lg text-[11px] flex items-center gap-1">
+                        <i class="fa-solid fa-file-export"></i> Xuất Excel
+                    </button>
+                </div>
             </div>
 
             <div class="hidden md:flex flex-col lg:flex-row justify-between items-start lg:items-center mb-4 gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
@@ -841,11 +868,14 @@
                         <i class="fa-solid fa-user-plus"></i> Thêm Khách Hàng / NCC
                     </button>
                     <input type="file" id="excel-customer-input" accept=".xlsx,.xls,.csv" onchange="handleImportCustomersExcel(event)" class="hidden">
-                    <button onclick="document.getElementById('excel-customer-input').click()" class="bg-teal-600 text-white font-bold py-2 px-3.5 rounded-lg text-xs flex items-center gap-1.5">
+                    <button onclick="document.getElementById('excel-customer-input').click()" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-3.5 rounded-lg text-xs flex items-center gap-1.5 shadow-sm scale-active">
                         <i class="fa-solid fa-file-import"></i> Nhập Khách từ Excel
                     </button>
+                    <button onclick="exportCustomersToExcel()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3.5 rounded-lg text-xs flex items-center gap-1.5 shadow-sm scale-active">
+                        <i class="fa-solid fa-file-excel"></i> Xuất Khách ra Excel
+                    </button>
                     <button onclick="downloadCustomerSampleExcel()" class="bg-teal-50 text-teal-800 border border-teal-300 font-bold py-2 px-3 rounded-lg text-xs flex items-center gap-1">
-                        <i class="fa-solid fa-download"></i> Tải File Mẫu Khách
+                        <i class="fa-solid fa-download"></i> File Mẫu Khách
                     </button>
                 </div>
             </div>

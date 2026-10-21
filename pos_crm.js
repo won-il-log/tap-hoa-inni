@@ -135,111 +135,185 @@ function fillSampleZaloText() {
 function parseZaloTextToItems(rawText) {
     if (!rawText || !rawText.trim()) return [];
 
-    const segments = rawText
-        .replace(/\b(voi|và|va|them|lấy|lay|cho|em|anh|chi|chị|nhé|nhe|nha|ạ|a)\b/gi, (match) => {
-            const lower = removeVN(match);
-            if (['voi', 'va', 'them'].includes(lower)) return ',';
-            return ' ';
-        })
-        .split(/[\n,;]+/)
-        .map(s => s.trim())
-        .filter(s => s.length > 1);
-
+    // Danh sách từ khóa đơn vị tính chuẩn (hỗ trợ cả có dấu & không dấu)
+    const unitPattern = 'thùng|thung|lốc|loc|két|ket|cây|cay|dây|day|bịch|bich|bao|hộp|hop|lon|chai|gói|goi|túi|tui|cái|cai|ký|ky|kg|vỉ|vi';
     const commonUnits = ['thung', 'loc', 'ket', 'cay', 'day', 'bich', 'bao', 'hop', 'lon', 'chai', 'goi', 'tui', 'cai', 'ky', 'kg', 'vi'];
-    const results = [];
+    const unitHintMap = {
+        thung: 'Thùng', loc: 'Lốc', ket: 'Két', cay: 'Cây', day: 'Dây',
+        bich: 'Bịch', bao: 'Bao', hop: 'Hộp', lon: 'Lon', chai: 'Chai',
+        goi: 'Gói', tui: 'Túi', cai: 'Cái', ky: 'Kg', kg: 'Kg', vi: 'Vỉ'
+    };
 
-    segments.forEach(seg => {
-        let qty = 1;
-        let detectedUnitHint = '';
-        let productQuery = seg;
+    // =========================================================================
+    // BƯỚC 1: CHUẨN HÓA & TÁCH CÂU ĐỘC LẬP (SENTENCE TOKENIZATION)
+    // =========================================================================
+    const cleanedInput = rawText
+        // Bỏ các cụm chào hỏi đầu tin nhắn (VD: "Lấy em đơn này nhé:")
+        .replace(/^(?:lấy|lay|cho|đặt|dat)\s+(?:cho\s+)?(?:em|anh|chị|chi|mình|minh)?\s*(?:đơn\s+này\s+)?(?:nhé|nhe|nha|ạ)?\s*[:,-]?/gi, ' ')
+        // Biến các từ nối ("với", "và", "thêm") thành dấu phẩy để ngắt câu
+        .replace(/(?:^|\s)(?:với|voi|và|va|thêm|them)(?=\s|$)/gi, ',')
+        // Lọc bỏ từ đệm giao tiếp cuối câu
+        .replace(/(?:^|\s)(?:lấy|lay|cho|em|anh|chị|chi|nhé|nhe|nha|ạ)(?=\s|$|[,;])/gi, ' ');
 
-        const matchStart = seg.match(/^(\d+)\s*(x|\*)?\s*([^\d]+)$/i);
-        const matchEnd = seg.match(/^([^\d]+?)\s*(?:x|\*|sl|:)?\s*(\d+)\s*([a-zA-ZÀ-ỹ]*)$/i);
+    // Tách số dính liền đơn vị tính (VD: "6thung 247" -> "6 thung 247", "5lon" -> "5 lon")
+    const detachedUnitInput = cleanedInput.replace(
+        new RegExp(`(\\d+)\\s*(${unitPattern})(?=\\s|$|[,;+])`, 'gi'),
+        '$1 $2'
+    );
 
-        if (matchStart) {
-            qty = parseInt(matchStart[1], 10) || 1;
-            productQuery = matchStart[3].trim();
-        } else if (matchEnd) {
-            qty = parseInt(matchEnd[2], 10) || 1;
-            productQuery = (matchEnd[1] + ' ' + (matchEnd[3] || '')).trim();
-        }
+    // Regex tách các món viết dính liền trên cùng 1 dòng (VD: "4 one chanh 2 one vàng")
+    // Chỉ tách khi sau số lượng là (Đơn vị + Tên hàng) hoặc (Tên hàng không phải đơn vị đơn lẻ cuối câu)
+    // Nhờ đó bảo toàn tuyệt đối "6 thùng 247" và "sting 5 chai" / "sg xanh 3 thung"
+    const chainSplitRegex = new RegExp(
+        `(?<=\\S)\\s+(?=\\d+\\s*(?:(?:${unitPattern})\\s+[a-zA-ZÀ-ỹ0-9]|(?!(?:${unitPattern})(?=\\s|$))[a-zA-ZÀ-ỹ]))`,
+        'gi'
+    );
 
-        const words = productQuery.split(/\s+/);
-        if (words.length > 1) {
-            const firstWordNorm = removeVN(words[0]);
-            const lastWordNorm = removeVN(words[words.length - 1]);
-            if (commonUnits.includes(firstWordNorm)) {
-                detectedUnitHint = firstWordNorm;
-                productQuery = words.slice(1).join(' ');
-            } else if (commonUnits.includes(lastWordNorm)) {
-                detectedUnitHint = lastWordNorm;
-                productQuery = words.slice(0, -1).join(' ');
-            }
-        }
+    const normalizedLines = [];
+    detachedUnitInput
+        .split(/[\n,;+]+/)
+        .forEach(chunk => {
+            // Loại bỏ ký tự đầu dòng (-, *, •, ., +) trước khi tách chuỗi dính chùm
+            const cleanChunk = chunk.replace(/^[-*•+.\s]+/, '').trim();
+            if (!cleanChunk) return;
 
-        const normQuery = removeVN(productQuery);
-        if (!normQuery) return;
-
-        let bestMatch = null;
-        let bestScore = 0;
-
-        inventory.forEach(item => {
-            const normName = removeVN(item.name);
-            let score = 0;
-
-            if (normName === normQuery) score = 100;
-            else if (normName.includes(normQuery) || normQuery.includes(normName)) score = 80;
-
-            item.keywords.forEach(kw => {
-                const normKw = removeVN(kw);
-                if (normKw === normQuery) score = Math.max(score, 95);
-                else if (normQuery.includes(normKw) || normKw.includes(normQuery)) score = Math.max(score, 85);
+            const subLines = cleanChunk.split(chainSplitRegex);
+            subLines.forEach(sub => {
+                const trimmed = sub.replace(/^[-*•+.\s]+/, '').trim();
+                if (trimmed.length > 0) normalizedLines.push(trimmed);
             });
-
-            const qWords = normQuery.split(' ').filter(w => w.length > 1);
-            let matchedWords = 0;
-            qWords.forEach(w => {
-                if (normName.includes(w) || item.keywords.some(kw => removeVN(kw).includes(w))) {
-                    matchedWords++;
-                }
-            });
-            if (qWords.length > 0) {
-                score = Math.max(score, Math.round((matchedWords / qWords.length) * 75));
-            }
-
-            if (score > bestScore && score >= 45) {
-                bestScore = score;
-                bestMatch = item;
-            }
         });
 
-        if (bestMatch) {
-            let chosenUnitIdx = 0;
-            if (detectedUnitHint) {
-                const foundIdx = bestMatch.units.findIndex(u => removeVN(u.unitName) === detectedUnitHint);
+    // =========================================================================
+    // BƯỚC 2: SẮP XẾP TỪ KHÓA SẢN PHẨM THEO ĐỘ DÀI GIẢM DẦN (LONGEST MATCH FIRST)
+    // =========================================================================
+    const sortedKeywords = [];
+    inventory.forEach(prod => {
+        const kwList = Array.isArray(prod.keywords) ? prod.keywords : [];
+        const extraKw = typeof prod.zaloKeywords === 'string' ? prod.zaloKeywords.split(',') : [];
+        const allKeywords = [prod.name, ...kwList, ...extraKw]
+            .map(k => removeVN(k))
+            .filter(k => k.length > 0);
+
+        const uniqueKeywords = [...new Set(allKeywords)];
+        uniqueKeywords.forEach(kw => {
+            sortedKeywords.push({
+                keyword: kw,
+                product: prod,
+                length: kw.length
+            });
+        });
+    });
+    // Ưu tiên từ khóa dài nhất lên đầu (VD: "hao hao xao" đứng trước "hao hao", "one chanh" đứng trước "one")
+    sortedKeywords.sort((a, b) => b.length - a.length);
+
+    // =========================================================================
+    // BƯỚC 3: BÓC TÁCH SỐ LƯỢNG (QTY) - ĐƠN VỊ (UNIT) - TÊN HÀNG (ITEM)
+    // =========================================================================
+    // Mẫu 1: Số lượng đứng ĐẦU câu (VD: "6 thùng 247", "3 lon 333", "4 one chanh", "10 gói hảo hảo xào")
+    const startQtyRegex = new RegExp(`^(\\d+)\\s*(?:[xX*]\\s*)?(?:(${unitPattern})\\s+)?(.+)$`, 'i');
+    // Mẫu 2: Số lượng đứng CUỐI câu, hỗ trợ kèm đơn vị phía sau (VD: "tiger bạc 3", "sting 5 chai", "sg xanh 3 thung", "hao hao x2")
+    const endQtyRegex = new RegExp(`^(.+?)\\s+(?:([xX*]|sl|:)\\s*)?(\\d+)(?:\\s*(${unitPattern}))?$`, 'i');
+
+    const results = [];
+
+    normalizedLines.forEach(line => {
+        let cleanLine = line.replace(/^[-*•+.\s]+/, '').trim();
+        if (!cleanLine) return;
+
+        let qty = 1;
+        let explicitUnit = '';
+        let rawItemPart = cleanLine;
+
+        const matchStart = cleanLine.match(startQtyRegex);
+        if (matchStart) {
+            // Số lượng nằm ở đầu câu -> Bảo toàn nguyên vẹn phần tên phía sau (kể cả tên là số như "247", "333")
+            qty = parseInt(matchStart[1], 10) || 1;
+            explicitUnit = matchStart[2] ? removeVN(matchStart[2]) : '';
+            rawItemPart = matchStart[3].trim();
+        } else {
+            const matchEnd = cleanLine.match(endQtyRegex);
+            if (matchEnd) {
+                const candidateItem = matchEnd[1].trim();
+                const hasMultiplier = !!matchEnd[2];
+                const candidateQty = parseInt(matchEnd[3], 10) || 1;
+                const trailingUnit = matchEnd[4] ? removeVN(matchEnd[4]) : '';
+
+                // Kiểm tra tránh bắt nhầm số trong tên hàng khi khách gõ mỗi tên không kèm số lượng (VD: "wake up 247")
+                const fullNorm = removeVN(cleanLine);
+                const isFullLineExactProduct = !hasMultiplier && !trailingUnit && sortedKeywords.some(k => k.keyword === fullNorm);
+
+                if (!isFullLineExactProduct) {
+                    qty = candidateQty;
+                    explicitUnit = trailingUnit;
+                    rawItemPart = candidateItem;
+                }
+            }
+        }
+
+        // Nếu chưa bắt được đơn vị ở cạnh số lượng, kiểm tra từ đầu/cuối của cụm tên hàng
+        const itemWords = rawItemPart.split(/\s+/);
+        if (!explicitUnit && itemWords.length > 1) {
+            const firstW = removeVN(itemWords[0]);
+            const lastW = removeVN(itemWords[itemWords.length - 1]);
+            if (commonUnits.includes(firstW)) {
+                explicitUnit = firstW;
+                rawItemPart = itemWords.slice(1).join(' ');
+            } else if (commonUnits.includes(lastW)) {
+                explicitUnit = lastW;
+                rawItemPart = itemWords.slice(0, -1).join(' ');
+            }
+        }
+
+        const cleanItemPart = removeVN(rawItemPart);
+        if (!cleanItemPart) return;
+
+        // Ghép thêm đơn vị vào tên để thử khớp trước với các mặt hàng có tên gắn liền quy cách (VD: "Sting Chai" từ "sting 5 chai")
+        const cleanItemWithUnit = explicitUnit ? `${cleanItemPart} ${explicitUnit}` : cleanItemPart;
+
+        let matchedItem = null;
+
+        // Lượt 1: Khớp chính xác cụm từ khóa (Longest Match First) theo ranh giới từ
+        for (const item of sortedKeywords) {
+            const kw = item.keyword;
+            const regex = new RegExp(`(^|\\s)${kw}(\\s|$)`, 'i');
+            if (regex.test(cleanItemPart) || (explicitUnit && kw !== explicitUnit && regex.test(cleanItemWithUnit))) {
+                matchedItem = item.product;
+                break; // Khớp từ khóa dài nhất là thoát vòng lặp ngay, chống trùng lặp
+            }
+        }
+
+        // Lượt 2 (Fallback): Nếu kho chưa khai báo từ khóa rút gọn (VD khách gõ "one chanh" cho tên "One Chanh Dâu")
+        if (!matchedItem) {
+            const queryRegex = new RegExp(`(^|\\s)${cleanItemPart}(\\s|$)`, 'i');
+            for (const item of sortedKeywords) {
+                if (queryRegex.test(item.keyword)) {
+                    matchedItem = item.product;
+                    break;
+                }
+            }
+        }
+
+        if (matchedItem) {
+            let chosenUnitIdx = 0; // Mặc định chọn đơn vị cơ bản (units[0]: Chai, Lon, Gói...)
+            if (explicitUnit && Array.isArray(matchedItem.units)) {
+                const foundIdx = matchedItem.units.findIndex(u => removeVN(u.unitName) === explicitUnit);
                 if (foundIdx !== -1) chosenUnitIdx = foundIdx;
-            } else if (bestMatch.units.length > 1) {
-                chosenUnitIdx = bestMatch.units.length - 1;
             }
 
             results.push({
-                rawSegment: seg,
+                rawSegment: cleanLine,
                 matched: true,
-                product: bestMatch,
+                product: matchedItem,
                 unitIndex: chosenUnitIdx,
                 qty: qty
             });
         } else {
-            const unitHintMap = {
-                thung: 'Thùng', loc: 'Lốc', ket: 'Két', cay: 'Cây', day: 'Dây',
-                bich: 'Bịch', bao: 'Bao', hop: 'Hộp', lon: 'Lon', chai: 'Chai',
-                goi: 'Gói', tui: 'Túi', cai: 'Cái', ky: 'Kg', kg: 'Kg', vi: 'Vỉ'
-            };
-            const guessedUnit = unitHintMap[detectedUnitHint] || 'Cái';
-            const cleanName = (productQuery || seg).trim();
+            const guessedUnit = unitHintMap[explicitUnit] || 'Cái';
+            const cleanName = (rawItemPart || cleanLine).trim();
 
             results.push({
-                rawSegment: seg,
+                rawSegment: cleanLine,
                 matched: false,
                 product: null,
                 unitIndex: 0,
@@ -2098,7 +2172,7 @@ async function exportBillToImage() {
                 const cleanBankId = (storeSettings.bankId || "").trim();
                 const cleanBankAcc = (storeSettings.bankAcc || "").replace(/\s+/g, '');
                 const cleanOwner = (storeSettings.bankOwner || "").trim();
-                src = await getVietQrBase64String(cleanBankId, cleanBankAcc, cleanOwner);
+                src = await getBeautifulVietQrBase64(cleanBankId, cleanBankAcc, cleanOwner);
                 if (src) img.src = src;
             }
 
@@ -2569,28 +2643,44 @@ async function deleteEntireOrder() {
 }
 
 function exportOrdersToCSV() {
-    if (ordersList.length === 0) return alert("Không có dữ liệu hóa đơn để xuất!");
-    let csv = "data:text/csv;charset=utf-8,\uFEFF";
-    csv += "Ngày,Mã Hóa Đơn,Loại Đơn,Khách Hàng,Thu Ngân,Sản Phẩm,ĐVT,Số Lượng,Đơn Giá,Thành Tiền,Tổng Đơn,Nợ Cũ,Đã Thanh Toán,Còn Nợ\n";
+    if (!Array.isArray(ordersList) || ordersList.length === 0) {
+        return alert("Không có dữ liệu hóa đơn để xuất!");
+    }
 
+    const exportRows = [];
     ordersList.forEach(ord => {
-        const custName = `"${(ord.customerSnapshot?.name || 'Khách Lẻ').replace(/"/g, '""')}"`;
+        const custName = ord.customerSnapshot?.name || "Khách Lẻ";
+        const custPhone = ord.customerSnapshot?.phone || "";
+        const statusLabel = ord.orderType === "RETURN"
+            ? "Hoàn hàng"
+            : (ord.status === "PROCESSING" ? "Đang giao dịch" : "Hoàn thành");
+
         (ord.items || []).forEach((item, idx) => {
-            const pName = `"${item.productName.replace(/"/g, '""')}"`;
-            if (idx === 0) {
-                csv += `${ord.dateStr},${ord.orderCode},${ord.orderType},${custName},${ord.seller},${pName},${item.unitName},${item.qty},${item.unitPrice},${item.totalPrice},${ord.totalAmount},${ord.oldDebt||0},${ord.paidAmount||0},${ord.newDebt||0}\n`;
-            } else {
-                csv += `,,,,,${pName},${item.unitName},${item.qty},${item.unitPrice},${item.totalPrice},,,,\n`;
-            }
+            exportRows.push({
+                "Ngày": ord.dateStr || "",
+                "Mã Hóa Đơn": ord.orderCode || "",
+                "Trạng Thái": statusLabel,
+                "Khách Hàng": custName,
+                "SĐT Khách": custPhone,
+                "Thu Ngân / Ghi Chú": ord.seller || "",
+                "Sản Phẩm": item.productName || "",
+                "ĐVT": item.unitName || "",
+                "Số Lượng": Number(item.qty) || 0,
+                "Đơn Giá": Number(item.unitPrice) || 0,
+                "Thành Tiền": Number(item.totalPrice) || 0,
+                "Tổng Đơn": idx === 0 ? (Number(ord.totalAmount) || 0) : "",
+                "Nợ Cũ": idx === 0 ? (Number(ord.oldDebt) || 0) : "",
+                "Đã Thanh Toán": idx === 0 ? (Number(ord.paidAmount) || 0) : "",
+                "Còn Nợ": idx === 0 ? (Number(ord.newDebt) || 0) : ""
+            });
         });
     });
 
-    const link = document.createElement("a");
-    link.setAttribute("href", encodeURI(csv));
-    link.setAttribute("download", `Hoa_Don_Huy_Hoang_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Danh_Sach_Hoa_Don");
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `Danh_Sach_Hoa_Don_${dateStr}.xlsx`);
 }
 
 // ==========================================
@@ -2728,7 +2818,7 @@ function deleteCustomer(id) {
     }
 }
 
-// --- IMPORT KHÁCH HÀNG HÀNG LOẠT TỪ FILE EXCEL & TẢI FILE MẪU ---
+// --- IMPORT & EXPORT KHÁCH HÀNG HÀNG LOẠT RA FILE EXCEL ---
 function downloadCustomerSampleExcel() {
     const sampleData = [
         {
@@ -2757,7 +2847,35 @@ function downloadCustomerSampleExcel() {
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Mau_Khach_Hang");
-    XLSX.writeFile(wb, "File_Mau_Import_Khach_Hang_Huy_Hoang.xlsx");
+    XLSX.writeFile(wb, "File_Mau_Import_Khach_Hang.xlsx");
+}
+
+function exportCustomersToExcel() {
+    if (!Array.isArray(customers) || customers.length === 0) {
+        return alert("Chưa có dữ liệu Khách hàng / Nhà cung cấp để xuất!");
+    }
+
+    const exportRows = customers.map((c, idx) => {
+        let typeLabel = "Khách Sỉ";
+        if (c.type === "SUPPLIER") typeLabel = "Nhà Cung Cấp";
+        else if (c.type === "RETAIL") typeLabel = "Khách Lẻ";
+
+        return {
+            "STT": idx + 1,
+            "Mã KH": c.customerCode || "",
+            "Tên khách hàng": c.name || "",
+            "Phân loại": typeLabel,
+            "SĐT": c.phone || "",
+            "Địa chỉ": c.address || "",
+            "Nợ cũ": Number(c.currentDebt) || 0
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Danh_Sach_Khach_Hang");
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `Danh_Sach_Khach_Hang_${dateStr}.xlsx`);
 }
 
 async function handleImportCustomersExcel(event) {
@@ -2773,10 +2891,12 @@ async function handleImportCustomersExcel(event) {
             const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
 
             if (rows.length === 0) return alert("File Excel trống!");
-            if (!confirm(`Tìm thấy ${rows.length} dòng Khách hàng / NCC từ file Excel. Bạn có muốn đẩy hàng loạt vào hệ thống không?`)) return;
+            if (!confirm(`Tìm thấy ${rows.length} dòng Khách hàng / NCC từ file Excel. Bạn có muốn nhập / cập nhật hàng loạt vào hệ thống không?`)) return;
 
-            let importedCount = 0;
-            // Đổi 350 thành 200 để tổng lệnh set (customers + debts) luôn <= 400 (an toàn dưới ngưỡng 500 của Firestore)
+            const workingCustomers = customers.map(c => ({ ...c }));
+            let createdCount = 0;
+            let updatedCount = 0;
+
             for (let i = 0; i < rows.length; i += 200) {
                 const chunk = rows.slice(i, i + 200);
                 const batch = db.batch();
@@ -2793,36 +2913,65 @@ async function handleImportCustomersExcel(event) {
 
                     const phone = (r["SĐT"] || r["SDT"] || r["Điện thoại"] || "").toString().trim();
                     const address = (r["Địa chỉ"] || r["Dia chi"] || "").toString().trim();
-                    const currentDebt = parseInt((r["Nợ cũ"] || r["No cu"] || 0).toString().replace(/\./g, '').replace(/,/g, '').replace(/\D/g, ''), 10) || 0;
+                    const rawDebtVal = r["Nợ cũ"] !== undefined && r["Nợ cũ"] !== "" ? r["Nợ cũ"] : (r["No cu"] !== undefined ? r["No cu"] : "");
+                    const hasDebtCol = rawDebtVal !== "";
+                    const currentDebt = parseInt(rawDebtVal.toString().replace(/\./g, '').replace(/,/g, '').replace(/\D/g, ''), 10) || 0;
 
-                    const docRef = db.collection("customers").doc();
-                    batch.set(docRef, {
-                        customerCode, type, name, phone, address, currentDebt, updatedAt: Date.now()
+                    const normName = removeVN(name);
+                    const cleanPhone = phone.replace(/\D/g, '');
+                    const existingCust = workingCustomers.find(c => {
+                        if (customerCode && c.customerCode && c.customerCode.toLowerCase() === customerCode.toLowerCase()) return true;
+                        if (cleanPhone && c.phone && c.phone.replace(/\D/g, '') === cleanPhone) return true;
+                        return removeVN(c.name) === normName && c.type === type;
                     });
-                    // Thêm bản ghi khởi tạo vào Sổ Nợ nếu khách có Nợ cũ từ Sapo chuyển qua
-                    if (currentDebt > 0) {
-                        const debtRef = db.collection("debts").doc();
-                        batch.set(debtRef, {
-                            customerId: docRef.id,
-                            customerName: name,
-                            ledgerType: type === "SUPPLIER" ? "PAYABLE" : "RECEIVABLE",
-                            transactionType: "ORDER_DEBT",
-                            referenceId: "NỢ-ĐẦU-KỲ",
-                            beforeDebt: 0,
-                            changeAmount: currentDebt,
-                            afterDebt: currentDebt,
-                            note: "Nhập số dư nợ cũ từ file Excel Sapo",
-                            createdAt: Date.now()
-                        });
+
+                    if (existingCust) {
+                        const docRef = db.collection("customers").doc(existingCust.id);
+                        const updateData = {
+                            type,
+                            name,
+                            phone: phone || existingCust.phone || "",
+                            address: address || existingCust.address || "",
+                            updatedAt: Date.now()
+                        };
+                        if (customerCode) updateData.customerCode = customerCode;
+                        if (hasDebtCol) updateData.currentDebt = currentDebt;
+
+                        batch.update(docRef, updateData);
+                        Object.assign(existingCust, updateData);
+                        updatedCount++;
+                    } else {
+                        const docRef = db.collection("customers").doc();
+                        const newCustObj = {
+                            customerCode, type, name, phone, address, currentDebt, updatedAt: Date.now()
+                        };
+                        batch.set(docRef, newCustObj);
+
+                        if (currentDebt > 0) {
+                            const debtRef = db.collection("debts").doc();
+                            batch.set(debtRef, {
+                                customerId: docRef.id,
+                                customerName: name,
+                                ledgerType: type === "SUPPLIER" ? "PAYABLE" : "RECEIVABLE",
+                                transactionType: "ORDER_DEBT",
+                                referenceId: "NỢ-ĐẦU-KỲ",
+                                beforeDebt: 0,
+                                changeAmount: currentDebt,
+                                afterDebt: currentDebt,
+                                note: "Nhập số dư nợ cũ từ file Excel",
+                                createdAt: Date.now()
+                            });
+                        }
+                        workingCustomers.push({ id: docRef.id, ...newCustObj });
+                        createdCount++;
                     }
-                    importedCount++;
                 });
 
                 await batch.commit();
             }
 
             event.target.value = '';
-            alert(`✅ Đã Import thành công ${importedCount} Khách hàng / Nhà cung cấp cùng số tiền Nợ cũ vào hệ thống!`);
+            alert(`✅ Hoàn tất Import Excel Khách hàng / NCC!\n- Thêm mới: ${createdCount} đối tác\n- Cập nhật: ${updatedCount} đối tác`);
         } catch (err) {
             alert("Lỗi đọc file Excel khách hàng: " + err.message);
         }

@@ -1196,26 +1196,27 @@ function parseExcelNum(val) {
     return parseInt(val.toString().replace(/\./g, '').replace(/,/g, '').replace(/\D/g, ''), 10) || 0;
 }
 
-// ==========================================
-// 7. IMPORT KHO HÀNG HÀNG LOẠT TỪ FILE EXCEL & TẢI FILE MẪU
-// ==========================================
 function downloadProductSampleExcel() {
     const sampleData = [
         {
-            "Tên hàng": "Bia Sài Gòn Lager",
+            "Tên Hàng Hóa": "Bia Sài Gòn Lager",
             "Phân loại": "Bia & Rượu",
-            "Mã vạch": "893482211234",
+            "Mã Vạch": "893482211234",
             "Đơn vị lẻ": "Lon",
-            "Giá nhập": 11500,
-            "Giá lẻ": 14000,
-            "Giá sỉ": 12500,
+            "Tỷ Lệ": 1,
+            "Giá Vốn": 11500,
+            "Giá Bán Lẻ": 14000,
+            "Giá Sỉ": 12500,
             "Đơn vị lốc": "Lốc",
             "Quy đổi lốc": 6,
-            "Giá bán lốc": 75000,
+            "Giá bán lốc": 80000,
+            "Giá sỉ lốc": 75000,
             "Đơn vị thùng": "Thùng",
             "Quy đổi thùng": 24,
-            "Giá bán thùng": 295000,
+            "Giá bán thùng": 310000,
+            "Giá sỉ thùng": 295000,
             "Số lượng tồn": 1095,
+            "Báo động tồn": 24,
             "Từ khóa Zalo": "sai gon, sg xanh"
         }
     ];
@@ -1223,7 +1224,65 @@ function downloadProductSampleExcel() {
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Mau_Kho_Hang");
-    XLSX.writeFile(wb, "File_Mau_Import_Kho_Hang_Huy_Hoang.xlsx");
+    XLSX.writeFile(wb, "File_Mau_Import_Kho_Hang.xlsx");
+}
+
+// Xuất toàn bộ danh sách sản phẩm thực tế đang có trong Kho ra file Excel (.xlsx)
+function exportProductsToExcel() {
+    if (!Array.isArray(inventory) || inventory.length === 0) {
+        return alert("Kho hàng hiện đang trống, chưa có mặt hàng nào để xuất!");
+    }
+
+    const exportRows = inventory.map((item, idx) => {
+        const extraUnits = (Array.isArray(item.units) ? item.units : [])
+            .filter(u => Number(u.conversionRate) > 1)
+            .sort((a, b) => Number(a.conversionRate) - Number(b.conversionRate));
+
+        let packUnitObj = null;
+        let bigUnitObj = null;
+
+        if (extraUnits.length === 1) {
+            const u = extraUnits[0];
+            const uNorm = (u.unitName || '').toLowerCase();
+            if (Number(u.conversionRate) >= 12 || uNorm.includes('thùng') || uNorm.includes('thung') || uNorm.includes('két') || uNorm.includes('bao')) {
+                bigUnitObj = u;
+            } else {
+                packUnitObj = u;
+            }
+        } else if (extraUnits.length >= 2) {
+            packUnitObj = extraUnits[0];
+            bigUnitObj = extraUnits[extraUnits.length - 1];
+        }
+
+        return {
+            "STT": idx + 1,
+            "Tên Hàng Hóa": item.name || "",
+            "Phân loại": item.category || "Khác",
+            "Mã Vạch": item.barcode || "",
+            "Đơn vị lẻ": item.baseUnit || "Cái",
+            "Tỷ Lệ": 1,
+            "Giá Vốn": Number(item.costPrice) || 0,
+            "Giá Bán Lẻ": Number(item.basePrice) || 0,
+            "Giá Sỉ": Number(item.wholesalePrice ?? item.basePrice) || 0,
+            "Đơn vị lốc": packUnitObj ? packUnitObj.unitName : "",
+            "Quy đổi lốc": packUnitObj ? Number(packUnitObj.conversionRate) : "",
+            "Giá bán lốc": packUnitObj ? Number(packUnitObj.sellingPrice) : "",
+            "Giá sỉ lốc": packUnitObj ? Number(packUnitObj.wholesalePrice ?? packUnitObj.sellingPrice) : "",
+            "Đơn vị thùng": bigUnitObj ? bigUnitObj.unitName : "",
+            "Quy đổi thùng": bigUnitObj ? Number(bigUnitObj.conversionRate) : "",
+            "Giá bán thùng": bigUnitObj ? Number(bigUnitObj.sellingPrice) : "",
+            "Giá sỉ thùng": bigUnitObj ? Number(bigUnitObj.wholesalePrice ?? bigUnitObj.sellingPrice) : "",
+            "Số lượng tồn": Number(item.stock) || 0,
+            "Báo động tồn": Number(item.minStock ?? 24),
+            "Từ khóa Zalo": Array.isArray(item.keywords) ? item.keywords.join(', ') : ""
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Danh_Sach_Kho_Hang");
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `Danh_Sach_Kho_Hang_${dateStr}.xlsx`);
 }
 
 // Hàm chuẩn hóa tên cột Excel (Bỏ dấu tiếng Việt, bỏ khoảng trắng thừa, đưa về chữ thường để không bao giờ trượt tên cột)
@@ -1259,7 +1318,6 @@ async function handleImportProductsExcel(event) {
             if (rows.length === 0) return alert("File Excel trống!");
             if (!confirm(`Tìm thấy ${rows.length} dòng sản phẩm từ file Excel. Bạn có muốn nhập / cập nhật hàng loạt vào Kho không?`)) return;
 
-            // Bản đồ tra cứu sản phẩm hiện có (đối chiếu theo Tên Hàng Hóa hoặc Mã Vạch) để Upsert chống trùng lặp
             const workingCatalog = inventory.map(item => ({
                 ...item,
                 units: Array.isArray(item.units) ? item.units.map(u => ({ ...u })) : []
@@ -1273,7 +1331,6 @@ async function handleImportProductsExcel(event) {
                 const batch = db.batch();
 
                 chunk.forEach(r => {
-                    // Chuẩn hóa toàn bộ tiêu đề cột của dòng hiện tại (chống lỗi chữ HOA/thường & dấu cách thừa)
                     const normRow = {};
                     Object.keys(r).forEach(colName => {
                         const nk = normalizeExcelColKey(colName);
@@ -1287,9 +1344,9 @@ async function handleImportProductsExcel(event) {
                     ]).toString().trim();
                     if (!name) return;
 
-                    const category = getExcelColVal(normRow, [
+                    const rawCategory = getExcelColVal(normRow, [
                         "phanloai", "loaisanpham", "nhomhang", "danhmuc", "loai", "category"
-                    ]).toString().trim() || "Khác";
+                    ]).toString().trim();
 
                     const barcode = getExcelColVal(normRow, [
                         "mavach", "masku", "sku", "barcode", "mahang", "mahanghoa"
@@ -1299,7 +1356,6 @@ async function handleImportProductsExcel(event) {
                         "donvile", "donvitinh", "donvi", "dvt", "donvicoban", "donvinho", "unit"
                     ]).toString().trim() || "Cái";
 
-                    // 1. Tự động tính Giá vốn kho lõi = Giá Vốn / Tỷ Lệ
                     const rawCost = parseExcelNum(getExcelColVal(normRow, [
                         "giavon", "gianhap", "dongianhap", "giavonthung", "giavonloc", "cost", "costprice"
                     ]));
@@ -1309,9 +1365,8 @@ async function handleImportProductsExcel(event) {
                     const ratio = rawRatio > 0 ? rawRatio : 1;
                     const calculatedCoreCost = rawCost > 0 ? Math.round(rawCost / ratio) : 0;
 
-                    // 2. Đọc Giá Bán Lẻ & Giá Bán Sỉ (hỗ trợ mọi kiểu đặt tên cột trong Excel)
                     const rawSellPrice = parseExcelNum(getExcelColVal(normRow, [
-                        "giaban", "giabanle", "giale", "dongia", "dongiaban", "giabanthung", "gia", "price", "sellingprice"
+                        "giaban", "giabanle", "giale", "dongia", "dongiaban", "gia", "price", "sellingprice"
                     ]));
                     const rawWholesalePrice = parseExcelNum(getExcelColVal(normRow, [
                         "giasi", "giabansi", "dongiasi", "giasile", "wholesaleprice"
@@ -1323,18 +1378,25 @@ async function handleImportProductsExcel(event) {
                     const hasStockCol = rawStockStr !== "";
                     const stock = parseExcelNum(rawStockStr);
 
-                    const kwStr = getExcelColVal(normRow, ["tukhoazalo", "tukhoa", "keywords"]).toString();
+                    const rawMinStockStr = getExcelColVal(normRow, [
+                        "baodongton", "dinhmucton", "tonitnhat", "minstock"
+                    ]);
+                    const hasMinStockCol = rawMinStockStr !== "";
+                    const minStock = parseExcelNum(rawMinStockStr);
+
+                    const kwStr = getExcelColVal(normRow, ["tukhoazalo", "tukhoa", "keywords"]).toString().trim();
                     const keywords = kwStr ? kwStr.split(',').map(k => k.trim().toLowerCase()).filter(Boolean) : [];
 
                     const packUnit = getExcelColVal(normRow, ["donviloc", "dvloc"]).toString().trim();
                     const packRate = parseExcelNum(getExcelColVal(normRow, ["quydoiloc", "tyleloc"]));
-                    const rawPackPrice = parseExcelNum(getExcelColVal(normRow, ["giabanloc", "gialoc"]));
+                    const rawPackPrice = parseExcelNum(getExcelColVal(normRow, ["giabanloc", "gialoc", "gialeloc"]));
+                    const rawPackWholesale = parseExcelNum(getExcelColVal(normRow, ["giasiloc", "giabansiloc"]));
 
                     const bigUnit = getExcelColVal(normRow, ["donvithung", "dvthung"]).toString().trim();
                     const bigRate = parseExcelNum(getExcelColVal(normRow, ["quydoithung", "tylethung"]));
-                    const rawBigPrice = parseExcelNum(getExcelColVal(normRow, ["giabanthung", "giathung"]));
+                    const rawBigPrice = parseExcelNum(getExcelColVal(normRow, ["giabanthung", "giathung", "gialethung"]));
+                    const rawBigWholesale = parseExcelNum(getExcelColVal(normRow, ["giasithung", "giabansithung"]));
 
-                    // Tìm sản phẩm trùng theo Mã Vạch hoặc Tên Hàng Hóa
                     const normName = name.toLowerCase();
                     const normBc = barcode.toLowerCase();
                     const existingItem = workingCatalog.find(item => {
@@ -1344,11 +1406,12 @@ async function handleImportProductsExcel(event) {
                     });
 
                     if (existingItem) {
-                        // ĐÃ CÓ TRONG KHO -> Cập nhật đè Giá Vốn, Giá Bán và ĐVT lên mặt hàng đang có
                         const finalCostPrice = calculatedCoreCost > 0 ? calculatedCoreCost : (existingItem.costPrice || 0);
                         const finalBasePrice = rawSellPrice > 0 ? rawSellPrice : (existingItem.basePrice || 0);
                         const finalWholesalePrice = rawWholesalePrice > 0 ? rawWholesalePrice : (rawSellPrice > 0 ? rawSellPrice : (existingItem.wholesalePrice || finalBasePrice));
                         const finalBaseUnit = baseUnit || existingItem.baseUnit || "Cái";
+                        const finalCategory = rawCategory || existingItem.category || "Khác";
+                        const finalKeywords = kwStr !== "" ? keywords : (existingItem.keywords || []);
 
                         let updatedUnits = Array.isArray(existingItem.units) && existingItem.units.length > 0
                             ? existingItem.units.map(u => ({ ...u }))
@@ -1362,27 +1425,32 @@ async function handleImportProductsExcel(event) {
                             if (barcode) updatedUnits[baseUnitIdx].barcode = barcode;
                         }
 
-                        const packPrice = rawPackPrice || (packRate > 1 ? finalWholesalePrice * packRate : 0);
-                        if (packUnit && packRate > 1 && packPrice > 0) {
+                        const packRetail = rawPackPrice || rawPackWholesale || (packRate > 1 ? finalBasePrice * packRate : 0);
+                        const packWhole = rawPackWholesale || rawPackPrice || (packRate > 1 ? finalWholesalePrice * packRate : 0);
+                        if (packUnit && packRate > 1 && packRetail > 0) {
                             const pIdx = updatedUnits.findIndex(u => u.unitName.toLowerCase() === packUnit.toLowerCase() || Number(u.conversionRate) === packRate);
                             if (pIdx !== -1) {
-                                updatedUnits[pIdx] = { ...updatedUnits[pIdx], unitName: packUnit, conversionRate: packRate, sellingPrice: packPrice, wholesalePrice: packPrice };
+                                updatedUnits[pIdx] = { ...updatedUnits[pIdx], unitName: packUnit, conversionRate: packRate, sellingPrice: packRetail, wholesalePrice: packWhole };
                             } else {
-                                updatedUnits.push({ unitName: packUnit, conversionRate: packRate, sellingPrice: packPrice, wholesalePrice: packPrice, barcode: "" });
+                                updatedUnits.push({ unitName: packUnit, conversionRate: packRate, sellingPrice: packRetail, wholesalePrice: packWhole, barcode: "" });
                             }
                         }
 
-                        const bigPrice = rawBigPrice || (bigRate > 1 ? finalWholesalePrice * bigRate : 0);
-                        if (bigUnit && bigRate > 1 && bigPrice > 0) {
+                        const bigRetail = rawBigPrice || rawBigWholesale || (bigRate > 1 ? finalBasePrice * bigRate : 0);
+                        const bigWhole = rawBigWholesale || rawBigPrice || (bigRate > 1 ? finalWholesalePrice * bigRate : 0);
+                        if (bigUnit && bigRate > 1 && bigRetail > 0) {
                             const bIdx = updatedUnits.findIndex(u => u.unitName.toLowerCase() === bigUnit.toLowerCase() || Number(u.conversionRate) === bigRate);
                             if (bIdx !== -1) {
-                                updatedUnits[bIdx] = { ...updatedUnits[bIdx], unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigPrice, wholesalePrice: bigPrice };
+                                updatedUnits[bIdx] = { ...updatedUnits[bIdx], unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigRetail, wholesalePrice: bigWhole };
                             } else {
-                                updatedUnits.push({ unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigPrice, wholesalePrice: bigPrice, barcode: "" });
+                                updatedUnits.push({ unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigRetail, wholesalePrice: bigWhole, barcode: "" });
                             }
                         }
 
                         const updatePayload = {
+                            name,
+                            category: finalCategory,
+                            keywords: finalKeywords,
                             baseUnit: finalBaseUnit,
                             costPrice: finalCostPrice,
                             basePrice: finalBasePrice,
@@ -1392,6 +1460,7 @@ async function handleImportProductsExcel(event) {
                         };
                         if (barcode) updatePayload.barcode = barcode;
                         if (hasStockCol) updatePayload.stock = stock;
+                        if (hasMinStockCol) updatePayload.minStock = minStock;
 
                         const docRef = db.collection("inventory").doc(existingItem.id);
                         batch.update(docRef, updatePayload);
@@ -1399,31 +1468,38 @@ async function handleImportProductsExcel(event) {
                         Object.assign(existingItem, updatePayload);
                         updatedCount++;
                     } else {
-                        // CHƯA CÓ TRONG KHO -> Tạo sản phẩm mới hoàn toàn
-                        const finalBasePrice = rawSellPrice;
+                        const finalBasePrice = rawSellPrice || rawBigPrice || 0;
                         const finalWholesalePrice = rawWholesalePrice || finalBasePrice;
                         const finalCostPrice = calculatedCoreCost > 0 ? calculatedCoreCost : Math.round(finalBasePrice * 0.85);
 
                         const units = [{ unitName: baseUnit, conversionRate: 1, sellingPrice: finalBasePrice, wholesalePrice: finalWholesalePrice, barcode }];
 
-                        const packPrice = rawPackPrice || (finalWholesalePrice * packRate);
-                        if (packUnit && packRate > 1 && packPrice > 0) {
-                            units.push({ unitName: packUnit, conversionRate: packRate, sellingPrice: packPrice, wholesalePrice: packPrice, barcode: "" });
+                        const packRetail = rawPackPrice || rawPackWholesale || (finalBasePrice * packRate);
+                        const packWhole = rawPackWholesale || rawPackPrice || (finalWholesalePrice * packRate);
+                        if (packUnit && packRate > 1 && packRetail > 0) {
+                            units.push({ unitName: packUnit, conversionRate: packRate, sellingPrice: packRetail, wholesalePrice: packWhole, barcode: "" });
                         }
 
-                        const bigPrice = rawBigPrice || (finalWholesalePrice * bigRate);
-                        if (bigUnit && bigRate > 1 && bigPrice > 0) {
-                            units.push({ unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigPrice, wholesalePrice: bigPrice, barcode: "" });
+                        const bigRetail = rawBigPrice || rawBigWholesale || (finalBasePrice * bigRate);
+                        const bigWhole = rawBigWholesale || rawBigPrice || (finalWholesalePrice * bigRate);
+                        if (bigUnit && bigRate > 1 && bigRetail > 0) {
+                            units.push({ unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigRetail, wholesalePrice: bigWhole, barcode: "" });
                         }
 
                         const docRef = db.collection("inventory").doc();
                         const newProdObj = {
-                            name, category, barcode, keywords, baseUnit,
+                            name,
+                            category: rawCategory || "Khác",
+                            barcode,
+                            keywords,
+                            baseUnit,
                             costPrice: finalCostPrice,
                             basePrice: finalBasePrice,
                             wholesalePrice: finalWholesalePrice,
                             price: finalBasePrice,
-                            stock, minStock: 24, units,
+                            stock,
+                            minStock: hasMinStockCol ? minStock : 24,
+                            units,
                             createdAt: Date.now() + createdCount
                         };
                         batch.set(docRef, newProdObj);
