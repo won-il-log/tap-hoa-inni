@@ -106,10 +106,61 @@ function getStandardUnitPrice(product, unitIndex, isWholesale) {
 }
 
 // ==========================================
-// MODULE 1 (ZALO NLP): BÓC TÁCH ĐƠN ZALO TỰ ĐỘNG
+// MODULE 1 (ZALO NLP + GEMINI 3.8 FLASH AI): BÓC TÁCH ĐƠN ZALO BÁN SỈ
 // ==========================================
+let zaloDefaultWholesaleUnit = localStorage.getItem('hh_zalo_default_wholesale') !== 'false';
+let zaloAiDebounceTimer = null;
+// Lưu danh sách các cặp (Key + Model) đã hết Quota trong phiên làm việc để bỏ qua tức thì (0ms)
+const exhaustedQuotaSet = new Set();
+
+function getGeminiApiKey() {
+    return (typeof storeSettings !== 'undefined' && storeSettings.geminiApiKey)
+        || localStorage.getItem('hh_gemini_api_key')
+        || '';
+}
+
+// Tách danh sách nhiều API Key (nếu bạn nhập nhiều Key cách nhau bằng dấu phẩy hoặc khoảng trắng)
+function getGeminiApiKeyList() {
+    const raw = getGeminiApiKey();
+    return raw.split(/[,;\s\n]+/).map(k => k.trim()).filter(k => k.length > 10);
+}
+
+function toggleZaloAiKeyBox() {
+    const box = document.getElementById('zalo-ai-key-box');
+    if (!box) return;
+    box.classList.toggle('hidden');
+    if (!box.classList.contains('hidden')) {
+        const inp = document.getElementById('zalo-gemini-api-key');
+        if (inp) {
+            inp.value = getGeminiApiKey();
+            inp.focus();
+        }
+    }
+}
+
+async function saveZaloGeminiApiKey() {
+    const inp = document.getElementById('zalo-gemini-api-key');
+    const key = (inp?.value || '').trim();
+    localStorage.setItem('hh_gemini_api_key', key);
+    if (typeof storeSettings !== 'undefined') {
+        storeSettings.geminiApiKey = key;
+        localStorage.setItem('hh_store_settings', JSON.stringify(storeSettings));
+        try {
+            await db.collection("shop_data").doc("settings").set({ geminiApiKey: key }, { merge: true });
+        } catch (e) {}
+    }
+    document.getElementById('zalo-ai-key-box')?.classList.add('hidden');
+    const st = document.getElementById('zalo-ai-status');
+    if (st) st.innerHTML = key ? `<span class="text-emerald-600 font-bold">✅ Đã lưu Gemini API Key! Bấm "AI Phân Tích" hoặc dán tin nhắn để dùng.</span>` : `Đã xóa API Key.`;
+    if (key && document.getElementById('zalo-input-text')?.value.trim()) {
+        runGeminiZaloParse();
+    }
+}
+
 function openZaloModal() {
     document.getElementById('zalo-nlp-modal').classList.remove('hidden');
+    const chk = document.getElementById('chk-zalo-default-wholesale');
+    if (chk) chk.checked = zaloDefaultWholesaleUnit;
     setTimeout(() => document.getElementById('zalo-input-text').focus(), 100);
     previewZaloParse();
 }
@@ -119,21 +170,87 @@ function closeZaloModal() {
 }
 
 function fillSampleZaloText() {
-    const sampleItems = inventory.slice(0, 3);
-    if (sampleItems.length > 0) {
-        const lines = sampleItems.map((item, idx) => {
-            const u = item.units.length > 1 ? item.units[item.units.length - 1].unitName : item.baseUnit;
-            return `${idx + 2} ${u} ${item.name}`;
-        });
-        document.getElementById('zalo-input-text').value = "Lấy em đơn này nhé:\n" + lines.join(", ");
-    } else {
-        document.getElementById('zalo-input-text').value = "Lấy em 5 thùng tiger nâu, 2 lốc bò húc\n10 gói mì hảo hảo";
-    }
+    document.getElementById('zalo-input-text').value = "10 Sunlight Vàng 1l, 2 lốc Headsouder 650g\n5 sài gòn xanh, 3 dây dầu gội dove";
     previewZaloParse();
+    if (getGeminiApiKey()) runGeminiZaloParse();
+}
+
+// Khi bật/tắt Checkbox [x] Mặc định nhập sỉ (Thùng/Cây): Cập nhật ngay ĐVT của các dòng không ghi rõ đơn vị
+function onToggleZaloDefaultWholesaleUnit(isChecked) {
+    zaloDefaultWholesaleUnit = !!isChecked;
+    localStorage.setItem('hh_zalo_default_wholesale', zaloDefaultWholesaleUnit ? 'true' : 'false');
+
+    lastParsedZaloItems.forEach(row => {
+        if (!row.hasExplicitUnit) {
+            if (row.matched && row.product) {
+                row.unitIndex = resolveZaloUnitIndex(row.product, '', zaloDefaultWholesaleUnit);
+            } else {
+                row.customUnit = zaloDefaultWholesaleUnit ? 'Thùng' : 'Cái';
+            }
+        }
+    });
+    renderZaloPreviewTable();
+}
+
+// Hàm chọn ĐVT chuẩn xác:
+// 1. Nếu khách ghi rõ ĐVT ("thùng", "lốc", "dây", "cây", "hộp"...) -> Match chính xác ĐVT đó trong product.units
+// 2. Nếu khách KHÔNG ghi ĐVT -> Dựa vào Checkbox Mặc định nhập sỉ để lấy ĐVT lớn nhất (Thùng/Cây) hoặc nhỏ nhất (Lẻ)
+function resolveZaloUnitIndex(product, explicitUnitRaw, preferWholesaleMax = true) {
+    if (!product || !Array.isArray(product.units) || product.units.length === 0) return 0;
+
+    const normExplicit = removeVN(explicitUnitRaw || '');
+    if (normExplicit) {
+        // 1a. Khớp chính xác tên ĐVT (VD: "thung" == "thung", "loc" == "loc", "day" == "day")
+        let exactIdx = product.units.findIndex(u => removeVN(u.unitName) === normExplicit);
+        if (exactIdx !== -1) return exactIdx;
+
+        // 1b. Khớp chứa từ khóa (VD: trong kho đặt tên ĐVT là "Thùng 24", "Lốc 6", "Dây 10")
+        let partialIdx = product.units.findIndex(u => {
+            const uNorm = removeVN(u.unitName);
+            return uNorm.includes(normExplicit) || normExplicit.includes(uNorm);
+        });
+        if (partialIdx !== -1) return partialIdx;
+
+        // 1c. Khớp nhóm đơn vị tương đương trong ngành tạp hóa sỉ
+        const bigGroup = ['thung', 'ket', 'bao', 'cay'];
+        const midGroup = ['loc', 'day', 'hop', 'bich', 'tui', 'vi'];
+        if (bigGroup.includes(normExplicit) && product.units.length > 1) {
+            // Tìm ĐVT có conversionRate lớn nhất
+            let maxIdx = 0, maxRate = 0;
+            product.units.forEach((u, idx) => {
+                if ((Number(u.conversionRate) || 1) >= maxRate) {
+                    maxRate = Number(u.conversionRate) || 1;
+                    maxIdx = idx;
+                }
+            });
+            return maxIdx;
+        }
+        if (midGroup.includes(normExplicit) && product.units.length > 1) {
+            // Tìm ĐVT trung gian (conversionRate > 1 nhưng nhỏ hơn Thùng, hoặc lấy phần tử số 1)
+            const midIdx = product.units.findIndex(u => Number(u.conversionRate) > 1 && Number(u.conversionRate) <= 12);
+            if (midIdx !== -1) return midIdx;
+        }
+    }
+
+    // 2. Không có ĐVT rõ ràng trong tin nhắn -> Kiểm tra Checkbox "Mặc định nhập sỉ (Thùng/Cây)"
+    if (preferWholesaleMax && product.units.length > 1) {
+        let maxIdx = 0;
+        let maxRate = -1;
+        product.units.forEach((u, idx) => {
+            const rate = Number(u.conversionRate) || 1;
+            if (rate >= maxRate) {
+                maxRate = rate;
+                maxIdx = idx;
+            }
+        });
+        return maxIdx;
+    }
+
+    return 0; // Mặc định ĐVT cơ bản nhỏ nhất
 }
 
 // =========================================================================
-// BẢNG TỪ ĐIỂN ALIAS (TỪ ĐỒNG NGHĨA / PHÁT ÂM SAI / TỪ LÓNG PHỔ BIẾN TRÊN ZALO)
+// BẢNG TỪ ĐIỂN ALIAS & THUẬT TOÁN FUZZY MATCHING
 // =========================================================================
 const ZALO_ALIAS_MAP = {
     "sunght": "sunlight",
@@ -146,6 +263,8 @@ const ZALO_ALIAS_MAP = {
     "hedsoden": "head shoulders",
     "hed soden": "head shoulders",
     "het soden": "head shoulders",
+    "headsouder": "head shoulders",
+    "head souder": "head shoulders",
     "head & shoulders": "head shoulders",
     "liboy": "lifebuoy",
     "laiboy": "lifebuoy",
@@ -161,7 +280,6 @@ const ZALO_ALIAS_MAP = {
     "stin": "sting"
 };
 
-// Thuật toán Levenshtein Distance tính khoảng cách sai khác giữa 2 chuỗi
 function getLevenshteinDistance(a, b) {
     if (!a || !b) return (a || b).length;
     const m = a.length, n = b.length;
@@ -173,25 +291,22 @@ function getLevenshteinDistance(a, b) {
         for (let j = 1; j <= n; j++) {
             const cost = a[i - 1] === b[j - 1] ? 0 : 1;
             dp[i][j] = Math.min(
-                dp[i - 1][j] + 1,      // Xóa
-                dp[i][j - 1] + 1,      // Chèn
-                dp[i - 1][j - 1] + cost // Thay thế
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + cost
             );
         }
     }
     return dp[m][n];
 }
 
-// Tính tỷ lệ sai khác Fuzzy (0.0 = giống hệt 100%, <= 0.38 là sai 1-2 ký tự)
 function calcFuzzyRatio(queryStr, targetStr) {
     if (!queryStr || !targetStr) return 1;
     if (queryStr === targetStr) return 0;
 
-    // 1. So sánh trực tiếp toàn chuỗi
     const maxLen = Math.max(queryStr.length, targetStr.length);
     let minRatio = getLevenshteinDistance(queryStr, targetStr) / maxLen;
 
-    // 2. So sánh theo cửa sổ cụm từ (N-gram sliding window) nếu tên sản phẩm trong kho dài hơn cụm khách gõ
     const qWords = queryStr.split(/\s+/).filter(Boolean);
     const tWords = targetStr.split(/\s+/).filter(Boolean);
 
@@ -200,7 +315,6 @@ function calcFuzzyRatio(queryStr, targetStr) {
             const subTarget = tWords.slice(i, i + qWords.length).join(' ');
             const subMax = Math.max(queryStr.length, subTarget.length);
             const dist = getLevenshteinDistance(queryStr, subTarget);
-            // Cộng nhẹ 0.03 điểm phạt nếu khớp một phần tên để luôn ưu tiên khớp toàn bộ tên hơn
             const ratio = (dist / subMax) + (tWords.length > qWords.length ? 0.03 : 0);
             if (ratio < minRatio) minRatio = ratio;
         }
@@ -209,35 +323,110 @@ function calcFuzzyRatio(queryStr, targetStr) {
     return minRatio;
 }
 
-// Hàm làm sạch câu (Sanitize) & Ánh xạ Alias trước khi bóc tách
 function sanitizeAndAliasZaloLine(rawLine) {
     if (!rawLine) return '';
     let s = rawLine.trim();
 
-    // 1. Tách chữ cái viết tắt (L, C, T, B, G...) dính số ở đầu dòng (VD: "L20 quẹt" -> "20 quẹt")
-    s = s.replace(/^[lctbgkLCTBGK](\d+)\b/g, '$1 ');
+    // Chỉ tách chữ L, C, T, B, G đứng ĐẦU DÒNG nếu theo sau là số và khoảng trắng (VD: "L20 quẹt" -> "20 quẹt"), KHÔNG tách mã sản phẩm như "E100"
+    s = s.replace(/^[lctbgkLCTBGK](\d+)(?=\s)/g, '$1 ');
 
-    // 2. Loại bỏ các cụm từ đệm đa âm tiết và đơn âm tiết
+    // Loại bỏ từ đệm giao tiếp
     s = s.replace(/(?:^|\s)(?:ít\s+khói|it\s+khoi)(?=\s|$|[,;])/gi, ' ');
-    s = s.replace(/(?:^|\s)(?:lấy|lay|cho|gửi|gui|kèm|kem|vòi|voi|thường|thuong|loại|loai|em|anh|chị|chi|mình|minh|nhé|nhe|nha|ạ)(?=\s|$|[,;])/gi, ' ');
+    s = s.replace(/(?:^|\s)(?:lấy|lay|cho|gửi|gui|kèm|kem|em|anh|chị|chi|mình|minh|nhé|nhe|nha|ạ)(?=\s|$|[,;])/gi, ' ');
 
-    // 3. Ánh xạ bảng từ điển Alias (hỗ trợ cả cụm có dấu/ký tự đặc biệt và không dấu)
-    let normCheck = removeVN(s);
+    // Ánh xạ bảng từ điển Alias
     Object.keys(ZALO_ALIAS_MAP).forEach(badWord => {
         const goodWord = ZALO_ALIAS_MAP[badWord];
         const escapedBad = badWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const rgx = new RegExp(`(^|\\s)${escapedBad}(?=\\s|$)`, 'gi');
         s = s.replace(rgx, `$1${goodWord}`);
-        normCheck = normCheck.replace(rgx, `$1${goodWord}`);
     });
 
     return s.replace(/\s+/g, ' ').trim();
 }
 
+// Tìm sản phẩm khớp nhất trong kho từ tên mặt hàng đã bóc tách
+function findBestProductMatchInInventory(rawItemName, explicitUnit = '') {
+    let cleanItemPart = removeVN(sanitizeAndAliasZaloLine(rawItemName));
+    if (!cleanItemPart) return { matchedItem: null, isFuzzy: false };
+
+    if (ZALO_ALIAS_MAP[cleanItemPart]) {
+        cleanItemPart = removeVN(ZALO_ALIAS_MAP[cleanItemPart]);
+    }
+
+    const sortedKeywords = [];
+    inventory.forEach(prod => {
+        const kwList = Array.isArray(prod.keywords) ? prod.keywords : [];
+        const extraKw = typeof prod.zaloKeywords === 'string' ? prod.zaloKeywords.split(',') : [];
+        const allKeywords = [prod.name, ...kwList, ...extraKw]
+            .map(k => removeVN(k))
+            .filter(k => k.length > 0);
+
+        [...new Set(allKeywords)].forEach(kw => {
+            sortedKeywords.push({ keyword: kw, product: prod, length: kw.length });
+        });
+    });
+    sortedKeywords.sort((a, b) => b.length - a.length);
+
+    const cleanItemWithUnit = explicitUnit ? `${cleanItemPart} ${removeVN(explicitUnit)}` : cleanItemPart;
+
+    // Lượt 1: Khớp chính xác toàn cụm hoặc từ khóa dài nhất
+    for (const item of sortedKeywords) {
+        const kw = item.keyword;
+        const regex = new RegExp(`(^|\\s)${kw}(\\s|$)`, 'i');
+        if (regex.test(cleanItemPart) || (explicitUnit && kw !== removeVN(explicitUnit) && regex.test(cleanItemWithUnit))) {
+            return { matchedItem: item.product, isFuzzy: false };
+        }
+    }
+
+    // Lượt 2: Khớp nếu khách gõ ngắn hơn tên trong kho
+    if (cleanItemPart.length >= 3) {
+        const queryRegex = new RegExp(`(^|\\s)${cleanItemPart}(\\s|$)`, 'i');
+        for (const item of sortedKeywords) {
+            if (queryRegex.test(item.keyword)) {
+                return { matchedItem: item.product, isFuzzy: false };
+            }
+        }
+    }
+
+    // Lượt 3: Fuzzy Matching (Levenshtein Distance) nhưng ưu tiên tuyệt đối sản phẩm có cùng con số dung tích (1l, 650g, 400ml...)
+    if (cleanItemPart.length >= 3) {
+        const queryNums = (cleanItemPart.match(/\d+[a-z]*/g) || []);
+        let bestRatio = 0.38;
+        let bestCandidate = null;
+        const queryTokens = cleanItemPart.split(/\s+/);
+
+        for (const item of sortedKeywords) {
+            const kwTokens = item.keyword.split(/\s+/);
+            if (queryTokens.length >= 4 && kwTokens.length <= 2) continue;
+
+            // Nếu tên khách nhắn có chứa thông số dung tích/khối lượng (VD: "1l", "650g") mà từ khóa sản phẩm có số khác (VD: "400ml"), phạt điểm để tránh bắt nhầm!
+            const kwNums = (item.keyword.match(/\d+[a-z]*/g) || []);
+            let specPenalty = 0;
+            if (queryNums.length > 0 && kwNums.length > 0) {
+                const hasSameNum = queryNums.some(qn => kwNums.includes(qn));
+                if (!hasSameNum) specPenalty = 0.25;
+            }
+
+            const ratio = calcFuzzyRatio(cleanItemPart, item.keyword) + specPenalty;
+            if (ratio <= bestRatio) {
+                bestRatio = ratio;
+                bestCandidate = item.product;
+            }
+        }
+
+        if (bestCandidate) {
+            return { matchedItem: bestCandidate, isFuzzy: true };
+        }
+    }
+
+    return { matchedItem: null, isFuzzy: false };
+}
+
 function parseZaloTextToItems(rawText) {
     if (!rawText || !rawText.trim()) return [];
 
-    // Danh sách từ khóa đơn vị tính chuẩn (hỗ trợ cả có dấu & không dấu)
+    // Danh sách từ khóa đơn vị tính đặt hàng (KHÔNG bao gồm đơn vị đo dung tích/trọng lượng lẻ như ml, l, g, gr)
     const unitPattern = 'thùng|thung|lốc|loc|két|ket|cây|cay|dây|day|bịch|bich|bao|hộp|hop|lon|chai|gói|goi|túi|tui|cái|cai|ký|ky|kg|vỉ|vi';
     const commonUnits = ['thung', 'loc', 'ket', 'cay', 'day', 'bich', 'bao', 'hop', 'lon', 'chai', 'goi', 'tui', 'cai', 'ky', 'kg', 'vi'];
     const unitHintMap = {
@@ -246,13 +435,14 @@ function parseZaloTextToItems(rawText) {
         goi: 'Gói', tui: 'Túi', cai: 'Cái', ky: 'Kg', kg: 'Kg', vi: 'Vỉ'
     };
 
+    // Mẫu nhận diện thông số dung tích / trọng lượng đi kèm tên sản phẩm (VD: 1l, 1.5l, 650g, 400ml, 500gr, 180ml...)
+    const specMeasurePattern = '\\d+(?:[.,]\\d+)?\\s*(?:ml|l|lit|lít|g|gr|gam|mg|cm|mm|oz|%)(?=\\b|\\s|$)';
+
     // =========================================================================
-    // BƯỚC 1: CHUẨN HÓA, SANITIZE & TÁCH CÂU ĐỘC LẬP (SENTENCE TOKENIZATION)
+    // BƯỚC 1: CHUẨN HÓA & TÁCH CÂU (KHÔNG BAO GIỜ CẮT NHẦM DUNG TÍCH 1L, 650G, E100)
     // =========================================================================
     const cleanedInput = rawText
-        // Bỏ các cụm chào hỏi đầu tin nhắn (VD: "Lấy em đơn này nhé:")
         .replace(/^(?:lấy|lay|cho|đặt|dat|gửi|gui)\s+(?:cho\s+)?(?:em|anh|chị|chi|mình|minh)?\s*(?:đơn\s+này\s+)?(?:nhé|nhe|nha|ạ)?\s*[:,-]?/gi, ' ')
-        // Biến các từ nối ("với", "và", "thêm") thành dấu phẩy để ngắt câu
         .replace(/(?:^|\s)(?:với|voi|và|va|thêm|them)(?=\s|$)/gi, ',');
 
     const normalizedLines = [];
@@ -262,18 +452,18 @@ function parseZaloTextToItems(rawText) {
             let cleanChunk = chunk.replace(/^[-*•+.\s]+/, '').trim();
             if (!cleanChunk) return;
 
-            // Tách "L20 quẹt" -> "20 quẹt" ngay đầu mỗi vế câu
-            cleanChunk = cleanChunk.replace(/^[lctbgkLCTBGK](\d+)\b/g, '$1 ');
+            cleanChunk = cleanChunk.replace(/^[lctbgkLCTBGK](\d+)(?=\s)/g, '$1 ');
 
-            // Tách số dính liền đơn vị tính (VD: "6thung 247" -> "6 thung 247")
+            // Chỉ tách số dính liền với ĐVT đặt hàng (VD: "6thung" -> "6 thung", "2loc" -> "2 loc"), KHÔNG đụng vào "1l", "650g", "400ml"
             cleanChunk = cleanChunk.replace(
-                new RegExp(`(\\d+)\\s*(${unitPattern})(?=\\s|$|[,;+])`, 'gi'),
-                '$1 $2'
+                new RegExp(`(^|\\s)(\\d+)\\s*(${unitPattern})(?=\\s|$|[,;+])`, 'gi'),
+                '$1$2 $3'
             );
 
-            // Regex tách các món viết dính liền trên cùng 1 dòng (VD: "4 one chanh 2 one vàng")
+            // Tách các món viết liền trên cùng 1 dòng (VD: "4 one chanh 2 one vàng")
+            // QUAN TRỌNG: Bắt buộc sau số lượng phải có khoảng trắng `\\s+` VÀ không phải là thông số dung tích (1l, 650g, 400ml)
             const chainSplitRegex = new RegExp(
-                `(?<=\\S)\\s+(?=\\d+\\s*(?:(?:${unitPattern})\\s+[a-zA-ZÀ-ỹ0-9]|(?!(?:${unitPattern})(?=\\s|$))[a-zA-ZÀ-ỹ]))`,
+                `(?<=\\S)\\s+(?=\\d+\\s+(?!${specMeasurePattern})(?:(?:${unitPattern})\\s+[a-zA-ZÀ-ỹ0-9]|(?!(?:${unitPattern})(?=\\s|$))[a-zA-ZÀ-ỹ]{2,}))`,
                 'gi'
             );
 
@@ -288,33 +478,12 @@ function parseZaloTextToItems(rawText) {
         });
 
     // =========================================================================
-    // BƯỚC 2: SẮP XẾP TỪ KHÓA SẢN PHẨM THEO ĐỘ DÀI GIẢM DẦN (LONGEST MATCH FIRST)
+    // BƯỚC 2: BÓC TÁCH SỐ LƯỢNG (QTY) - ĐƠN VỊ (UNIT) - TÊN HÀNG (BẢO TOÀN 1L, 650G, E100)
     // =========================================================================
-    const sortedKeywords = [];
-    inventory.forEach(prod => {
-        const kwList = Array.isArray(prod.keywords) ? prod.keywords : [];
-        const extraKw = typeof prod.zaloKeywords === 'string' ? prod.zaloKeywords.split(',') : [];
-        const allKeywords = [prod.name, ...kwList, ...extraKw]
-            .map(k => removeVN(k))
-            .filter(k => k.length > 0);
-
-        const uniqueKeywords = [...new Set(allKeywords)];
-        uniqueKeywords.forEach(kw => {
-            sortedKeywords.push({
-                keyword: kw,
-                product: prod,
-                length: kw.length
-            });
-        });
-    });
-    sortedKeywords.sort((a, b) => b.length - a.length);
-
-    // =========================================================================
-    // BƯỚC 3: BÓC TÁCH SỐ LƯỢNG (QTY) - ĐƠN VỊ (UNIT) - TÊN HÀNG & FUZZY MATCH
-    // =========================================================================
-    const startQtyRegex = new RegExp(`^(\\d+)\\s*(?:[xX*]\\s*)?(?:(${unitPattern})\\s+)?(.+)$`, 'i');
+    // Số lượng ở ĐẦU câu: Bắt buộc sau số phải có khoảng trắng (hoặc dính liền ĐVT chuẩn như 5thùng), KHÔNG bắt nếu số dính hậu tố dung tích (1l, 650g)
+    const startQtyRegex = new RegExp(`^(\\d+)(?!\\s*(?:ml|l|lit|lít|g|gr|gam|mg|cm|mm|oz|%)\\b)\\s+(?:[xX*]\\s*)?(?:(${unitPattern})\\s+)?(.+)$`, 'i');
+    // Số lượng ở CUỐI câu: Chỉ bắt khi số đứng độc lập ở cuối (hoặc kèm ĐVT đặt hàng), KHÔNG bắt nếu số mang hậu tố 1l, 650g, 400ml hoặc dính chữ E100
     const endQtyRegex = new RegExp(`^(.+?)\\s+(?:([xX*]|sl|:)\\s*)?(\\d+)(?:\\s*(${unitPattern}))?$`, 'i');
-    const FUZZY_THRESHOLD = 0.38; // Ngưỡng chuẩn (~0.3 - 0.4) bắt lỗi gõ sai 1-2 ký tự
 
     const results = [];
 
@@ -339,10 +508,13 @@ function parseZaloTextToItems(rawText) {
                 const candidateQty = parseInt(matchEnd[3], 10) || 1;
                 const trailingUnit = matchEnd[4] ? removeVN(matchEnd[4]) : '';
 
-                const fullNorm = removeVN(cleanLine);
-                const isFullLineExactProduct = !hasMultiplier && !trailingUnit && sortedKeywords.some(k => k.keyword === fullNorm);
+                // Bảo vệ các tên sản phẩm kết thúc bằng số hiệu/dung tích (VD: "wake up 247", "bia 333", "keo 502", "kem E100")
+                const fullCheck = findBestProductMatchInInventory(cleanLine, '');
+                const isKnownProductEndingWithNum = !hasMultiplier && !trailingUnit && (
+                    fullCheck.matchedItem !== null || /(?:247|333|502|e100)$/i.test(cleanLine)
+                );
 
-                if (!isFullLineExactProduct) {
+                if (!isKnownProductEndingWithNum) {
                     qty = candidateQty;
                     explicitUnit = trailingUnit;
                     rawItemPart = candidateItem;
@@ -350,7 +522,7 @@ function parseZaloTextToItems(rawText) {
             }
         }
 
-        // Kiểm tra từ đầu/cuối của cụm tên hàng nếu chưa bắt được đơn vị
+        // Nếu chưa bắt được ĐVT ở cạnh số lượng, kiểm tra từ đầu/cuối của cụm tên hàng
         const itemWords = rawItemPart.split(/\s+/);
         if (!explicitUnit && itemWords.length > 1) {
             const firstW = removeVN(itemWords[0]);
@@ -364,97 +536,40 @@ function parseZaloTextToItems(rawText) {
             }
         }
 
-        // Ánh xạ lại Alias lần nữa cho phần tên hàng đã tách số lượng/đơn vị
-        rawItemPart = sanitizeAndAliasZaloLine(rawItemPart);
-        let cleanItemPart = removeVN(rawItemPart);
-        if (!cleanItemPart) return;
-
-        // Ánh xạ trực tiếp nếu toàn bộ cụm từ nằm trong từ điển Alias
-        if (ZALO_ALIAS_MAP[cleanItemPart]) {
-            cleanItemPart = removeVN(ZALO_ALIAS_MAP[cleanItemPart]);
-        }
-
-        const cleanItemWithUnit = explicitUnit ? `${cleanItemPart} ${explicitUnit}` : cleanItemPart;
-
-        let matchedItem = null;
-        let isFuzzyMatched = false;
-
-        // Lượt 1: Khớp chính xác cụm từ khóa (Exact / Sub-phrase Match)
-        for (const item of sortedKeywords) {
-            const kw = item.keyword;
-            const regex = new RegExp(`(^|\\s)${kw}(\\s|$)`, 'i');
-            if (regex.test(cleanItemPart) || (explicitUnit && kw !== explicitUnit && regex.test(cleanItemWithUnit))) {
-                matchedItem = item.product;
-                break;
-            }
-        }
-
-        // Lượt 2: Khớp ngược nếu khách gõ ngắn hơn tên đầy đủ trong kho (nhưng phải từ 2 từ trở lên hoặc >= 4 ký tự để tránh bắt nhầm)
-        if (!matchedItem && cleanItemPart.length >= 3) {
-            const queryWords = cleanItemPart.split(/\s+/);
-            const queryRegex = new RegExp(`(^|\\s)${cleanItemPart}(\\s|$)`, 'i');
-            for (const item of sortedKeywords) {
-                // Nếu khách gõ nhiều từ (VD: "gau do soi pho") mà trong kho chỉ có "gau do", không được tự ý khớp ở Lượt 2 nếu thiếu từ đặc trưng
-                if (queryRegex.test(item.keyword)) {
-                    matchedItem = item.product;
-                    break;
-                }
-            }
-        }
-
-        // Lượt 3: TÌM KIẾM GẦN ĐÚNG (FUZZY MATCHING - LEVENSHTEIN DISTANCE VỚI THRESHOLD ~0.38)
-        if (!matchedItem && cleanItemPart.length >= 3) {
-            let bestRatio = FUZZY_THRESHOLD;
-            let bestCandidate = null;
-            const queryTokens = cleanItemPart.split(/\s+/);
-
-            for (const item of sortedKeywords) {
-                const kwTokens = item.keyword.split(/\s+/);
-                // Chặn bắt nhầm món mới có nhiều thuộc tính phụ (VD: "gấu đỏ sợi phở" 4 từ không được ép vào "mì gấu đỏ" nếu lệch cấu trúc)
-                if (queryTokens.length >= 4 && kwTokens.length <= 2) continue;
-
-                const ratio = calcFuzzyRatio(cleanItemPart, item.keyword);
-                if (ratio <= bestRatio) {
-                    bestRatio = ratio;
-                    bestCandidate = item.product;
-                }
-            }
-
-            if (bestCandidate) {
-                matchedItem = bestCandidate;
-                isFuzzyMatched = true;
-            }
-        }
+        const hasExplicitUnit = !!explicitUnit;
+        const { matchedItem, isFuzzy } = findBestProductMatchInInventory(rawItemPart, explicitUnit);
 
         if (matchedItem) {
-            let chosenUnitIdx = 0;
-            if (explicitUnit && Array.isArray(matchedItem.units)) {
-                const foundIdx = matchedItem.units.findIndex(u => removeVN(u.unitName) === explicitUnit);
-                if (foundIdx !== -1) chosenUnitIdx = foundIdx;
-            }
-
+            const chosenUnitIdx = resolveZaloUnitIndex(matchedItem, explicitUnit, zaloDefaultWholesaleUnit);
             results.push({
                 rawSegment: lineObj.rawOriginal,
-                sanitizedSegment: cleanItemPart,
+                sanitizedSegment: removeVN(rawItemPart),
                 matched: true,
-                isFuzzy: isFuzzyMatched,
+                isFuzzy: isFuzzy,
+                isAiMatched: false,
+                hasExplicitUnit: hasExplicitUnit,
+                explicitUnit: explicitUnit,
                 product: matchedItem,
                 unitIndex: chosenUnitIdx,
                 qty: qty
             });
         } else {
-            const guessedUnit = unitHintMap[explicitUnit] || 'Cái';
+            const defaultUnmatchedUnit = hasExplicitUnit
+                ? (unitHintMap[explicitUnit] || 'Cái')
+                : (zaloDefaultWholesaleUnit ? 'Thùng' : 'Cái');
             const cleanName = (rawItemPart || lineObj.rawOriginal).trim();
 
             results.push({
                 rawSegment: lineObj.rawOriginal,
-                sanitizedSegment: cleanItemPart,
+                sanitizedSegment: removeVN(rawItemPart),
                 matched: false,
+                hasExplicitUnit: hasExplicitUnit,
+                explicitUnit: explicitUnit,
                 product: null,
                 unitIndex: 0,
                 qty: qty,
                 customName: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
-                customUnit: guessedUnit,
+                customUnit: defaultUnmatchedUnit,
                 customPrice: 0,
                 saveToDb: true
             });
@@ -462,6 +577,264 @@ function parseZaloTextToItems(rawText) {
     });
 
     return results;
+}
+
+// =========================================================================
+// TÍCH HỢP TRỰC TIẾP GEMINI 3.8 FLASH API ĐỂ ĐỌC HIỂU NGỮ CẢNH ĐƠN ZALO
+// =========================================================================
+function onPasteZaloText() {
+    // Chỉ chạy bộ lọc nội bộ tức thì khi dán, giữ nguyên lượt Quota AI cho đến khi bấm nút "AI Phân Tích"
+    setTimeout(() => {
+        previewZaloParse();
+    }, 50);
+}
+
+let isZaloAiCancelled = false;
+
+function stopGeminiZaloRetry() {
+    isZaloAiCancelled = true;
+}
+
+async function runGeminiZaloParse() {
+    const rawText = (document.getElementById('zalo-input-text')?.value || '').trim();
+    if (!rawText) return alert("Vui lòng dán hoặc nhập nội dung tin nhắn Zalo trước!");
+
+    const apiKeys = getGeminiApiKeyList();
+    if (apiKeys.length === 0) {
+        toggleZaloAiKeyBox();
+        return alert("Vui lòng dán mã Gemini API Key (miễn phí từ aistudio.google.com) vào ô cấu hình!\n💡 Mẹo: Bạn có thể dán 2-3 Key cách nhau bằng dấu phẩy (,) để không bao giờ hết lượt.");
+    }
+
+    const btn = document.getElementById('btn-run-gemini-zalo');
+    const statusEl = document.getElementById('zalo-ai-status');
+    const origBtnHtml = btn ? btn.innerHTML : '';
+
+    isZaloAiCancelled = false;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-bolt fa-beat text-amber-300"></i> AI đang xử lý...`;
+    }
+
+    // Nén gọn danh mục kho thành chuỗi 1 dòng siêu nhẹ để tốn ít token nhất
+    const compactCatalog = inventory.map(p => {
+        const kw = Array.isArray(p.keywords) && p.keywords.length > 0 ? ` (${p.keywords.join(',')})` : '';
+        const u = (p.units || []).map(x => x.unitName).join('|');
+        return `${p.id}:${p.name}${kw}[${u}]`;
+    }).join('\n');
+
+    const systemPrompt = `Bạn là trợ lý AI chuyên bóc tách đơn đặt hàng sỉ tạp hóa từ tin nhắn Zalo tiếng Việt.
+NHIỆM VỤ QUAN TRỌNG:
+1. Tách tin nhắn của khách thành danh sách từng mặt hàng đặt mua.
+2. Phân biệt TUYỆT ĐỐI CHÍNH XÁC giữa SỐ LƯỢNG MUA (qty) và DUNG TÍCH / TRỌNG LƯỢNG / MÃ SỐ nằm trong tên sản phẩm:
+   - Ví dụ: "10 Sunlight Vàng 1l" -> qty = 10, explicitUnit = "", productName = "Sunlight Vàng 1l" ("1l" là dung tích 1 lít, KHÔNG PHẢI số lượng 1).
+   - Ví dụ: "2 lốc Headsouder 650g" -> "650g" là trọng lượng 650 gam, KHÔNG PHẢI số lượng 650.
+   - Ví dụ: "5 kem E100", "6 thùng 247", "3 thùng 333", "10 keo 502" -> "E100", "247", "333", "502" là tên sản phẩm.
+3. Bắt đúng ĐƠN VỊ TÍNH (explicitUnit):
+   - Nếu khách có nhắc tới đơn vị (thùng, lốc, dây, cây, hộp, két, bịch, bao, lon, chai, gói, cái, kg, vỉ...), trả về vào "explicitUnit".
+   - Nếu khách KHÔNG ghi rõ đơn vị tính, bắt buộc trả về "explicitUnit": "".
+4. Đối chiếu với DANH MỤC KHO (định dạng ID:Tên(từ_khóa)[ĐVT]):
+   - Nếu khớp sản phẩm (chấp nhận viết tắt, sai chính tả như "Headsouder" = "Head & Shoulders", khớp đúng dung tích 1l vs 400ml), trả về đúng mã ID vào "productId".
+   - Nếu chưa có trong kho, trả về "productId": null.
+
+Chỉ trả về JSON Array hợp lệ:
+[{"rawSegment":"...","qty":1,"explicitUnit":"...","productName":"...","productId":"..."}]`;
+
+    const userPrompt = `DANH MỤC KHO:\n${compactCatalog}\n\nTIN NHẮN KHÁCH ĐẶT HÀNG:\n"""\n${rawText}\n"""`;
+
+    // Ưu tiên các Model có hạn mức Free Tier cao (500 - 1500 req/ngày) lên đầu, đẩy 3.8-flash (20 req/ngày) xuống làm dự phòng
+    const CANDIDATE_MODELS = [
+        "gemini-3.5-flash-lite",  // 1.500 lượt/ngày (Model Flash-Lite mới nhất 2026, tốc độ cực nhanh)
+        "gemini-3.1-flash-lite",  // 1.500 lượt/ngày (Dự phòng 1)
+        "gemini-2.5-flash-lite",  // 1.500 lượt/ngày (Dự phòng 2)
+        "gemini-3.8-flash"        // 20 lượt/ngày (Để cuối cùng phòng khi các bản Lite bị nghẽn)
+    ];
+
+    // Tạo danh sách tất cả tổ hợp (API Key + Model) chưa bị hết Quota
+    let routeQueue = [];
+    for (const key of apiKeys) {
+        for (const model of CANDIDATE_MODELS) {
+            const routeId = `${key.slice(-6)}_${model}`;
+            if (!exhaustedQuotaSet.has(routeId)) {
+                routeQueue.push({ key, model, routeId });
+            }
+        }
+    }
+    // Nếu tất cả đều từng bị đánh dấu hết quota thì reset thử lại từ đầu
+    if (routeQueue.length === 0) {
+        exhaustedQuotaSet.clear();
+        for (const key of apiKeys) {
+            for (const model of CANDIDATE_MODELS) {
+                routeQueue.push({ key, model, routeId: `${key.slice(-6)}_${model}` });
+            }
+        }
+    }
+
+    let attempt = 0;
+    let successData = null;
+    let lastError = null;
+    let usedModelName = "";
+    const MAX_ATTEMPTS = Math.max(12, routeQueue.length * 2);
+
+    while (attempt < MAX_ATTEMPTS && routeQueue.length > 0 && !isZaloAiCancelled) {
+        const currentRoute = routeQueue[attempt % routeQueue.length];
+        attempt++;
+
+        if (statusEl) {
+            statusEl.innerHTML = `
+                <span class="text-inni-blue font-bold">
+                    <i class="fa-solid fa-circle-notch fa-spin mr-1"></i>Đang phân tích bằng luồng <b>${currentRoute.model}</b> (Lần #${attempt})...
+                    <button type="button" onclick="stopGeminiZaloRetry()" class="ml-2 text-red-500 underline text-[10px] font-black">Dừng</button>
+                </span>`;
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6500);
+
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentRoute.model}:generateContent?key=${encodeURIComponent(currentRoute.key)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
+                body: JSON.stringify({
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+                    generationConfig: {
+                        temperature: 0.1,
+                        responseMimeType: "application/json"
+                    }
+                })
+            });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                const errBody = await response.json().catch(() => ({}));
+                const errMsg = (errBody?.error?.message || `HTTP ${response.status}`).toLowerCase();
+
+                // 1. Nếu API Key bị lỗi, sai hoặc khóa -> Loại bỏ API Key này khỏi danh sách
+                if (response.status === 400 || response.status === 403) {
+                    routeQueue = routeQueue.filter(r => r.key !== currentRoute.key);
+                    lastError = new Error(`API Key bị lỗi hoặc bị khóa`);
+                    continue;
+                }
+
+                // 2. Nhận diện lỗi HẾT LƯỢT CẢ NGÀY (Chứa "per day", "free_tier_requests" hoặc model 20 lượt)
+                const isDailyExhausted = errMsg.includes('per day') || errMsg.includes('free_tier_requests') || (response.status === 429 && errMsg.includes('limit: 20'));
+
+                // 3. Nếu thực sự hết lượt của ngày -> Khóa Model này lại, nhảy qua Model/API Key khác
+                if (isDailyExhausted || response.status === 404) {
+                    exhaustedQuotaSet.add(currentRoute.routeId);
+                    routeQueue = routeQueue.filter(r => r.routeId !== currentRoute.routeId);
+                    console.warn(`🚫 Bỏ qua Model ${currentRoute.model} vì đã hết sạch lượt của ngày hôm nay.`);
+                    lastError = new Error(`Model ${currentRoute.model} đã hết lượt miễn phí hôm nay`);
+                    continue; 
+                }
+
+                // 4. Nếu chỉ là gửi quá nhanh (Rate Limit phút) hoặc Server nghẽn -> ĐỢI 3 GIÂY RỒI THỬ LẠI (KHÔNG KHÓA MODEL)
+                if (response.status === 429 || response.status === 503) {
+                    console.warn(`⏳ Thao tác quá nhanh (Vượt giới hạn phút). Hệ thống tự hãm phanh chờ 3 giây...`);
+                    lastError = new Error(`Hệ thống Google đang nghẽn tạm thời`);
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    continue;
+                }
+
+                throw new Error(errMsg);
+            }
+
+            const data = await response.json();
+            const rawJsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+            const parsed = JSON.parse(rawJsonText);
+
+            if (Array.isArray(parsed)) {
+                successData = parsed;
+                usedModelName = currentRoute.model;
+                break;
+            }
+        } catch (err) {
+            clearTimeout(timeoutId);
+            lastError = err.name === 'AbortError' ? new Error('Quá thời gian chờ 6.5s') : err;
+            if (isZaloAiCancelled) break;
+            // Nghỉ ngắn 250ms khi server 503 bận rồi bắn sang model kế tiếp
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+    }
+
+    try {
+        if (!successData || !Array.isArray(successData)) {
+            throw new Error(lastError?.message || "Tất cả các luồng AI của API Key này đều đã hết hạn mức miễn phí trong ngày.");
+        }
+
+        const unitHintMap = {
+            thung: 'Thùng', loc: 'Lốc', ket: 'Két', cay: 'Cây', day: 'Dây',
+            bich: 'Bịch', bao: 'Bao', hop: 'Hộp', lon: 'Lon', chai: 'Chai',
+            goi: 'Gói', tui: 'Túi', cai: 'Cái', ky: 'Kg', kg: 'Kg', vi: 'Vỉ'
+        };
+
+        lastParsedZaloItems = successData.map(aiRow => {
+            const qty = Math.max(1, parseInt(aiRow.qty, 10) || 1);
+            const explicitUnit = (aiRow.explicitUnit || '').trim();
+            const hasExplicitUnit = explicitUnit.length > 0;
+            const cleanName = (aiRow.productName || aiRow.rawSegment || '').trim();
+
+            let matchedProd = aiRow.productId ? inventory.find(i => i.id === aiRow.productId) : null;
+            if (!matchedProd && cleanName) {
+                const fallback = findBestProductMatchInInventory(cleanName, explicitUnit);
+                matchedProd = fallback.matchedItem;
+            }
+
+            if (matchedProd) {
+                const chosenUnitIdx = resolveZaloUnitIndex(matchedProd, explicitUnit, zaloDefaultWholesaleUnit);
+                return {
+                    rawSegment: aiRow.rawSegment || cleanName,
+                    sanitizedSegment: removeVN(cleanName),
+                    matched: true,
+                    isFuzzy: false,
+                    isAiMatched: true,
+                    hasExplicitUnit: hasExplicitUnit,
+                    explicitUnit: explicitUnit,
+                    product: matchedProd,
+                    unitIndex: chosenUnitIdx,
+                    qty: qty
+                };
+            } else {
+                const normUnit = removeVN(explicitUnit);
+                const guessedUnit = hasExplicitUnit
+                    ? (unitHintMap[normUnit] || explicitUnit.charAt(0).toUpperCase() + explicitUnit.slice(1))
+                    : (zaloDefaultWholesaleUnit ? 'Thùng' : 'Cái');
+
+                return {
+                    rawSegment: aiRow.rawSegment || cleanName,
+                    sanitizedSegment: removeVN(cleanName),
+                    matched: false,
+                    hasExplicitUnit: hasExplicitUnit,
+                    explicitUnit: explicitUnit,
+                    product: null,
+                    unitIndex: 0,
+                    qty: qty,
+                    customName: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
+                    customUnit: guessedUnit,
+                    customPrice: 0,
+                    saveToDb: true
+                };
+            }
+        });
+
+        renderZaloPreviewTable();
+        if (statusEl) {
+            statusEl.innerHTML = `<span class="text-emerald-600 font-bold"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Đã phân tích thành công bằng AI (${usedModelName})!</span>`;
+        }
+    } catch (err) {
+        console.warn("AI Fallback notice:", err.message);
+        // Tự động giữ kết quả của bộ lọc thông minh nội bộ để nhân viên lên đơn ngay không bị gián đoạn
+        previewZaloParse();
+        if (statusEl) {
+            statusEl.innerHTML = `<span class="text-amber-700 font-bold">⚠️ Hết lượt AI miễn phí hôm nay (${err.message}) — Đang dùng bộ lọc thông minh nội bộ. Hãy bấm nút "API Key" ở góc trên để thêm Key phụ!</span>`;
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origBtnHtml;
+        }
+    }
 }
 
 function previewZaloParse() {
@@ -483,11 +856,12 @@ function manualAssignZaloProduct(idx, prodId) {
     if (!prod) return;
 
     const row = lastParsedZaloItems[idx];
-    let uIdx = 0;
-    if (row.customUnit && Array.isArray(prod.units)) {
-        const foundIdx = prod.units.findIndex(u => removeVN(u.unitName) === removeVN(row.customUnit));
-        if (foundIdx !== -1) uIdx = foundIdx;
-    }
+    // Tự động chọn đúng ĐVT khách nhắn hoặc lấy ĐVT lớn nhất nếu đang bật Checkbox Mặc định nhập sỉ
+    const uIdx = resolveZaloUnitIndex(
+        prod,
+        row.hasExplicitUnit ? (row.explicitUnit || row.customUnit) : '',
+        zaloDefaultWholesaleUnit
+    );
 
     row.matched = true;
     row.isManualPicked = true;
@@ -541,9 +915,11 @@ function renderZaloPreviewTable() {
                 return `<option value="${uIdx}" ${uIdx === row.unitIndex ? 'selected' : ''}>${unitObj.unitName} (${formatmoney(p)}đ)</option>`;
             }).join('');
 
-            const matchBadge = row.isFuzzy
-                ? `<span class="ml-1 text-[10px] bg-blue-100 text-inni-blue px-1.5 py-0.5 rounded font-bold" title="Bắt trúng nhờ thuật toán gần đúng Fuzzy">≈ Gần đúng</span>`
-                : '';
+            const matchBadge = row.isAiMatched
+                ? `<span class="ml-1 text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">✨ AI</span>`
+                : (row.isFuzzy
+                    ? `<span class="ml-1 text-[10px] bg-blue-100 text-inni-blue px-1.5 py-0.5 rounded font-bold" title="Bắt trúng nhờ thuật toán gần đúng Fuzzy">≈ Gần đúng</span>`
+                    : '');
 
             matchedRowsHtml.push(`
                 <tr class="bg-emerald-50/40 hover:bg-emerald-50/80 transition">
