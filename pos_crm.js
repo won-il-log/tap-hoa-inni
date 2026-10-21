@@ -132,6 +132,108 @@ function fillSampleZaloText() {
     previewZaloParse();
 }
 
+// =========================================================================
+// BẢNG TỪ ĐIỂN ALIAS (TỪ ĐỒNG NGHĨA / PHÁT ÂM SAI / TỪ LÓNG PHỔ BIẾN TRÊN ZALO)
+// =========================================================================
+const ZALO_ALIAS_MAP = {
+    "sunght": "sunlight",
+    "sunlai": "sunlight",
+    "xunlai": "sunlight",
+    "fancon": "falcon",
+    "phancon": "falcon",
+    "revai": "revive",
+    "rivai": "revive",
+    "hedsoden": "head shoulders",
+    "hed soden": "head shoulders",
+    "het soden": "head shoulders",
+    "head & shoulders": "head shoulders",
+    "liboy": "lifebuoy",
+    "laiboy": "lifebuoy",
+    "lifebouy": "lifebuoy",
+    "komi": "kokomi",
+    "cocomi": "kokomi",
+    "basto": "bato",
+    "jet": "yet",
+    "bo huc": "redbull",
+    "bohuc": "redbull",
+    "sting": "sting",
+    "xting": "sting",
+    "stin": "sting"
+};
+
+// Thuật toán Levenshtein Distance tính khoảng cách sai khác giữa 2 chuỗi
+function getLevenshteinDistance(a, b) {
+    if (!a || !b) return (a || b).length;
+    const m = a.length, n = b.length;
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            dp[i][j] = Math.min(
+                dp[i - 1][j] + 1,      // Xóa
+                dp[i][j - 1] + 1,      // Chèn
+                dp[i - 1][j - 1] + cost // Thay thế
+            );
+        }
+    }
+    return dp[m][n];
+}
+
+// Tính tỷ lệ sai khác Fuzzy (0.0 = giống hệt 100%, <= 0.38 là sai 1-2 ký tự)
+function calcFuzzyRatio(queryStr, targetStr) {
+    if (!queryStr || !targetStr) return 1;
+    if (queryStr === targetStr) return 0;
+
+    // 1. So sánh trực tiếp toàn chuỗi
+    const maxLen = Math.max(queryStr.length, targetStr.length);
+    let minRatio = getLevenshteinDistance(queryStr, targetStr) / maxLen;
+
+    // 2. So sánh theo cửa sổ cụm từ (N-gram sliding window) nếu tên sản phẩm trong kho dài hơn cụm khách gõ
+    const qWords = queryStr.split(/\s+/).filter(Boolean);
+    const tWords = targetStr.split(/\s+/).filter(Boolean);
+
+    if (qWords.length > 0 && tWords.length >= qWords.length) {
+        for (let i = 0; i <= tWords.length - qWords.length; i++) {
+            const subTarget = tWords.slice(i, i + qWords.length).join(' ');
+            const subMax = Math.max(queryStr.length, subTarget.length);
+            const dist = getLevenshteinDistance(queryStr, subTarget);
+            // Cộng nhẹ 0.03 điểm phạt nếu khớp một phần tên để luôn ưu tiên khớp toàn bộ tên hơn
+            const ratio = (dist / subMax) + (tWords.length > qWords.length ? 0.03 : 0);
+            if (ratio < minRatio) minRatio = ratio;
+        }
+    }
+
+    return minRatio;
+}
+
+// Hàm làm sạch câu (Sanitize) & Ánh xạ Alias trước khi bóc tách
+function sanitizeAndAliasZaloLine(rawLine) {
+    if (!rawLine) return '';
+    let s = rawLine.trim();
+
+    // 1. Tách chữ cái viết tắt (L, C, T, B, G...) dính số ở đầu dòng (VD: "L20 quẹt" -> "20 quẹt")
+    s = s.replace(/^[lctbgkLCTBGK](\d+)\b/g, '$1 ');
+
+    // 2. Loại bỏ các cụm từ đệm đa âm tiết và đơn âm tiết
+    s = s.replace(/(?:^|\s)(?:ít\s+khói|it\s+khoi)(?=\s|$|[,;])/gi, ' ');
+    s = s.replace(/(?:^|\s)(?:lấy|lay|cho|gửi|gui|kèm|kem|vòi|voi|thường|thuong|loại|loai|em|anh|chị|chi|mình|minh|nhé|nhe|nha|ạ)(?=\s|$|[,;])/gi, ' ');
+
+    // 3. Ánh xạ bảng từ điển Alias (hỗ trợ cả cụm có dấu/ký tự đặc biệt và không dấu)
+    let normCheck = removeVN(s);
+    Object.keys(ZALO_ALIAS_MAP).forEach(badWord => {
+        const goodWord = ZALO_ALIAS_MAP[badWord];
+        const escapedBad = badWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const rgx = new RegExp(`(^|\\s)${escapedBad}(?=\\s|$)`, 'gi');
+        s = s.replace(rgx, `$1${goodWord}`);
+        normCheck = normCheck.replace(rgx, `$1${goodWord}`);
+    });
+
+    return s.replace(/\s+/g, ' ').trim();
+}
+
 function parseZaloTextToItems(rawText) {
     if (!rawText || !rawText.trim()) return [];
 
@@ -145,42 +247,43 @@ function parseZaloTextToItems(rawText) {
     };
 
     // =========================================================================
-    // BƯỚC 1: CHUẨN HÓA & TÁCH CÂU ĐỘC LẬP (SENTENCE TOKENIZATION)
+    // BƯỚC 1: CHUẨN HÓA, SANITIZE & TÁCH CÂU ĐỘC LẬP (SENTENCE TOKENIZATION)
     // =========================================================================
     const cleanedInput = rawText
         // Bỏ các cụm chào hỏi đầu tin nhắn (VD: "Lấy em đơn này nhé:")
-        .replace(/^(?:lấy|lay|cho|đặt|dat)\s+(?:cho\s+)?(?:em|anh|chị|chi|mình|minh)?\s*(?:đơn\s+này\s+)?(?:nhé|nhe|nha|ạ)?\s*[:,-]?/gi, ' ')
+        .replace(/^(?:lấy|lay|cho|đặt|dat|gửi|gui)\s+(?:cho\s+)?(?:em|anh|chị|chi|mình|minh)?\s*(?:đơn\s+này\s+)?(?:nhé|nhe|nha|ạ)?\s*[:,-]?/gi, ' ')
         // Biến các từ nối ("với", "và", "thêm") thành dấu phẩy để ngắt câu
-        .replace(/(?:^|\s)(?:với|voi|và|va|thêm|them)(?=\s|$)/gi, ',')
-        // Lọc bỏ từ đệm giao tiếp cuối câu
-        .replace(/(?:^|\s)(?:lấy|lay|cho|em|anh|chị|chi|nhé|nhe|nha|ạ)(?=\s|$|[,;])/gi, ' ');
-
-    // Tách số dính liền đơn vị tính (VD: "6thung 247" -> "6 thung 247", "5lon" -> "5 lon")
-    const detachedUnitInput = cleanedInput.replace(
-        new RegExp(`(\\d+)\\s*(${unitPattern})(?=\\s|$|[,;+])`, 'gi'),
-        '$1 $2'
-    );
-
-    // Regex tách các món viết dính liền trên cùng 1 dòng (VD: "4 one chanh 2 one vàng")
-    // Chỉ tách khi sau số lượng là (Đơn vị + Tên hàng) hoặc (Tên hàng không phải đơn vị đơn lẻ cuối câu)
-    // Nhờ đó bảo toàn tuyệt đối "6 thùng 247" và "sting 5 chai" / "sg xanh 3 thung"
-    const chainSplitRegex = new RegExp(
-        `(?<=\\S)\\s+(?=\\d+\\s*(?:(?:${unitPattern})\\s+[a-zA-ZÀ-ỹ0-9]|(?!(?:${unitPattern})(?=\\s|$))[a-zA-ZÀ-ỹ]))`,
-        'gi'
-    );
+        .replace(/(?:^|\s)(?:với|voi|và|va|thêm|them)(?=\s|$)/gi, ',');
 
     const normalizedLines = [];
-    detachedUnitInput
+    cleanedInput
         .split(/[\n,;+]+/)
         .forEach(chunk => {
-            // Loại bỏ ký tự đầu dòng (-, *, •, ., +) trước khi tách chuỗi dính chùm
-            const cleanChunk = chunk.replace(/^[-*•+.\s]+/, '').trim();
+            let cleanChunk = chunk.replace(/^[-*•+.\s]+/, '').trim();
             if (!cleanChunk) return;
+
+            // Tách "L20 quẹt" -> "20 quẹt" ngay đầu mỗi vế câu
+            cleanChunk = cleanChunk.replace(/^[lctbgkLCTBGK](\d+)\b/g, '$1 ');
+
+            // Tách số dính liền đơn vị tính (VD: "6thung 247" -> "6 thung 247")
+            cleanChunk = cleanChunk.replace(
+                new RegExp(`(\\d+)\\s*(${unitPattern})(?=\\s|$|[,;+])`, 'gi'),
+                '$1 $2'
+            );
+
+            // Regex tách các món viết dính liền trên cùng 1 dòng (VD: "4 one chanh 2 one vàng")
+            const chainSplitRegex = new RegExp(
+                `(?<=\\S)\\s+(?=\\d+\\s*(?:(?:${unitPattern})\\s+[a-zA-ZÀ-ỹ0-9]|(?!(?:${unitPattern})(?=\\s|$))[a-zA-ZÀ-ỹ]))`,
+                'gi'
+            );
 
             const subLines = cleanChunk.split(chainSplitRegex);
             subLines.forEach(sub => {
-                const trimmed = sub.replace(/^[-*•+.\s]+/, '').trim();
-                if (trimmed.length > 0) normalizedLines.push(trimmed);
+                const rawSub = sub.replace(/^[-*•+.\s]+/, '').trim();
+                const sanitizedSub = sanitizeAndAliasZaloLine(rawSub);
+                if (sanitizedSub.length > 0) {
+                    normalizedLines.push({ rawOriginal: rawSub, sanitized: sanitizedSub });
+                }
             });
         });
 
@@ -204,21 +307,19 @@ function parseZaloTextToItems(rawText) {
             });
         });
     });
-    // Ưu tiên từ khóa dài nhất lên đầu (VD: "hao hao xao" đứng trước "hao hao", "one chanh" đứng trước "one")
     sortedKeywords.sort((a, b) => b.length - a.length);
 
     // =========================================================================
-    // BƯỚC 3: BÓC TÁCH SỐ LƯỢNG (QTY) - ĐƠN VỊ (UNIT) - TÊN HÀNG (ITEM)
+    // BƯỚC 3: BÓC TÁCH SỐ LƯỢNG (QTY) - ĐƠN VỊ (UNIT) - TÊN HÀNG & FUZZY MATCH
     // =========================================================================
-    // Mẫu 1: Số lượng đứng ĐẦU câu (VD: "6 thùng 247", "3 lon 333", "4 one chanh", "10 gói hảo hảo xào")
     const startQtyRegex = new RegExp(`^(\\d+)\\s*(?:[xX*]\\s*)?(?:(${unitPattern})\\s+)?(.+)$`, 'i');
-    // Mẫu 2: Số lượng đứng CUỐI câu, hỗ trợ kèm đơn vị phía sau (VD: "tiger bạc 3", "sting 5 chai", "sg xanh 3 thung", "hao hao x2")
     const endQtyRegex = new RegExp(`^(.+?)\\s+(?:([xX*]|sl|:)\\s*)?(\\d+)(?:\\s*(${unitPattern}))?$`, 'i');
+    const FUZZY_THRESHOLD = 0.38; // Ngưỡng chuẩn (~0.3 - 0.4) bắt lỗi gõ sai 1-2 ký tự
 
     const results = [];
 
-    normalizedLines.forEach(line => {
-        let cleanLine = line.replace(/^[-*•+.\s]+/, '').trim();
+    normalizedLines.forEach(lineObj => {
+        let cleanLine = lineObj.sanitized;
         if (!cleanLine) return;
 
         let qty = 1;
@@ -227,7 +328,6 @@ function parseZaloTextToItems(rawText) {
 
         const matchStart = cleanLine.match(startQtyRegex);
         if (matchStart) {
-            // Số lượng nằm ở đầu câu -> Bảo toàn nguyên vẹn phần tên phía sau (kể cả tên là số như "247", "333")
             qty = parseInt(matchStart[1], 10) || 1;
             explicitUnit = matchStart[2] ? removeVN(matchStart[2]) : '';
             rawItemPart = matchStart[3].trim();
@@ -239,7 +339,6 @@ function parseZaloTextToItems(rawText) {
                 const candidateQty = parseInt(matchEnd[3], 10) || 1;
                 const trailingUnit = matchEnd[4] ? removeVN(matchEnd[4]) : '';
 
-                // Kiểm tra tránh bắt nhầm số trong tên hàng khi khách gõ mỗi tên không kèm số lượng (VD: "wake up 247")
                 const fullNorm = removeVN(cleanLine);
                 const isFullLineExactProduct = !hasMultiplier && !trailingUnit && sortedKeywords.some(k => k.keyword === fullNorm);
 
@@ -251,7 +350,7 @@ function parseZaloTextToItems(rawText) {
             }
         }
 
-        // Nếu chưa bắt được đơn vị ở cạnh số lượng, kiểm tra từ đầu/cuối của cụm tên hàng
+        // Kiểm tra từ đầu/cuối của cụm tên hàng nếu chưa bắt được đơn vị
         const itemWords = rawItemPart.split(/\s+/);
         if (!explicitUnit && itemWords.length > 1) {
             const firstW = removeVN(itemWords[0]);
@@ -265,28 +364,37 @@ function parseZaloTextToItems(rawText) {
             }
         }
 
-        const cleanItemPart = removeVN(rawItemPart);
+        // Ánh xạ lại Alias lần nữa cho phần tên hàng đã tách số lượng/đơn vị
+        rawItemPart = sanitizeAndAliasZaloLine(rawItemPart);
+        let cleanItemPart = removeVN(rawItemPart);
         if (!cleanItemPart) return;
 
-        // Ghép thêm đơn vị vào tên để thử khớp trước với các mặt hàng có tên gắn liền quy cách (VD: "Sting Chai" từ "sting 5 chai")
+        // Ánh xạ trực tiếp nếu toàn bộ cụm từ nằm trong từ điển Alias
+        if (ZALO_ALIAS_MAP[cleanItemPart]) {
+            cleanItemPart = removeVN(ZALO_ALIAS_MAP[cleanItemPart]);
+        }
+
         const cleanItemWithUnit = explicitUnit ? `${cleanItemPart} ${explicitUnit}` : cleanItemPart;
 
         let matchedItem = null;
+        let isFuzzyMatched = false;
 
-        // Lượt 1: Khớp chính xác cụm từ khóa (Longest Match First) theo ranh giới từ
+        // Lượt 1: Khớp chính xác cụm từ khóa (Exact / Sub-phrase Match)
         for (const item of sortedKeywords) {
             const kw = item.keyword;
             const regex = new RegExp(`(^|\\s)${kw}(\\s|$)`, 'i');
             if (regex.test(cleanItemPart) || (explicitUnit && kw !== explicitUnit && regex.test(cleanItemWithUnit))) {
                 matchedItem = item.product;
-                break; // Khớp từ khóa dài nhất là thoát vòng lặp ngay, chống trùng lặp
+                break;
             }
         }
 
-        // Lượt 2 (Fallback): Nếu kho chưa khai báo từ khóa rút gọn (VD khách gõ "one chanh" cho tên "One Chanh Dâu")
-        if (!matchedItem) {
+        // Lượt 2: Khớp ngược nếu khách gõ ngắn hơn tên đầy đủ trong kho (nhưng phải từ 2 từ trở lên hoặc >= 4 ký tự để tránh bắt nhầm)
+        if (!matchedItem && cleanItemPart.length >= 3) {
+            const queryWords = cleanItemPart.split(/\s+/);
             const queryRegex = new RegExp(`(^|\\s)${cleanItemPart}(\\s|$)`, 'i');
             for (const item of sortedKeywords) {
+                // Nếu khách gõ nhiều từ (VD: "gau do soi pho") mà trong kho chỉ có "gau do", không được tự ý khớp ở Lượt 2 nếu thiếu từ đặc trưng
                 if (queryRegex.test(item.keyword)) {
                     matchedItem = item.product;
                     break;
@@ -294,26 +402,53 @@ function parseZaloTextToItems(rawText) {
             }
         }
 
+        // Lượt 3: TÌM KIẾM GẦN ĐÚNG (FUZZY MATCHING - LEVENSHTEIN DISTANCE VỚI THRESHOLD ~0.38)
+        if (!matchedItem && cleanItemPart.length >= 3) {
+            let bestRatio = FUZZY_THRESHOLD;
+            let bestCandidate = null;
+            const queryTokens = cleanItemPart.split(/\s+/);
+
+            for (const item of sortedKeywords) {
+                const kwTokens = item.keyword.split(/\s+/);
+                // Chặn bắt nhầm món mới có nhiều thuộc tính phụ (VD: "gấu đỏ sợi phở" 4 từ không được ép vào "mì gấu đỏ" nếu lệch cấu trúc)
+                if (queryTokens.length >= 4 && kwTokens.length <= 2) continue;
+
+                const ratio = calcFuzzyRatio(cleanItemPart, item.keyword);
+                if (ratio <= bestRatio) {
+                    bestRatio = ratio;
+                    bestCandidate = item.product;
+                }
+            }
+
+            if (bestCandidate) {
+                matchedItem = bestCandidate;
+                isFuzzyMatched = true;
+            }
+        }
+
         if (matchedItem) {
-            let chosenUnitIdx = 0; // Mặc định chọn đơn vị cơ bản (units[0]: Chai, Lon, Gói...)
+            let chosenUnitIdx = 0;
             if (explicitUnit && Array.isArray(matchedItem.units)) {
                 const foundIdx = matchedItem.units.findIndex(u => removeVN(u.unitName) === explicitUnit);
                 if (foundIdx !== -1) chosenUnitIdx = foundIdx;
             }
 
             results.push({
-                rawSegment: cleanLine,
+                rawSegment: lineObj.rawOriginal,
+                sanitizedSegment: cleanItemPart,
                 matched: true,
+                isFuzzy: isFuzzyMatched,
                 product: matchedItem,
                 unitIndex: chosenUnitIdx,
                 qty: qty
             });
         } else {
             const guessedUnit = unitHintMap[explicitUnit] || 'Cái';
-            const cleanName = (rawItemPart || cleanLine).trim();
+            const cleanName = (rawItemPart || lineObj.rawOriginal).trim();
 
             results.push({
-                rawSegment: cleanLine,
+                rawSegment: lineObj.rawOriginal,
+                sanitizedSegment: cleanItemPart,
                 matched: false,
                 product: null,
                 unitIndex: 0,
@@ -341,6 +476,39 @@ function updateZaloUnmatchedPrice(idx, inputEl) {
     lastParsedZaloItems[idx].customPrice = getRawNum(inputEl);
 }
 
+// Cho phép nhân viên bấm chọn tay 1 sản phẩm có sẵn trong kho cho dòng chưa khớp
+function manualAssignZaloProduct(idx, prodId) {
+    if (!prodId || !lastParsedZaloItems[idx]) return;
+    const prod = inventory.find(i => i.id === prodId);
+    if (!prod) return;
+
+    const row = lastParsedZaloItems[idx];
+    let uIdx = 0;
+    if (row.customUnit && Array.isArray(prod.units)) {
+        const foundIdx = prod.units.findIndex(u => removeVN(u.unitName) === removeVN(row.customUnit));
+        if (foundIdx !== -1) uIdx = foundIdx;
+    }
+
+    row.matched = true;
+    row.isManualPicked = true;
+    row.product = prod;
+    row.unitIndex = uIdx;
+    renderZaloPreviewTable();
+}
+
+// Cho phép gỡ khớp để quay về trạng thái Tạo nhanh / Chọn lại nếu muốn
+function unmatchZaloRow(idx) {
+    const row = lastParsedZaloItems[idx];
+    if (!row) return;
+    row.matched = false;
+    row.customName = row.customName || row.rawSegment;
+    row.customUnit = row.product?.units?.[row.unitIndex]?.unitName || 'Cái';
+    row.customPrice = 0;
+    row.saveToDb = true;
+    row.product = null;
+    renderZaloPreviewTable();
+}
+
 function renderZaloPreviewTable() {
     const tbody = document.getElementById('zalo-preview-tbody');
     const summaryEl = document.getElementById('zalo-match-summary');
@@ -354,69 +522,108 @@ function renderZaloPreviewTable() {
 
     const matchedCount = lastParsedZaloItems.filter(i => i.matched).length;
     const unmatchedCount = lastParsedZaloItems.length - matchedCount;
-    summaryEl.innerText = `Khớp ${matchedCount}/${lastParsedZaloItems.length} dòng${unmatchedCount > 0 ? ` (${unmatchedCount} món mới cần nhập giá)` : ''}`;
+    summaryEl.innerText = `Khớp ${matchedCount}/${lastParsedZaloItems.length} dòng${unmatchedCount > 0 ? ` • ⚠️ ${unmatchedCount} mặt hàng chưa có trong kho` : ''}`;
     const isWholesale = isCurrentCustomerWholesale();
     const standardUnits = ['Thùng', 'Lốc', 'Cái', 'Lon', 'Chai', 'Gói', 'Hộp', 'Bịch', 'Bao', 'Kg', 'Két', 'Cây', 'Dây', 'Vỉ'];
 
-    tbody.innerHTML = lastParsedZaloItems.map((row, idx) => {
-        if (!row.matched) {
+    // Tạo danh sách option để nhân viên có thể bấm chọn tay sản phẩm trong kho
+    const manualSelectOptions = `<option value="">-- Hoặc bấm chọn tay sản phẩm có sẵn trong kho --</option>` +
+        inventory.slice(0, 200).map(p => `<option value="${p.id}">${p.name} (${formatmoney(p.basePrice)}đ/${p.baseUnit})</option>`).join('');
+
+    const matchedRowsHtml = [];
+    const unmatchedRowsHtml = [];
+
+    lastParsedZaloItems.forEach((row, idx) => {
+        if (row.matched && row.product) {
+            const unitPrice = getStandardUnitPrice(row.product, row.unitIndex, isWholesale);
+            const unitOptions = row.product.units.map((unitObj, uIdx) => {
+                const p = getStandardUnitPrice(row.product, uIdx, isWholesale);
+                return `<option value="${uIdx}" ${uIdx === row.unitIndex ? 'selected' : ''}>${unitObj.unitName} (${formatmoney(p)}đ)</option>`;
+            }).join('');
+
+            const matchBadge = row.isFuzzy
+                ? `<span class="ml-1 text-[10px] bg-blue-100 text-inni-blue px-1.5 py-0.5 rounded font-bold" title="Bắt trúng nhờ thuật toán gần đúng Fuzzy">≈ Gần đúng</span>`
+                : '';
+
+            matchedRowsHtml.push(`
+                <tr class="bg-emerald-50/40 hover:bg-emerald-50/80 transition">
+                    <td class="p-2 text-slate-600 font-medium">"${row.rawSegment}"</td>
+                    <td class="p-2 font-bold text-slate-800">
+                        <div class="flex items-center justify-between gap-1">
+                            <span><i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>${row.product.name} ${matchBadge}</span>
+                            <button type="button" onclick="unmatchZaloRow(${idx})" title="Đổi / Chọn lại món khác" class="text-[10px] text-slate-400 hover:text-red-500 px-1 underline shrink-0">Đổi</button>
+                        </div>
+                    </td>
+                    <td class="p-2 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <input type="number" value="${row.qty}" min="1" onchange="lastParsedZaloItems[${idx}].qty = parseInt(this.value)||1; renderZaloPreviewTable();" class="w-12 border rounded p-1 text-center font-bold bg-white">
+                            <select onchange="lastParsedZaloItems[${idx}].unitIndex = parseInt(this.value); renderZaloPreviewTable();" class="border rounded p-1 text-xs font-bold bg-white text-inni-blue">
+                                ${unitOptions}
+                            </select>
+                        </div>
+                    </td>
+                    <td class="p-2 text-right font-bold text-red-600">${formatmoney(unitPrice * row.qty)} đ</td>
+                </tr>
+            `);
+        } else {
             const safeCustomName = (row.customName || '').replace(/"/g, '&quot;');
             const unitSelectHtml = standardUnits.map(u =>
                 `<option value="${u}" ${u === row.customUnit ? 'selected' : ''}>${u}</option>`
             ).join('');
 
-            return `
-                <tr class="bg-amber-50/70 border-l-4 border-amber-500">
-                    <td class="p-2 align-top">
-                        <div class="font-medium text-slate-700">"${row.rawSegment}"</div>
-                        <span class="inline-block mt-1 text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">Món chưa có trong kho</span>
+            unmatchedRowsHtml.push(`
+                <tr class="bg-amber-50 border-l-4 border-amber-500">
+                    <td class="p-2.5 align-top">
+                        <div class="font-bold text-amber-900">"${row.rawSegment}"</div>
+                        <span class="inline-block mt-1 text-[10px] font-bold bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded">
+                            <i class="fa-solid fa-triangle-exclamation mr-0.5"></i>Mặt hàng chưa có trong kho
+                        </span>
                     </td>
-                    <td class="p-2 align-top" colspan="3">
-                        <div class="grid grid-cols-12 gap-1.5 items-center">
-                            <div class="col-span-12 sm:col-span-5">
-                                <input type="text" value="${safeCustomName}" oninput="lastParsedZaloItems[${idx}].customName = this.value" placeholder="Tên chuẩn *" class="w-full border border-slate-300 rounded-lg p-1.5 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-inni-blue">
-                            </div>
-                            <div class="col-span-6 sm:col-span-3 flex items-center gap-1">
-                                <input type="number" value="${row.qty}" min="1" oninput="lastParsedZaloItems[${idx}].qty = Math.max(1, parseInt(this.value, 10) || 1)" class="w-12 border border-slate-300 rounded-lg p-1.5 text-center font-bold text-xs bg-white">
-                                <select onchange="lastParsedZaloItems[${idx}].customUnit = this.value" class="flex-1 border border-slate-300 rounded-lg p-1.5 text-xs font-bold bg-white text-inni-blue">
-                                    ${unitSelectHtml}
+                    <td class="p-2.5 align-top" colspan="3">
+                        <div class="space-y-2">
+                            <!-- Tùy chọn 1: Bấm chọn tay mặt hàng có sẵn trong kho -->
+                            <div>
+                                <select onchange="manualAssignZaloProduct(${idx}, this.value)" class="w-full border border-amber-400 rounded-lg p-1.5 text-xs font-bold text-inni-blue bg-white focus:outline-none">
+                                    ${manualSelectOptions}
                                 </select>
                             </div>
-                            <div class="col-span-6 sm:col-span-4">
-                                <input type="text" value="${row.customPrice > 0 ? formatmoney(row.customPrice) : ''}" oninput="updateZaloUnmatchedPrice(${idx}, this)" placeholder="Nhập giá bán *" class="w-full border-2 border-amber-400 rounded-lg p-1.5 text-xs font-black text-red-600 text-right bg-white focus:outline-none">
+                            <!-- Tùy chọn 2: Tạo nhanh mặt hàng mới ngay tại chỗ -->
+                            <div class="grid grid-cols-12 gap-1.5 items-center">
+                                <div class="col-span-12 sm:col-span-5">
+                                    <input type="text" value="${safeCustomName}" oninput="lastParsedZaloItems[${idx}].customName = this.value" placeholder="Tên tạo nhanh *" class="w-full border border-slate-300 rounded-lg p-1.5 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-inni-blue">
+                                </div>
+                                <div class="col-span-6 sm:col-span-3 flex items-center gap-1">
+                                    <input type="number" value="${row.qty}" min="1" oninput="lastParsedZaloItems[${idx}].qty = Math.max(1, parseInt(this.value, 10) || 1)" class="w-12 border border-slate-300 rounded-lg p-1.5 text-center font-bold text-xs bg-white">
+                                    <select onchange="lastParsedZaloItems[${idx}].customUnit = this.value" class="flex-1 border border-slate-300 rounded-lg p-1.5 text-xs font-bold bg-white text-inni-blue">
+                                        ${unitSelectHtml}
+                                    </select>
+                                </div>
+                                <div class="col-span-6 sm:col-span-4">
+                                    <input type="text" value="${row.customPrice > 0 ? formatmoney(row.customPrice) : ''}" oninput="updateZaloUnmatchedPrice(${idx}, this)" placeholder="Nhập giá bán *" class="w-full border-2 border-amber-400 rounded-lg p-1.5 text-xs font-black text-red-600 text-right bg-white focus:outline-none">
+                                </div>
                             </div>
+                            <label class="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 cursor-pointer select-none">
+                                <input type="checkbox" ${row.saveToDb ? 'checked' : ''} onchange="lastParsedZaloItems[${idx}].saveToDb = this.checked" class="w-3.5 h-3.5 accent-emerald-600">
+                                <span>✓ Tự động lưu mặt hàng mới này vào Kho khi thêm vào giỏ</span>
+                            </label>
                         </div>
-                        <label class="inline-flex items-center gap-1.5 mt-1.5 text-[11px] font-bold text-emerald-800 cursor-pointer select-none">
-                            <input type="checkbox" ${row.saveToDb ? 'checked' : ''} onchange="lastParsedZaloItems[${idx}].saveToDb = this.checked" class="w-3.5 h-3.5 accent-emerald-600">
-                            <span>✓ Lưu món này vào Kho</span>
-                        </label>
                     </td>
                 </tr>
-            `;
+            `);
         }
+    });
 
-        const unitPrice = getStandardUnitPrice(row.product, row.unitIndex, isWholesale);
-        const unitOptions = row.product.units.map((unitObj, uIdx) => {
-            const p = getStandardUnitPrice(row.product, uIdx, isWholesale);
-            return `<option value="${uIdx}" ${uIdx === row.unitIndex ? 'selected' : ''}>${unitObj.unitName} (${formatmoney(p)}đ)</option>`;
-        }).join('');
+    // Gom nhóm cảnh báo màu vàng "Mặt hàng chưa có trong kho" hiển thị nổi bật phía dưới để không bao giờ sót đơn
+    const warningHeaderRow = unmatchedRowsHtml.length > 0
+        ? `<tr class="bg-amber-200/90 text-amber-950 font-black text-xs">
+               <td colspan="4" class="px-3 py-2">
+                   <i class="fa-solid fa-triangle-exclamation text-amber-700 mr-1.5"></i>
+                   CẢNH BÁO: MẶT HÀNG CHƯA CÓ TRONG KHO (${unmatchedRowsHtml.length} món) — Vui lòng bấm chọn tay hoặc nhập giá để tạo nhanh:
+               </td>
+           </tr>`
+        : '';
 
-        return `
-            <tr class="bg-emerald-50/40">
-                <td class="p-2 text-slate-500">"${row.rawSegment}"</td>
-                <td class="p-2 font-bold text-slate-800"><i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>${row.product.name}</td>
-                <td class="p-2 text-center">
-                    <div class="flex items-center justify-center gap-1">
-                        <input type="number" value="${row.qty}" min="1" onchange="lastParsedZaloItems[${idx}].qty = parseInt(this.value)||1; renderZaloPreviewTable();" class="w-12 border rounded p-1 text-center font-bold">
-                        <select onchange="lastParsedZaloItems[${idx}].unitIndex = parseInt(this.value); renderZaloPreviewTable();" class="border rounded p-1 text-xs font-bold bg-white text-inni-blue">
-                            ${unitOptions}
-                        </select>
-                    </div>
-                </td>
-                <td class="p-2 text-right font-bold text-red-600">${formatmoney(unitPrice * row.qty)} đ</td>
-            </tr>
-        `;
-    }).join('');
+    tbody.innerHTML = matchedRowsHtml.join('') + warningHeaderRow + unmatchedRowsHtml.join('');
 }
 
 async function pushZaloItemsToCart() {

@@ -18,10 +18,29 @@ db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
 });
 
 const CATEGORIES = [
-    "Gia vị & Nước chấm", "Mì & Đồ ăn liền", "Snack & Bim bim", "Bánh kẹo & Socola",
-    "Sữa & Chế phẩm sữa", "Trà & Cà phê", "Nước giải khát & Nước lọc", "Bia & Rượu",
-    "Kem & Đông lạnh", "Đồ khô & Đóng gói", "Thuốc lá & Phụ kiện", "Chăm sóc cá nhân",
-    "Vệ sinh nhà cửa", "Đồ dùng gia đình & Tiện ích", "Khác"
+    // 1. Đồ uống & Giải khát
+    "Nước giải khát & Nước lọc",
+    "Bia, Rượu & Đồ uống có cồn",
+    "Trà, Cà phê & Đồ uống hòa tan",
+    
+    // 2. Thực phẩm khô & Ăn liền
+    "Mì, Phở, Cháo & Đồ ăn liền",
+    "Bánh kẹo, Snack & Bim bim",
+    "Sữa & Chế phẩm từ sữa",
+    "Đồ khô, Ngũ cốc & Hạt dinh dưỡng",
+    "Gia vị, Dầu ăn, Nước mắm & Hạt nêm",
+    
+    // 3. Hóa mỹ phẩm & Giặt giũ
+    "Xà bông, Bột giặt & Nước giặt xả",
+    "Nước rửa chén & Vệ sinh nhà cửa",
+    "Chăm sóc cá nhân (Dầu gội, Sữa tắm, Kem đánh răng)",
+    "Giấy vệ sinh, Khăn giấy & Đồ dùng một lần",
+    
+    // 4. Các mặt hàng khác
+    "Kem & Đồ đông lạnh",
+    "Thuốc lá & Phụ kiện",
+    "Đồ dùng gia đình & Tiện ích",
+    "Khác"
 ];
 
 let inventory = [];
@@ -381,17 +400,21 @@ function renderInventory(resetLimit = true) {
 
         const rowBg = isLow ? "bg-red-50/70 hover:bg-red-100/60" : "hover:bg-blue-50/40";
         const lowBadge = isLow 
-            ? `<span class="ml-1.5 px-1.5 py-0.5 bg-red-600 text-white text-[10px] font-bold rounded">Cảnh báo tồn (<=${item.minStock})</span>` 
-            : '';
+        ? `<span class="px-1.5 py-0.5 bg-red-50 text-red-600 border border-red-200 text-[10px] font-bold rounded">
+            <i class="fa-solid fa-triangle-exclamation mr-0.5"></i>Sắp hết (≤${item.minStock})
+        </span>` 
+        : '';
 
         const tr = document.createElement('tr');
         tr.className = `transition ${rowBg}`;
         tr.innerHTML = `
             <td class="p-3">${imgTag}</td>
             <td class="p-3">
-                <div class="font-bold text-slate-800 flex items-center flex-wrap">${item.name}${lowBadge}</div>
-                <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                    <span class="bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-semibold">${item.category}</span>${item.barcode ? `<span><i class="fa-solid fa-barcode"></i> ${item.barcode}</span>` : ''}
+                <div class="font-bold text-slate-800">${item.name}</div>
+                <div class="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+                    <span class="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-semibold">${item.category}</span>
+                    ${lowBadge}
+                    ${item.barcode ? `<span><i class="fa-solid fa-barcode"></i> ${item.barcode}</span>` : ''}
                 </div>
             </td>
             <td class="p-3 text-right font-semibold text-slate-600">${formatmoney(item.costPrice)} đ<span class="text-[10px] text-slate-400 block">/${item.baseUnit}</span></td>
@@ -456,6 +479,9 @@ function renderInventory(resetLimit = true) {
     document.getElementById('inv-stat-low').innerText = `${lowStockCount} món`;
     document.getElementById('inv-stat-retail').innerText = `${formatmoney(totalRetail)} đ`;
 
+    const lowMobEl = document.getElementById('inv-stat-low-mob');
+    if (lowMobEl) lowMobEl.innerText = `${lowStockCount} món`;
+
     const mobCntEl = document.getElementById('inv-mobile-count-label');
     if (mobCntEl) mobCntEl.innerText = `${renderedCount} sản phẩm`;
     const loadMoreWrap = document.getElementById('inv-load-more-wrap');
@@ -465,7 +491,10 @@ function renderInventory(resetLimit = true) {
     const badgeMob = document.getElementById('badge-mobile-low-stock');
     if (lowStockCount > 0) {
         if (badgeDesk) { badgeDesk.innerText = lowStockCount; badgeDesk.classList.remove('hidden'); }
-        if (badgeMob) badgeMob.classList.remove('hidden');
+        if (badgeMob) {
+            badgeMob.innerText = lowStockCount;
+            badgeMob.className = "absolute -top-1 right-2 bg-red-600 text-white text-[9px] font-black px-1.5 rounded-full";
+        }
     } else {
         if (badgeDesk) badgeDesk.classList.add('hidden');
         if (badgeMob) badgeMob.classList.add('hidden');
