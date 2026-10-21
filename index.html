@@ -1595,29 +1595,11 @@
                 </div>
 
                 <!-- Thanh chọn mặt hàng thêm vào Phiếu Nhập -->
-                <!-- Thanh chọn mặt hàng thêm vào Phiếu Nhập (Tích hợp Import Excel) -->
                 <div class="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
-                    <div class="flex flex-wrap justify-between items-center gap-2 mb-2.5 pb-2 border-b border-emerald-200/80">
-                        <div class="text-xs font-bold text-emerald-900 uppercase flex items-center gap-1.5">
-                            <i class="fa-solid fa-boxes-packing text-emerald-700"></i> + Thêm mặt hàng vào chuyến nhập này:
-                        </div>
-                        <div class="flex flex-wrap items-center gap-1.5">
-                            <input type="file" id="po-excel-input" accept=".xlsx,.xls,.csv" onchange="handleImportPoExcel(event)" class="hidden">
-                            <button type="button" onclick="document.getElementById('po-excel-input').click()" class="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 shadow-sm scale-active">
-                                <i class="fa-solid fa-file-excel"></i> Import File Excel
-                            </button>
-                            <button type="button" onclick="downloadPoSampleExcel()" class="bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 scale-active" title="Tải file Excel mẫu nhập hàng">
-                                <i class="fa-solid fa-download"></i> File Mẫu Nhập
-                            </button>
-                            <button type="button" onclick="clearPoItemsList()" class="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 scale-active" title="Làm trống danh sách bên dưới">
-                                <i class="fa-solid fa-trash-can"></i> Xóa DS
-                            </button>
-                        </div>
-                    </div>
-
+                    <div class="text-xs font-bold text-emerald-900 uppercase mb-2">+ Thêm mặt hàng vào chuyến nhập này:</div>
                     <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
                         <div class="sm:col-span-5">
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Chọn mặt hàng thủ công</label>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Chọn mặt hàng</label>
                             <input type="text" id="po-product-filter" oninput="filterPoProductDropdown()" placeholder="Gõ tên hàng hoặc mã vạch để lọc nhanh..." class="w-full border border-slate-300 p-1.5 mb-1 rounded-lg bg-white text-xs">
                             <select id="po-product-id" onchange="onChangePoProduct()" class="w-full border border-slate-300 p-2 rounded-lg bg-white font-bold text-xs"></select>
                         </div>
@@ -1988,69 +1970,29 @@
         </div>
     </div>
 
-    <!-- MODAL ZALO NLP + GEMINI 3.8 FLASH AI -->
+    <!-- CÁC MODAL CÒN LẠI (ZALO NLP, HOLD ORDERS, CHECKOUT, THẺ KHO, CÀI ĐẶT, BARCODE) -->
     <div id="zalo-nlp-modal" class="fixed inset-0 modal-overlay z-[80] hidden flex items-center justify-center p-2 sm:p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
             <div class="p-4 bg-blue-600 text-white flex justify-between items-center shrink-0">
                 <div>
                     <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
-                        <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> Bóc Tách Tin Nhắn Zalo Tự Động (Gemini AI)
+                        <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> Bóc Tách Tin Nhắn Zalo Tự Động Lên Đơn
                     </h3>
-                    <p class="text-xs text-blue-100 mt-0.5">Hiểu chuẩn dung tích (1l, 650g, E100...) & tự động ưu tiên Đơn vị Sỉ (Thùng/Cây/Lốc)</p>
+                    <p class="text-xs text-blue-100 mt-0.5">Copy tin nhắn đặt hàng của khách sỉ từ Zalo dán vào ô dưới đây</p>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="toggleZaloAiKeyBox()" class="text-[11px] bg-white/15 hover:bg-white/25 text-white font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition">
-                        <i class="fa-solid fa-key text-amber-300"></i> <span class="hidden sm:inline">API Key</span>
-                    </button>
-                    <button onclick="closeZaloModal()" class="text-blue-200 hover:text-white text-xl ml-1"><i class="fa-solid fa-xmark"></i></button>
-                </div>
+                <button onclick="closeZaloModal()" class="text-blue-200 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
             </div>
-
-            <!-- Khung cài đặt nhanh Gemini API Key (Lưu đồng bộ Cloud cho toàn cửa hàng) -->
-            <div id="zalo-ai-key-box" class="hidden bg-slate-900 text-white px-4 py-2.5 text-xs border-b border-slate-700 shrink-0">
-                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                    <div class="text-slate-300">
-                        <b class="text-amber-300"><i class="fa-solid fa-robot mr-1"></i>Gemini 3.8 Flash API Key:</b>
-                        Lấy mã miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank" class="underline text-blue-400">aistudio.google.com</a> (Lưu 1 lần dùng cho mọi máy)
-                    </div>
-                    <div class="flex items-center gap-1.5 w-full sm:w-auto">
-                        <input type="password" id="zalo-gemini-api-key" placeholder="Dán mã AIzaSy... vào đây" class="flex-1 sm:w-56 bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-blue-400">
-                        <button type="button" onclick="saveZaloGeminiApiKey()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shrink-0">
-                            Lưu Key
-                        </button>
-                    </div>
-                </div>
-            </div>
-
             <div class="p-4 space-y-3 overflow-y-auto text-sm flex-1">
                 <div>
-                    <div class="flex flex-wrap justify-between items-center gap-2 mb-1.5">
+                    <div class="flex justify-between items-center mb-1">
                         <label class="text-xs font-bold text-slate-700">Nội dung tin nhắn đặt hàng Zalo:</label>
-                        <div class="flex items-center gap-3">
-                            <!-- CHECKBOX MẶC ĐỊNH NHẬP SỈ (THÙNG / CÂY) -->
-                            <label class="inline-flex items-center gap-1.5 text-xs font-black text-inni-blue bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg cursor-pointer select-none">
-                                <input type="checkbox" id="chk-zalo-default-wholesale" checked onchange="onToggleZaloDefaultWholesaleUnit(this.checked)" class="w-4 h-4 accent-[#0088FF] cursor-pointer">
-                                <span>Mặc định nhập sỉ (Thùng/Cây)</span>
-                            </label>
-                            <button onclick="fillSampleZaloText()" class="text-[11px] text-slate-500 font-bold hover:text-inni-blue hover:underline">Chèn mẫu thử</button>
-                        </div>
+                        <button onclick="fillSampleZaloText()" class="text-[11px] text-inni-blue font-bold hover:underline">Chèn tin nhắn mẫu thử nghiệm</button>
                     </div>
-
-                    <textarea id="zalo-input-text" rows="4" oninput="previewZaloParse()" onpaste="onPasteZaloText()" placeholder="Ví dụ khách nhắn:&#10;10 Sunlight Vàng 1l, 2 lốc Headsouder 650g&#10;5 sài gòn xanh, 3 dây dầu gội dove" class="w-full border-2 border-blue-300 rounded-xl p-3 text-sm focus:outline-none focus:border-inni-blue bg-blue-50/30 font-medium"></textarea>
-
-                    <div class="flex justify-between items-center mt-1.5">
-                        <span id="zalo-ai-status" class="text-[11px] text-slate-500 italic">
-                            💡 Mẹo: Khi dán tin nhắn, hệ thống tự động giữ nguyên dung tích (1l, 650g...) & gọi AI phân tích.
-                        </span>
-                        <button type="button" id="btn-run-gemini-zalo" onclick="runGeminiZaloParse()" class="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-sm flex items-center gap-1.5 scale-active">
-                            <i class="fa-solid fa-wand-magic-sparkles text-amber-300"></i> AI Phân Tích (Gemini 3.8)
-                        </button>
-                    </div>
+                    <textarea id="zalo-input-text" rows="4" oninput="previewZaloParse()" placeholder="Ví dụ khách nhắn:&#10;Lấy em 5 thùng tiger nâu, 2 lốc bò húc&#10;10 gói hảo hảo, 3 chai tương ớt chinsu" class="w-full border-2 border-blue-300 rounded-xl p-3 text-sm focus:outline-none focus:border-inni-blue bg-blue-50/30 font-medium"></textarea>
                 </div>
-
                 <div class="border border-slate-200 rounded-xl overflow-hidden">
                     <div class="bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 flex justify-between items-center">
-                        <span>Kết quả bóc tách mặt hàng & Đơn vị tính:</span>
+                        <span>Kết quả AI / Regex bóc tách mặt hàng:</span>
                         <span id="zalo-match-summary" class="text-inni-blue">Chưa có dữ liệu</span>
                     </div>
                     <div class="max-h-56 overflow-y-auto">
@@ -2060,7 +2002,7 @@
                                     <th class="p-2">Cụm từ khách nhắn</th>
                                     <th class="p-2">Khớp sản phẩm trong kho</th>
                                     <th class="p-2 text-center">SL & Đơn vị</th>
-                                    <th class="p-2 text-right">Thành tiền</th>
+                                    <th class="p-2 text-right">Đơn giá (Sửa được ở giỏ)</th>
                                 </tr>
                             </thead>
                             <tbody id="zalo-preview-tbody" class="divide-y divide-slate-100">
@@ -2070,7 +2012,6 @@
                     </div>
                 </div>
             </div>
-
             <div class="p-4 border-t bg-slate-50 flex justify-end gap-2 shrink-0">
                 <button onclick="closeZaloModal()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold text-sm">Đóng</button>
                 <button id="btn-push-zalo-cart" onclick="pushZaloItemsToCart()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md scale-active flex items-center gap-2">
