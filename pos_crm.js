@@ -230,12 +230,24 @@ function parseZaloTextToItems(rawText) {
                 qty: qty
             });
         } else {
+            const unitHintMap = {
+                thung: 'Thùng', loc: 'Lốc', ket: 'Két', cay: 'Cây', day: 'Dây',
+                bich: 'Bịch', bao: 'Bao', hop: 'Hộp', lon: 'Lon', chai: 'Chai',
+                goi: 'Gói', tui: 'Túi', cai: 'Cái', ky: 'Kg', kg: 'Kg', vi: 'Vỉ'
+            };
+            const guessedUnit = unitHintMap[detectedUnitHint] || 'Cái';
+            const cleanName = (productQuery || seg).trim();
+
             results.push({
                 rawSegment: seg,
                 matched: false,
                 product: null,
                 unitIndex: 0,
-                qty: qty
+                qty: qty,
+                customName: cleanName.charAt(0).toUpperCase() + cleanName.slice(1),
+                customUnit: guessedUnit,
+                customPrice: 0,
+                saveToDb: true
             });
         }
     });
@@ -245,10 +257,21 @@ function parseZaloTextToItems(rawText) {
 
 function previewZaloParse() {
     const raw = document.getElementById('zalo-input-text').value;
+    lastParsedZaloItems = parseZaloTextToItems(raw);
+    renderZaloPreviewTable();
+}
+
+function updateZaloUnmatchedPrice(idx, inputEl) {
+    formatCurrencyInput(inputEl);
+    if (!lastParsedZaloItems[idx]) return;
+    lastParsedZaloItems[idx].customPrice = getRawNum(inputEl);
+}
+
+function renderZaloPreviewTable() {
     const tbody = document.getElementById('zalo-preview-tbody');
     const summaryEl = document.getElementById('zalo-match-summary');
+    if (!tbody || !summaryEl) return;
 
-    lastParsedZaloItems = parseZaloTextToItems(raw);
     if (lastParsedZaloItems.length === 0) {
         summaryEl.innerText = "Chưa có dữ liệu";
         tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 italic">Hãy dán tin nhắn Zalo vào ô bên trên...</td></tr>`;
@@ -256,18 +279,48 @@ function previewZaloParse() {
     }
 
     const matchedCount = lastParsedZaloItems.filter(i => i.matched).length;
-    summaryEl.innerText = `Nhận diện khớp ${matchedCount}/${lastParsedZaloItems.length} dòng`;
+    const unmatchedCount = lastParsedZaloItems.length - matchedCount;
+    summaryEl.innerText = `Khớp ${matchedCount}/${lastParsedZaloItems.length} dòng${unmatchedCount > 0 ? ` (${unmatchedCount} món mới cần nhập giá)` : ''}`;
     const isWholesale = isCurrentCustomerWholesale();
+    const standardUnits = ['Thùng', 'Lốc', 'Cái', 'Lon', 'Chai', 'Gói', 'Hộp', 'Bịch', 'Bao', 'Kg', 'Két', 'Cây', 'Dây', 'Vỉ'];
 
     tbody.innerHTML = lastParsedZaloItems.map((row, idx) => {
         if (!row.matched) {
+            const safeCustomName = (row.customName || '').replace(/"/g, '&quot;');
+            const unitSelectHtml = standardUnits.map(u =>
+                `<option value="${u}" ${u === row.customUnit ? 'selected' : ''}>${u}</option>`
+            ).join('');
+
             return `
-                <tr class="bg-red-50/60">
-                    <td class="p-2 font-medium text-slate-700">"${row.rawSegment}"</td>
-                    <td class="p-2 text-red-600 font-bold" colspan="3"><i class="fa-solid fa-circle-xmark mr-1"></i>Không tìm thấy tên hàng khớp trong kho</td>
+                <tr class="bg-amber-50/70 border-l-4 border-amber-500">
+                    <td class="p-2 align-top">
+                        <div class="font-medium text-slate-700">"${row.rawSegment}"</div>
+                        <span class="inline-block mt-1 text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">Món chưa có trong kho</span>
+                    </td>
+                    <td class="p-2 align-top" colspan="3">
+                        <div class="grid grid-cols-12 gap-1.5 items-center">
+                            <div class="col-span-12 sm:col-span-5">
+                                <input type="text" value="${safeCustomName}" oninput="lastParsedZaloItems[${idx}].customName = this.value" placeholder="Tên chuẩn *" class="w-full border border-slate-300 rounded-lg p-1.5 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-inni-blue">
+                            </div>
+                            <div class="col-span-6 sm:col-span-3 flex items-center gap-1">
+                                <input type="number" value="${row.qty}" min="1" oninput="lastParsedZaloItems[${idx}].qty = Math.max(1, parseInt(this.value, 10) || 1)" class="w-12 border border-slate-300 rounded-lg p-1.5 text-center font-bold text-xs bg-white">
+                                <select onchange="lastParsedZaloItems[${idx}].customUnit = this.value" class="flex-1 border border-slate-300 rounded-lg p-1.5 text-xs font-bold bg-white text-inni-blue">
+                                    ${unitSelectHtml}
+                                </select>
+                            </div>
+                            <div class="col-span-6 sm:col-span-4">
+                                <input type="text" value="${row.customPrice > 0 ? formatmoney(row.customPrice) : ''}" oninput="updateZaloUnmatchedPrice(${idx}, this)" placeholder="Nhập giá bán *" class="w-full border-2 border-amber-400 rounded-lg p-1.5 text-xs font-black text-red-600 text-right bg-white focus:outline-none">
+                            </div>
+                        </div>
+                        <label class="inline-flex items-center gap-1.5 mt-1.5 text-[11px] font-bold text-emerald-800 cursor-pointer select-none">
+                            <input type="checkbox" ${row.saveToDb ? 'checked' : ''} onchange="lastParsedZaloItems[${idx}].saveToDb = this.checked" class="w-3.5 h-3.5 accent-emerald-600">
+                            <span>✓ Lưu món này vào Kho</span>
+                        </label>
+                    </td>
                 </tr>
             `;
         }
+
         const unitPrice = getStandardUnitPrice(row.product, row.unitIndex, isWholesale);
         const unitOptions = row.product.units.map((unitObj, uIdx) => {
             const p = getStandardUnitPrice(row.product, uIdx, isWholesale);
@@ -280,8 +333,8 @@ function previewZaloParse() {
                 <td class="p-2 font-bold text-slate-800"><i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>${row.product.name}</td>
                 <td class="p-2 text-center">
                     <div class="flex items-center justify-center gap-1">
-                        <input type="number" value="${row.qty}" min="1" onchange="lastParsedZaloItems[${idx}].qty = parseInt(this.value)||1; previewZaloParse();" class="w-12 border rounded p-1 text-center font-bold">
-                        <select onchange="lastParsedZaloItems[${idx}].unitIndex = parseInt(this.value); previewZaloParse();" class="border rounded p-1 text-xs font-bold bg-white text-inni-blue">
+                        <input type="number" value="${row.qty}" min="1" onchange="lastParsedZaloItems[${idx}].qty = parseInt(this.value)||1; renderZaloPreviewTable();" class="w-12 border rounded p-1 text-center font-bold">
+                        <select onchange="lastParsedZaloItems[${idx}].unitIndex = parseInt(this.value); renderZaloPreviewTable();" class="border rounded p-1 text-xs font-bold bg-white text-inni-blue">
                             ${unitOptions}
                         </select>
                     </div>
@@ -292,19 +345,101 @@ function previewZaloParse() {
     }).join('');
 }
 
-function pushZaloItemsToCart() {
-    const validItems = lastParsedZaloItems.filter(i => i.matched && i.product);
-    if (validItems.length === 0) {
-        return alert("Chưa có mặt hàng nào khớp để thêm vào giỏ!");
+async function pushZaloItemsToCart() {
+    if (lastParsedZaloItems.length === 0) {
+        return alert("Chưa có dữ liệu mặt hàng nào để đưa vào giỏ!");
     }
 
-    validItems.forEach(row => {
-        addToCartWithUnit(row.product.id, row.unitIndex, row.qty, false);
-    });
+    const btn = document.getElementById('btn-push-zalo-cart');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang xử lý...`;
+    }
 
-    document.getElementById('zalo-input-text').value = '';
-    closeZaloModal();
-    playBeepSound();
+    let addedCount = 0;
+    try {
+        for (const row of lastParsedZaloItems) {
+            const qty = Math.max(1, parseInt(row.qty, 10) || 1);
+
+            if (row.matched && row.product) {
+                addToCartWithUnit(row.product.id, row.unitIndex, qty, false);
+                addedCount++;
+            } else {
+                const cName = (row.customName || '').trim();
+                const cUnit = (row.customUnit || 'Cái').trim();
+                const cPrice = Number(row.customPrice) || 0;
+                if (!cName) continue;
+
+                if (row.saveToDb) {
+                    // Kiểm tra xem tên chuẩn này đã tồn tại trong kho chưa tránh tạo trùng
+                    let existing = inventory.find(i => i.name.toLowerCase() === cName.toLowerCase());
+                    if (!existing) {
+                        const newProdData = {
+                            name: cName,
+                            category: "Khác",
+                            barcode: "",
+                            keywords: [],
+                            image: null,
+                            baseUnit: cUnit,
+                            basePrice: cPrice,
+                            wholesalePrice: cPrice,
+                            price: cPrice,
+                            costPrice: 0,
+                            stock: 0,
+                            minStock: 10,
+                            units: [{ unitName: cUnit, conversionRate: 1, sellingPrice: cPrice, wholesalePrice: cPrice, barcode: "" }],
+                            createdAt: Date.now()
+                        };
+                        const docRef = await db.collection("inventory").add(newProdData);
+                        existing = inventory.find(i => i.id === docRef.id);
+                        if (!existing) {
+                            existing = { id: docRef.id, ...newProdData };
+                            inventory.unshift(existing);
+                        }
+                    }
+                    addToCartWithUnit(existing.id, 0, qty, false, cPrice);
+                    addedCount++;
+                } else {
+                    // Không lưu vào kho nhưng vẫn đẩy vào Giỏ hàng hiện tại
+                    const tempId = "TEMP_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
+                    const cartKey = `${tempId}_0_SALE`;
+                    cart[cartKey] = {
+                        cartKey,
+                        productId: tempId,
+                        name: cName,
+                        baseUnit: cUnit,
+                        unitIndex: 0,
+                        unitName: cUnit,
+                        conversionRate: 1,
+                        price: cPrice,
+                        originalPrice: cPrice,
+                        costPricePerBase: 0,
+                        qty: qty,
+                        isGift: (cPrice === 0),
+                        manualPriceEdited: true
+                    };
+                    addedCount++;
+                }
+            }
+        }
+
+        if (addedCount === 0) {
+            return alert("Vui lòng nhập Tên chuẩn cho món hàng trước khi đưa vào giỏ!");
+        }
+
+        renderCart();
+        document.getElementById('zalo-input-text').value = '';
+        closeZaloModal();
+        playBeepSound();
+    } catch (err) {
+        alert("Lỗi khi thêm đơn Zalo vào giỏ: " + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
 }
 
 // ==========================================
@@ -322,20 +457,19 @@ function handlePosSearchEnter(e) {
         return;
     }
 
-    // 2. Nếu gõ text nhanh + Enter: Tự động chọn mặt hàng khớp đầu tiên đang hiển thị
+    // 2. Nếu gõ text nhanh + Enter: Tự động chọn mặt hàng khớp đầu tiên (Cho phép cả khi tồn <= 0)
     const normSearch = removeVN(query);
     const matchedProd = inventory.find(item => 
-        item.stock > 0 && (
-            removeVN(item.name).includes(normSearch) || 
-            item.keywords.some(k => removeVN(k).includes(normSearch))
-        )
+        removeVN(item.name).includes(normSearch) || 
+        item.keywords.some(k => removeVN(k).includes(normSearch))
     );
     if (matchedProd) {
-        // Nếu khách sỉ và sản phẩm có đơn vị Thùng, có thể thêm đơn vị mặc định
         addToCartWithUnit(matchedProd.id, 0, 1, false);
         playBeepSound();
         e.target.value = '';
         renderSellGrid();
+    } else {
+        showPosQuickCreateInlineForm();
     }
 }
 
@@ -424,8 +558,84 @@ function clearPosSearchInput() {
     const inp = document.getElementById('sell-search-name');
     if (inp) inp.value = '';
     document.getElementById('btn-clear-pos-search')?.classList.add('hidden');
+    document.getElementById('pos-quick-create-wrap')?.classList.add('hidden');
+    hidePosQuickCreateInlineForm();
     closeMobileProductSelector();
     renderSellGrid();
+}
+
+function showPosQuickCreateInlineForm() {
+    const rawSearch = (document.getElementById('sell-search-name')?.value || '').trim();
+    const formEl = document.getElementById('pos-quick-create-form');
+    const nameInp = document.getElementById('qc-prod-name');
+    const priceInp = document.getElementById('qc-prod-price');
+    if (!formEl) return;
+
+    formEl.classList.remove('hidden');
+    if (nameInp && rawSearch) nameInp.value = rawSearch;
+    if (priceInp) {
+        priceInp.value = '';
+        setTimeout(() => priceInp.focus(), 50);
+    }
+}
+
+function hidePosQuickCreateInlineForm() {
+    document.getElementById('pos-quick-create-form')?.classList.add('hidden');
+}
+
+async function submitPosQuickCreateProduct() {
+    const nameInp = document.getElementById('qc-prod-name');
+    const unitSel = document.getElementById('qc-prod-unit');
+    const priceInp = document.getElementById('qc-prod-price');
+    const btn = document.getElementById('btn-submit-quick-create');
+
+    const name = (nameInp?.value || '').trim();
+    const unitName = (unitSel?.value || 'Cái').trim();
+    const price = getRawNum(priceInp);
+
+    if (!name) return alert("Vui lòng nhập Tên chuẩn của sản phẩm!");
+    if (price <= 0) return alert("Vui lòng nhập Đơn giá bán lớn hơn 0!");
+
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...`;
+    }
+
+    try {
+        const newProdData = {
+            name,
+            category: "Khác",
+            barcode: "",
+            keywords: [],
+            image: null,
+            baseUnit: unitName,
+            basePrice: price,
+            wholesalePrice: price,
+            price: price,
+            costPrice: 0,
+            stock: 0,
+            minStock: 10,
+            units: [{ unitName, conversionRate: 1, sellingPrice: price, wholesalePrice: price, barcode: "" }],
+            createdAt: Date.now()
+        };
+
+        const docRef = await db.collection("inventory").add(newProdData);
+        if (!inventory.some(i => i.id === docRef.id)) {
+            inventory.unshift({ id: docRef.id, ...newProdData });
+        }
+
+        addToCartWithUnit(docRef.id, 0, 1, false, price);
+        playBeepSound();
+        clearPosSearchInput();
+    } catch (err) {
+        alert("Lỗi tạo nhanh sản phẩm: " + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
 }
 
 function openMobileProductSelector() {
@@ -467,18 +677,19 @@ function renderSellGrid() {
 
         const isOut = item.stock <= 0;
         const isLow = item.stock > 0 && item.stock <= item.minStock;
+        const stockLabel = `Tồn: ${item.stock}`;
 
         const imgTag = item.image 
             ? `<div class="w-full h-16 md:h-20 bg-white rounded-lg mb-1.5 border border-slate-100 flex items-center justify-center overflow-hidden relative">
                     <img src="${item.image}" class="max-w-full max-h-full object-contain">
                     <span class="absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800')}">
-                        ${isOut ? 'Hết' : `Tồn: ${item.stock}`}
+                        ${stockLabel}
                     </span>
                </div>`
             : `<div class="w-full h-16 md:h-20 bg-slate-50 rounded-lg mb-1.5 flex items-center justify-center text-slate-300 border border-slate-100 relative">
                     <i class="fa-solid fa-box text-xl"></i>
                     <span class="absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800')}">
-                        ${isOut ? 'Hết' : `Tồn: ${item.stock}`}
+                        ${stockLabel}
                     </span>
                </div>`;
 
@@ -503,8 +714,9 @@ function renderSellGrid() {
             `;
         }).join('');
 
+        // Đã gỡ bỏ pointer-events-none để cho phép Bán âm kho bình thường khi tồn <= 0
         grid.innerHTML += `
-            <div id="pos-card-${item.id}" class="bg-white border border-slate-200 rounded-xl p-2 shadow-sm flex flex-col justify-between hover:border-inni-blue transition ${isOut ? 'opacity-50 pointer-events-none' : ''}">
+            <div id="pos-card-${item.id}" class="bg-white border border-slate-200 rounded-xl p-2 shadow-sm flex flex-col justify-between hover:border-inni-blue transition">
                 <div>
                     ${imgTag}
                     <div class="font-bold text-slate-800 text-xs line-clamp-2 leading-snug h-8 mb-1.5" title="${item.name}">${item.name}</div>
@@ -516,8 +728,30 @@ function renderSellGrid() {
         `;
     }
 
-    if (count === 0) noResult.classList.remove('hidden');
-    else noResult.classList.add('hidden');
+    const qcWrap = document.getElementById('pos-quick-create-wrap');
+    const qcLabel = document.getElementById('pos-quick-create-label');
+    if (count === 0) {
+        noResult.classList.remove('hidden');
+        if (rawSearch && qcWrap && qcLabel) {
+            qcLabel.innerText = `[+ Tạo nhanh "${rawSearch}" vào đơn]`;
+            const nameInp = document.getElementById('qc-prod-name');
+            if (nameInp) nameInp.value = rawSearch;
+            qcWrap.classList.remove('hidden');
+            // Trên Mobile: thu tấm bảng trắng rỗng xuống để lộ thanh [+ Tạo nhanh] ngay dưới ô tìm kiếm
+            if (window.innerWidth < 768) {
+                document.getElementById('pos-product-grid-wrapper')?.classList.remove('mobile-picker-open');
+            }
+        } else if (qcWrap) {
+            qcWrap.classList.add('hidden');
+            hidePosQuickCreateInlineForm();
+        }
+    } else {
+        noResult.classList.add('hidden');
+        if (qcWrap) {
+            qcWrap.classList.add('hidden');
+            hidePosQuickCreateInlineForm();
+        }
+    }
 
     renderCart();
 }
@@ -539,13 +773,6 @@ function addToCartWithUnit(productId, unitIndex = 0, addQty = 1, isGift = false,
 
     const u = item.units[unitIndex] || item.units[0];
     const cartKey = `${productId}_${unitIndex}_${isGift ? 'GIFT' : 'SALE'}`;
-
-    const neededBaseQty = addQty * u.conversionRate;
-    const currentBaseInCart = getTotalBaseQtyInCart(productId);
-
-    if (currentBaseInCart + neededBaseQty > item.stock) {
-        return alert(`Không đủ tồn kho cho "${item.name}"!\n- Tồn kho hiện tại: ${item.stock} ${item.baseUnit}\n- Trong giỏ đã có: ${currentBaseInCart} ${item.baseUnit}`);
-    }
 
     // Tự động nhận diện Khách Sỉ hoặc chế độ Giá Sỉ đang bật để lấy đúng giá của ĐVT (Lon / Lốc / Thùng)
     const useWholesale = currentActivePosTierWholesale || isCurrentCustomerWholesale();
@@ -579,6 +806,8 @@ function addToCartWithUnit(productId, unitIndex = 0, addQty = 1, isGift = false,
         const sInp = document.getElementById('sell-search-name');
         if (sInp) sInp.value = '';
         document.getElementById('btn-clear-pos-search')?.classList.add('hidden');
+        document.getElementById('pos-quick-create-wrap')?.classList.add('hidden');
+        hidePosQuickCreateInlineForm();
     }
 
     renderCart();
@@ -619,14 +848,6 @@ function changeCartItemUnit(oldKey, newUnitIndex) {
     if (!prod || !prod.units[newUnitIndex]) return;
 
     const newUnit = prod.units[newUnitIndex];
-    const otherBaseQty = getTotalBaseQtyInCart(cItem.productId, oldKey);
-
-    if (otherBaseQty + (cItem.qty * newUnit.conversionRate) > prod.stock) {
-        alert(`Kho chỉ còn ${prod.stock} ${prod.baseUnit}, không đủ để đổi sang ${cItem.qty} ${newUnit.unitName}!`);
-        renderCart();
-        return;
-    }
-
     const useWholesale = currentActivePosTierWholesale || isCurrentCustomerWholesale();
     const newKey = `${cItem.productId}_${newUnitIndex}_${cItem.isGift ? 'GIFT' : 'SALE'}`;
     const newPrice = cItem.isGift ? 0 : getStandardUnitPrice(prod, newUnitIndex, useWholesale);
@@ -652,19 +873,10 @@ function changeCartItemUnit(oldKey, newUnitIndex) {
 function updateCartQty(cartKey, delta, exactVal = null) {
     const cItem = cart[cartKey];
     if (!cItem) return;
-    const prod = inventory.find(i => i.id === cItem.productId);
-    const maxStock = prod ? prod.stock : 999999;
 
     const newQty = exactVal !== null ? (parseInt(exactVal, 10) || 0) : (cItem.qty + delta);
     if (newQty <= 0) {
         delete cart[cartKey];
-        renderCart();
-        return;
-    }
-
-    const otherBase = getTotalBaseQtyInCart(cItem.productId, cartKey);
-    if (otherBase + (newQty * cItem.conversionRate) > maxStock) {
-        alert(`Vượt quá tồn kho! Kho chỉ còn tối đa ${maxStock} ${cItem.baseUnit}.`);
         renderCart();
         return;
     }
@@ -1150,34 +1362,22 @@ function copyOrderToPos(order) {
 
     order.items.forEach(oldItem => {
         const prod = inventory.find(i => i.id === oldItem.productId) || inventory.find(i => i.name === oldItem.productName);
-        if (!prod || prod.stock <= 0) {
-            warnings.push(`- ${oldItem.productName}: Đã hết hàng trong kho`);
+        if (!prod) {
+            warnings.push(`- ${oldItem.productName}: Mặt hàng đã bị xóa khỏi danh mục kho`);
             return;
         }
 
         let uIdx = prod.units.findIndex(u => u.unitName === oldItem.unitName);
         if (uIdx === -1) uIdx = 0;
 
-        const u = prod.units[uIdx];
-        const maxPossibleQty = Math.floor(prod.stock / u.conversionRate);
-        if (maxPossibleQty <= 0) {
-            warnings.push(`- ${prod.name}: Không đủ tồn kho cho đơn vị ${u.unitName} (Tồn: ${prod.stock} ${prod.baseUnit})`);
-            return;
-        }
-
-        const finalQty = Math.min(oldItem.qty, maxPossibleQty);
-        if (finalQty < oldItem.qty) {
-            warnings.push(`- ${prod.name}: Đơn cũ ${oldItem.qty} ${u.unitName} -> Chỉ lấy được ${finalQty} ${u.unitName} do giới hạn tồn kho`);
-        }
-
-        addToCartWithUnit(prod.id, uIdx, finalQty, !!oldItem.isGift, oldItem.unitPrice);
+        addToCartWithUnit(prod.id, uIdx, oldItem.qty, !!oldItem.isGift, oldItem.unitPrice);
         copiedCount++;
     });
 
     switchTab('tab-sell');
     renderSellGrid();
-    const warnMsg = warnings.length > 0 ? `\n\n⚠️ LƯU Ý CÁC MÓN THIẾU TỒN:\n${warnings.join('\n')}` : '';
-    alert(`📋 Đã sao chép ${copiedCount}/${order.items.length} mặt hàng từ đơn ${order.orderCode} ra màn hình POS!\nBạn chỉ cần chỉnh lại số lượng/giá mới rồi bấm In.${warnMsg}`);
+    const warnMsg = warnings.length > 0 ? `\n\n⚠️ LƯU Ý:\n${warnings.join('\n')}` : '';
+    alert(`📋 Đã sao chép ${copiedCount}/${order.items.length} mặt hàng từ đơn ${order.orderCode} ra màn hình POS!${warnMsg}`);
 }
 
 // ==========================================
@@ -1876,7 +2076,7 @@ async function exportBillToImage() {
                 .export-a5-clone .col-qty { width: 8% !important; white-space: nowrap !important; text-align: center !important; }
                 .export-a5-clone .col-price { width: 16% !important; white-space: nowrap !important; text-align: right !important; }
                 .export-a5-clone .col-total { width: 18% !important; white-space: nowrap !important; text-align: right !important; }
-                .export-a5-clone .vietqr-header-img { width: 65px !important; height: 65px !important; max-width: 65px !important; max-height: 65px !important; display: block !important; }
+                .export-a5-clone .vietqr-header-img { width: 85px !important; height: 85px !important; max-width: 85px !important; object-fit: contain !important; display: block !important; }
             </style>
             <div class="export-a5-clone">${billEl.innerHTML}</div>
         `;
@@ -1884,17 +2084,26 @@ async function exportBillToImage() {
 
         // 2. Nén ảnh VietQR về đúng kích thước 130x130px dạng Base64 trước khi chụp
         // (Khắc phục triệt để lỗi html2canvas vẽ ảnh gốc 480x480 làm chỉ hiện góc đen chữ L hoặc mất QR)
+       // 2. Đảm bảo ảnh VietQR đã ở dạng Base64 và nén về chuẩn 130x130px trước khi chụp
         const imgs = Array.from(cloneWrapper.querySelectorAll('img'));
-        await Promise.all(imgs.map(img => {
-            const src = img.getAttribute('src');
-            if (!src) return Promise.resolve();
+        await Promise.all(imgs.map(async (img) => {
+            let src = img.getAttribute('src');
+            if (!src) return;
             img.style.objectFit = 'fill';
             img.setAttribute('width', '65');
             img.setAttribute('height', '65');
 
+            // Nếu ảnh trên web chưa kịp chuyển sang Base64 thì ép chuyển sang Base64 ngay trước khi chụp
+            if (!src.startsWith('data:image/')) {
+                const cleanBankId = (storeSettings.bankId || "").trim();
+                const cleanBankAcc = (storeSettings.bankAcc || "").replace(/\s+/g, '');
+                const cleanOwner = (storeSettings.bankOwner || "").trim();
+                src = await getVietQrBase64String(cleanBankId, cleanBankAcc, cleanOwner);
+                if (src) img.src = src;
+            }
+
             return new Promise(resolve => {
                 const tempImg = new Image();
-                tempImg.crossOrigin = "anonymous";
                 tempImg.onload = () => {
                     try {
                         const qrCanvas = document.createElement('canvas');
@@ -1983,6 +2192,88 @@ function toggleQuickBillHeaderEdit() {
     }
 }
 
+
+
+// ==========================================
+// BỘ HÀM TẠO MÃ VIETQR API V2 (MÃ VUÔNG NÉT CĂNG CHỐNG VỠ ẢNH)
+// ==========================================
+const VIETQR_BANK_BINS = {
+    MB: "970422", VCB: "970436", ICB: "970415", BIDV: "970418", ACB: "970416",
+    TCB: "970407", VPB: "970432", TPB: "970423", STB: "970403", VBA: "970405"
+};
+
+// Thuật toán CRC16 để tự tạo mã Napas247 dự phòng
+function calcVietQrCRC16(str) {
+    let crc = 0xFFFF;
+    for (let i = 0; i < str.length; i++) {
+        crc ^= (str.charCodeAt(i) & 0xFF) << 8;
+        for (let j = 0; j < 8; j++) {
+            if ((crc & 0x8000) !== 0) crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+            else crc = (crc << 1) & 0xFFFF;
+        }
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+
+function buildNapasEmvPayload(bankId, bankAcc) {
+    const bin = VIETQR_BANK_BINS[bankId] || "970436";
+    const acc = String(bankAcc).trim();
+    const sub00 = "0010A000000727";
+    const consumer = `0006${bin}01${String(acc.length).padStart(2, '0')}${acc}`;
+    const sub01 = `01${String(consumer.length).padStart(2, '0')}${consumer}`;
+    const sub02 = "0208QRIBFTTA";
+    const tag38Val = sub00 + sub01 + sub02;
+    const payload = `00020101021138${String(tag38Val.length).padStart(2, '0')}${tag38Val}53037045802VN6304`;
+    return payload + calcVietQrCRC16(payload);
+}
+
+async function getBeautifulVietQrBase64(bankId, bankAcc, bankOwner) {
+    const bin = VIETQR_BANK_BINS[bankId] || bankId;
+    try {
+        // Gọi API v2 chính thức: Dùng qr_only để trả về hình vuông nét căng
+        const response = await fetch('https://api.vietqr.io/v2/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                accountNo: bankAcc,
+                accountName: bankOwner,
+                acqId: bin,
+                format: "text",
+                template: "qr_only" 
+            })
+        });
+        const result = await response.json();
+        if (result.code === "00" && result.data && result.data.qrDataURL) {
+            return result.data.qrDataURL; 
+        }
+    } catch (e) {
+        console.error("Lỗi API VietQR:", e);
+    }
+    
+    // Fallback: Tự động dùng thuật toán tạo ảnh QR thuần nếu API VietQR bị lỗi mạng
+    const payload = buildNapasEmvPayload(bankId, bankAcc);
+    return `https://quickchart.io/qr?size=300&margin=1&text=${encodeURIComponent(payload)}`;
+}
+
+async function renderBillVietQr(qrBox, qrImg, bankInfo) {
+    const cleanBankId = (storeSettings.bankId || "").trim();
+    const cleanBankAcc = (storeSettings.bankAcc || "").replace(/\s+/g, '');
+    const cleanOwner = (storeSettings.bankOwner || "").trim();
+
+    if (cleanBankAcc && cleanBankId) {
+        qrImg.removeAttribute('crossorigin');
+        bankInfo.innerText = `${cleanBankId}: ${cleanBankAcc}\n${cleanOwner}`;
+        qrBox.classList.remove('hidden');
+
+        // Hiện Base64 đẹp lên hóa đơn
+        const base64Qr = await getBeautifulVietQrBase64(cleanBankId, cleanBankAcc, cleanOwner);
+        qrImg.src = base64Qr;
+        syncToPreRenderedPrintArea();
+    } else {
+        qrBox.classList.add('hidden');
+    }
+}
+
 function applyQuickBillHeaderEdit() {
     storeSettings.storeName = document.getElementById('qb-store-name').value.trim() || "Đại Lý HỒNG ĐIỆP";
     storeSettings.phone = document.getElementById('qb-store-phone').value.trim();
@@ -1998,16 +2289,7 @@ function applyQuickBillHeaderEdit() {
     const qrImg = document.getElementById('bill-vietqr-img');
     const bankInfo = document.getElementById('bill-bank-info');
 
-    if (storeSettings.bankAcc && storeSettings.bankId) {
-        const accName = encodeURIComponent(storeSettings.bankOwner || "");
-        qrImg.crossOrigin = "anonymous";
-        qrImg.src = `https://img.vietqr.io/image/${storeSettings.bankId}-${storeSettings.bankAcc}-qr_only.png?accountName=${accName}`;
-        bankInfo.innerText = `${storeSettings.bankId}: ${storeSettings.bankAcc}\n${storeSettings.bankOwner || ''}`;
-        qrBox.classList.remove('hidden');
-    } else {
-        qrBox.classList.add('hidden');
-    }
-    syncToPreRenderedPrintArea();
+    renderBillVietQr(qrBox, qrImg, bankInfo);
 }
 
 async function saveQuickBillHeaderConfig() {
@@ -2087,14 +2369,7 @@ function openPrintableInvoice(order) {
     const qrImg = document.getElementById('bill-vietqr-img');
     const bankInfo = document.getElementById('bill-bank-info');
 
-    if (storeSettings.bankAcc && storeSettings.bankId) {
-        const accName = encodeURIComponent(storeSettings.bankOwner || "");
-        qrImg.src = `https://img.vietqr.io/image/${storeSettings.bankId}-${storeSettings.bankAcc}-qr_only.png?accountName=${accName}`;
-        bankInfo.innerText = `${storeSettings.bankId}: ${storeSettings.bankAcc}\n${storeSettings.bankOwner || ''}`;
-        qrBox.classList.remove('hidden');
-    } else {
-        qrBox.classList.add('hidden');
-    }
+    renderBillVietQr(qrBox, qrImg, bankInfo);
 
     const btnSettle = document.getElementById('btn-settle-from-bill');
     if (btnSettle) {

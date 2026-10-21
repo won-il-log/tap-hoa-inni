@@ -1239,61 +1239,154 @@ async function handleImportProductsExcel(event) {
             const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
 
             if (rows.length === 0) return alert("File Excel trống!");
-            if (!confirm(`Tìm thấy ${rows.length} dòng sản phẩm từ file Excel. Bạn có muốn nhập hàng loạt vào Kho không?`)) return;
+            if (!confirm(`Tìm thấy ${rows.length} dòng sản phẩm từ file Excel. Bạn có muốn nhập / cập nhật hàng loạt vào Kho không?`)) return;
 
-            let importedCount = 0;
+            // Bản đồ tra cứu sản phẩm hiện có (đối chiếu theo Tên Hàng Hóa hoặc Mã Vạch) để Upsert chống trùng lặp
+            const workingCatalog = inventory.map(item => ({
+                ...item,
+                units: Array.isArray(item.units) ? item.units.map(u => ({ ...u })) : []
+            }));
+
+            let createdCount = 0;
+            let updatedCount = 0;
+
             for (let i = 0; i < rows.length; i += 350) {
                 const chunk = rows.slice(i, i + 350);
                 const batch = db.batch();
 
                 chunk.forEach(r => {
-                    const name = (r["Tên hàng"] || r["Ten hang"] || r["Tên sản phẩm"] || r["Name"] || "").toString().trim();
+                    const name = (r["Tên Hàng Hóa"] || r["Tên hàng hóa"] || r["Tên hàng"] || r["Ten hang"] || r["Tên sản phẩm"] || r["Name"] || "").toString().trim();
                     if (!name) return;
 
                     const category = (r["Phân loại"] || r["Loại sản phẩm"] || "Khác").toString().trim();
-                    const barcode = (r["Mã vạch"] || r["Barcode"] || "").toString().trim();
-                    const baseUnit = (r["Đơn vị lẻ"] || r["Đơn vị tính"] || "Lon").toString().trim();
-                    const costPrice = parseExcelNum(r["Giá nhập"] || r["Giá vốn"]);
-                    const basePrice = parseExcelNum(r["Giá lẻ"] || r["Giá bán lẻ"]);
-                    const wholesalePrice = parseExcelNum(r["Giá sỉ"] || r["Giá bán sỉ"]) || basePrice;
+                    const barcode = (r["Mã Vạch"] || r["Mã vạch"] || r["Ma vach"] || r["Barcode"] || "").toString().trim();
+                    const baseUnit = (r["Đơn vị lẻ"] || r["Đơn vị tính"] || r["ĐVT"] || r["DVT"] || "Lon").toString().trim();
+
+                    // Tự động tính Giá vốn kho lõi = Giá Vốn / Tỷ Lệ (Nếu Tỷ Lệ bỏ trống hoặc <= 0 thì mặc định chia 1)
+                    const rawCost = parseExcelNum(r["Giá Vốn"] || r["Giá vốn"] || r["Gia von"] || r["Giá nhập"] || r["Gia nhap"]);
+                    const rawRatio = parseExcelNum(r["Tỷ Lệ"] || r["Tỷ lệ"] || r["Ty le"] || r["Hệ số"] || r["Quy đổi"]);
+                    const ratio = rawRatio > 0 ? rawRatio : 1;
+                    const calculatedCoreCost = rawCost > 0 ? Math.round(rawCost / ratio) : 0;
+
+                    const rawSellPrice = parseExcelNum(r["Giá Bán"] || r["Giá bán"] || r["Gia ban"] || r["Giá lẻ"] || r["Giá bán lẻ"]);
+                    const rawWholesalePrice = parseExcelNum(r["Giá Sỉ"] || r["Giá sỉ"] || r["Gia si"] || r["Giá bán sỉ"]);
+                    const hasStockCol = (r["Số lượng tồn"] !== undefined && r["Số lượng tồn"] !== "") || (r["Tồn kho"] !== undefined && r["Tồn kho"] !== "");
                     const stock = parseExcelNum(r["Số lượng tồn"] || r["Tồn kho"]);
                     const kwStr = (r["Từ khóa Zalo"] || "").toString();
                     const keywords = kwStr ? kwStr.split(',').map(k => k.trim().toLowerCase()).filter(Boolean) : [];
 
-                    const units = [{ unitName: baseUnit, conversionRate: 1, sellingPrice: basePrice, wholesalePrice, barcode }];
-
-                   // Đọc Đơn vị cấp 2 (VD: Lốc = 6 Lon) - Tự tính giá theo giá sỉ nếu Excel bỏ trống giá lốc
-                    const packUnit = (r["Đơn vị lốc"] || "").toString().trim();
-                    const packRate = parseExcelNum(r["Quy đổi lốc"]);
-                    const packPrice = parseExcelNum(r["Giá bán lốc"]) || (wholesalePrice * packRate);
-                    if (packUnit && packRate > 1 && packPrice > 0) {
-                        units.push({ unitName: packUnit, conversionRate: packRate, sellingPrice: packPrice, wholesalePrice: packPrice, barcode: "" });
-                    }
-
-                    // Đọc Đơn vị cấp 3 (VD: Thùng = 24 Lon) - Tự tính giá theo giá sỉ nếu Excel bỏ trống giá thùng
-                    const bigUnit = (r["Đơn vị thùng"] || "").toString().trim();
-                    const bigRate = parseExcelNum(r["Quy đổi thùng"]);
-                    const bigPrice = parseExcelNum(r["Giá bán thùng"]) || (wholesalePrice * bigRate);
-                    if (bigUnit && bigRate > 1 && bigPrice > 0) {
-                        units.push({ unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigPrice, wholesalePrice: bigPrice, barcode: "" });
-                    }
-
-                    const docRef = db.collection("inventory").doc();
-                    batch.set(docRef, {
-                        name, category, barcode, keywords, baseUnit,
-                        costPrice: costPrice > 0 ? costPrice : Math.round(basePrice * 0.85),
-                        basePrice, wholesalePrice, price: basePrice,
-                        stock, minStock: 24, units,
-                        createdAt: Date.now() + importedCount
+                    // Tìm sản phẩm trùng theo Mã Vạch hoặc Tên Hàng Hóa
+                    const normName = name.toLowerCase();
+                    const normBc = barcode.toLowerCase();
+                    const existingItem = workingCatalog.find(item => {
+                        if (normBc && item.barcode && item.barcode.toLowerCase() === normBc) return true;
+                        if (normBc && Array.isArray(item.units) && item.units.some(u => u.barcode && u.barcode.toLowerCase() === normBc)) return true;
+                        return (item.name || '').trim().toLowerCase() === normName;
                     });
-                    importedCount++;
+
+                    if (existingItem) {
+                        // ĐÃ CÓ TRONG KHO -> Cập nhật đè Giá Vốn và Giá Bán lên mặt hàng đang có (Không tạo dòng trùng)
+                        const finalCostPrice = calculatedCoreCost > 0 ? calculatedCoreCost : (existingItem.costPrice || 0);
+                        const finalBasePrice = rawSellPrice > 0 ? rawSellPrice : (existingItem.basePrice || 0);
+                        const finalWholesalePrice = rawWholesalePrice > 0 ? rawWholesalePrice : (rawSellPrice > 0 ? rawSellPrice : (existingItem.wholesalePrice || finalBasePrice));
+
+                        let updatedUnits = Array.isArray(existingItem.units) && existingItem.units.length > 0
+                            ? existingItem.units.map(u => ({ ...u }))
+                            : [{ unitName: existingItem.baseUnit || baseUnit, conversionRate: 1, sellingPrice: finalBasePrice, wholesalePrice: finalWholesalePrice, barcode: existingItem.barcode || barcode }];
+
+                        // Cập nhật đơn vị cơ sở (conversionRate === 1)
+                        const baseUnitIdx = updatedUnits.findIndex(u => Number(u.conversionRate) === 1);
+                        if (baseUnitIdx !== -1) {
+                            updatedUnits[baseUnitIdx].sellingPrice = finalBasePrice;
+                            updatedUnits[baseUnitIdx].wholesalePrice = finalWholesalePrice;
+                            if (barcode) updatedUnits[baseUnitIdx].barcode = barcode;
+                        }
+
+                        // Cập nhật đơn vị Lốc nếu file Excel có cột Đơn vị lốc
+                        const packUnit = (r["Đơn vị lốc"] || "").toString().trim();
+                        const packRate = parseExcelNum(r["Quy đổi lốc"]);
+                        const packPrice = parseExcelNum(r["Giá bán lốc"]) || (packRate > 1 ? finalWholesalePrice * packRate : 0);
+                        if (packUnit && packRate > 1 && packPrice > 0) {
+                            const pIdx = updatedUnits.findIndex(u => u.unitName.toLowerCase() === packUnit.toLowerCase() || Number(u.conversionRate) === packRate);
+                            if (pIdx !== -1) {
+                                updatedUnits[pIdx] = { ...updatedUnits[pIdx], unitName: packUnit, conversionRate: packRate, sellingPrice: packPrice, wholesalePrice: packPrice };
+                            } else {
+                                updatedUnits.push({ unitName: packUnit, conversionRate: packRate, sellingPrice: packPrice, wholesalePrice: packPrice, barcode: "" });
+                            }
+                        }
+
+                        // Cập nhật đơn vị Thùng nếu file Excel có cột Đơn vị thùng
+                        const bigUnit = (r["Đơn vị thùng"] || "").toString().trim();
+                        const bigRate = parseExcelNum(r["Quy đổi thùng"]);
+                        const bigPrice = parseExcelNum(r["Giá bán thùng"]) || (bigRate > 1 ? finalWholesalePrice * bigRate : 0);
+                        if (bigUnit && bigRate > 1 && bigPrice > 0) {
+                            const bIdx = updatedUnits.findIndex(u => u.unitName.toLowerCase() === bigUnit.toLowerCase() || Number(u.conversionRate) === bigRate);
+                            if (bIdx !== -1) {
+                                updatedUnits[bIdx] = { ...updatedUnits[bIdx], unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigPrice, wholesalePrice: bigPrice };
+                            } else {
+                                updatedUnits.push({ unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigPrice, wholesalePrice: bigPrice, barcode: "" });
+                            }
+                        }
+
+                        const updatePayload = {
+                            costPrice: finalCostPrice,
+                            basePrice: finalBasePrice,
+                            wholesalePrice: finalWholesalePrice,
+                            price: finalBasePrice,
+                            units: updatedUnits
+                        };
+                        if (barcode) updatePayload.barcode = barcode;
+                        if (hasStockCol) updatePayload.stock = stock;
+
+                        const docRef = db.collection("inventory").doc(existingItem.id);
+                        batch.update(docRef, updatePayload);
+
+                        // Đồng bộ vào bản đồ tạm để các dòng trùng tiếp theo trong cùng file Excel vẫn cập nhật vào đúng ID này
+                        Object.assign(existingItem, updatePayload);
+                        updatedCount++;
+                    } else {
+                        // CHƯA CÓ TRONG KHO -> Tạo sản phẩm mới hoàn toàn
+                        const finalBasePrice = rawSellPrice;
+                        const finalWholesalePrice = rawWholesalePrice || finalBasePrice;
+                        const finalCostPrice = calculatedCoreCost > 0 ? calculatedCoreCost : Math.round(finalBasePrice * 0.85);
+
+                        const units = [{ unitName: baseUnit, conversionRate: 1, sellingPrice: finalBasePrice, wholesalePrice: finalWholesalePrice, barcode }];
+
+                        const packUnit = (r["Đơn vị lốc"] || "").toString().trim();
+                        const packRate = parseExcelNum(r["Quy đổi lốc"]);
+                        const packPrice = parseExcelNum(r["Giá bán lốc"]) || (finalWholesalePrice * packRate);
+                        if (packUnit && packRate > 1 && packPrice > 0) {
+                            units.push({ unitName: packUnit, conversionRate: packRate, sellingPrice: packPrice, wholesalePrice: packPrice, barcode: "" });
+                        }
+
+                        const bigUnit = (r["Đơn vị thùng"] || "").toString().trim();
+                        const bigRate = parseExcelNum(r["Quy đổi thùng"]);
+                        const bigPrice = parseExcelNum(r["Giá bán thùng"]) || (finalWholesalePrice * bigRate);
+                        if (bigUnit && bigRate > 1 && bigPrice > 0) {
+                            units.push({ unitName: bigUnit, conversionRate: bigRate, sellingPrice: bigPrice, wholesalePrice: bigPrice, barcode: "" });
+                        }
+
+                        const docRef = db.collection("inventory").doc();
+                        const newProdObj = {
+                            name, category, barcode, keywords, baseUnit,
+                            costPrice: finalCostPrice,
+                            basePrice: finalBasePrice,
+                            wholesalePrice: finalWholesalePrice,
+                            price: finalBasePrice,
+                            stock, minStock: 24, units,
+                            createdAt: Date.now() + createdCount
+                        };
+                        batch.set(docRef, newProdObj);
+                        workingCatalog.push({ id: docRef.id, ...newProdObj });
+                        createdCount++;
+                    }
                 });
 
                 await batch.commit();
             }
 
             event.target.value = '';
-            alert(`✅ Đã Import thành công ${importedCount} mặt hàng từ Excel vào Kho!`);
+            alert(`✅ Hoàn tất Import Excel vào Kho!\n- Tạo mới: ${createdCount} mặt hàng\n- Cập nhật đè giá (Upsert): ${updatedCount} mặt hàng`);
         } catch (err) {
             alert("Lỗi đọc file Excel: " + err.message);
         }

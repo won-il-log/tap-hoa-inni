@@ -451,7 +451,7 @@
                         </div>
                     </div>
 
-                    <!-- Thanh tìm kiếm sản phẩm ghim đầu trang (Ô tìm kiếm + Quét mã + Dán Zalo) -->
+                   <!-- Thanh tìm kiếm sản phẩm ghim đầu trang (Ô tìm kiếm + Quét mã + Dán Zalo) -->
                     <div id="pos-search-bar" class="flex flex-col md:flex-row gap-2 shrink-0">
                         <div class="flex flex-1 gap-1.5">
                             <div class="relative flex-1">
@@ -473,6 +473,36 @@
                         <select id="sell-search-cat" onchange="renderSellGrid()" class="hidden md:block border border-slate-300 p-2 rounded-xl focus:outline-none bg-white text-xs font-bold shrink-0">
                             <option value="all">Tất cả phân loại</option>
                         </select>
+                    </div>
+
+                    <!-- Khung [+ Tạo nhanh] Inline ngay dưới ô tìm kiếm khi không khớp món nào (Không dùng Modal) -->
+                    <div id="pos-quick-create-wrap" class="hidden mt-2 bg-blue-50/90 border border-blue-300 rounded-xl p-2.5 text-xs shadow-sm relative z-[70]">
+                        <button type="button" id="btn-trigger-quick-create" onclick="showPosQuickCreateInlineForm()" class="w-full text-left font-bold text-[#0088FF] hover:underline flex items-center justify-between py-0.5">
+                            <span id="pos-quick-create-label">[+ Tạo nhanh "" vào đơn]</span>
+                            <span class="text-[10px] bg-[#0088FF] text-white px-2 py-0.5 rounded-md shrink-0 ml-2">Mở tạo nhanh</span>
+                        </button>
+                        <div id="pos-quick-create-form" class="hidden mt-2 pt-2 border-t border-blue-200 grid grid-cols-12 gap-1.5 items-center">
+                            <input type="text" id="qc-prod-name" placeholder="Tên chuẩn *" class="col-span-5 border border-slate-300 rounded-lg p-1.5 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-[#0088FF]">
+                            <select id="qc-prod-unit" class="col-span-3 border border-slate-300 rounded-lg p-1.5 text-xs font-bold text-[#0088FF] bg-white focus:outline-none">
+                                <option value="Thùng">Thùng</option>
+                                <option value="Lốc">Lốc</option>
+                                <option value="Cái" selected>Cái</option>
+                                <option value="Lon">Lon</option>
+                                <option value="Chai">Chai</option>
+                                <option value="Gói">Gói</option>
+                                <option value="Hộp">Hộp</option>
+                                <option value="Bịch">Bịch</option>
+                                <option value="Bao">Bao</option>
+                                <option value="Kg">Kg</option>
+                            </select>
+                            <input type="text" id="qc-prod-price" oninput="formatCurrencyInput(this)" onkeydown="if(event.key==='Enter') submitPosQuickCreateProduct()" placeholder="Đơn giá bán *" class="col-span-4 border-2 border-amber-400 rounded-lg p-1.5 text-xs font-black text-red-600 text-right bg-white focus:outline-none">
+                            <div class="col-span-12 flex justify-end gap-1.5 mt-1">
+                                <button type="button" onclick="hidePosQuickCreateInlineForm()" class="px-2.5 py-1.5 rounded-lg bg-slate-200 text-slate-700 font-bold text-[11px]">Thu gọn</button>
+                                <button type="button" id="btn-submit-quick-create" onclick="submitPosQuickCreateProduct()" class="px-3 py-1.5 rounded-lg bg-[#0088FF] hover:bg-blue-700 text-white font-bold text-[11px] shadow-sm scale-active">
+                                    <i class="fa-solid fa-check mr-1"></i>Lưu & Thêm vào đơn
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Khung lưới sản phẩm: Mặc định ẩn trên Mobile, chỉ hiện dạng Bottom Sheet khi tìm/chọn hàng -->
@@ -1401,9 +1431,8 @@
                     </div>
 
                     <div id="bill-vietqr-box" class="flex flex-col items-center text-center shrink-0 border border-slate-200 rounded p-1 bg-white">
-                        <img id="bill-vietqr-img" crossorigin="anonymous" src="" alt="VietQR" class="vietqr-header-img" width="65" height="65" style="width: 65px; height: 65px; display: block;">
-                        <div class="text-[8px] font-bold text-slate-800 mt-0.5 leading-tight whitespace-pre-line" id="bill-bank-info"></div>
-                    </div>
+                    <img id="bill-vietqr-img" alt="VietQR" class="vietqr-header-img" style="width: 75px; height: 75px; object-fit: contain; display: block;">                    <div class="text-[8px] font-bold text-slate-800 mt-0.5 leading-tight whitespace-pre-line" id="bill-bank-info"></div>
+                </div>
                 </div>
 
                 <!-- Bảng hàng hóa 6 cột đồng bộ: STT 7% | Tên hàng 41% | ĐVT 10% | SL 8% | Đơn giá 16% | Thành tiền 18% -->
@@ -1939,8 +1968,8 @@
             </div>
             <div class="p-4 border-t bg-slate-50 flex justify-end gap-2 shrink-0">
                 <button onclick="closeZaloModal()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold text-sm">Đóng</button>
-                <button onclick="pushZaloItemsToCart()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md scale-active flex items-center gap-2">
-                    <i class="fa-solid fa-cart-plus"></i> Đẩy Tất Cả Món Khớp Vào Giỏ Hàng
+                <button id="btn-push-zalo-cart" onclick="pushZaloItemsToCart()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md scale-active flex items-center gap-2">
+                    <i class="fa-solid fa-cart-plus"></i> Đưa tất cả vào Giỏ hàng
                 </button>
             </div>
         </div>
