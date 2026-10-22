@@ -377,17 +377,30 @@ function openMobileProductActionSheet(prodId) {
 }
 
 function renderInventory(resetLimit = true) {
+    // Nếu resetLimit = true (ví dụ khi gọi lại hàm do gõ tìm kiếm hoặc load dữ liệu mới) -> Đặt lại giới hạn số lượng render
     if (resetLimit) invRenderLimit = 40;
+    
     const tbody = document.getElementById('inventory-list');
     const mobList = document.getElementById('inventory-mobile-list');
     const noRes = document.getElementById('inv-no-result');
     if (!tbody) return;
-    tbody.innerHTML = '';
-    if (mobList) mobList.innerHTML = '';
-
-    const search = (document.getElementById('inv-search-name')?.value || '').toLowerCase().trim();
+    
+    // TRÁNH RESET GIAO DIỆN NẾU ĐANG SCROLL VÀ Ô TÌM KIẾM CÓ CHỮ
+    const searchInp = document.getElementById('inv-search-name');
+    const search = (searchInp?.value || '').toLowerCase().trim();
     const catFilter = document.getElementById('inv-search-cat')?.value || 'all';
     const stockFilter = document.getElementById('inv-filter-stock')?.value || 'all';
+
+    // Chỉ làm trống bảng nếu gọi reset hoặc bảng chưa được render đủ
+    if (resetLimit) {
+        tbody.innerHTML = '';
+        if (mobList) mobList.innerHTML = '';
+    } else {
+        // Nếu không reset, kiểm tra xem bảng đã có dữ liệu chưa. Nếu có rồi thì bỏ qua không render lại từ đầu, chống mất danh sách tìm kiếm khi chuyển tab
+        if (tbody.children.length > 0 && search !== '') return;
+        tbody.innerHTML = '';
+        if (mobList) mobList.innerHTML = '';
+    }
 
     let totalItems = inventory.length;
     let totalCapital = 0;
