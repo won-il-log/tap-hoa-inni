@@ -1617,19 +1617,21 @@ async function submitPurchaseOrder() {
             }
         }
 
-        await db.collection("purchase_orders").doc(poCode).set({
+        const newPoRecord = {
             poCode,
             invoiceNo: invoiceNo || poCode,
             supplierId,
             supplierName,
-            items: currentPoItems,
+            items: currentPoItems.map(x => ({ ...x })),
             totalAmount: grandTotal,
             paidAmount,
             debtAmount: remainDebt,
             paymentMethod: payMethod,
             dateStr,
             createdAt: Date.now()
-        });
+        };
+
+        await db.collection("purchase_orders").doc(poCode).set(newPoRecord);
 
         if (supObj && remainDebt > 0) {
             const oldDebt = Number(supObj.currentDebt) || 0;
@@ -1664,6 +1666,16 @@ async function submitPurchaseOrder() {
             });
         }
 
+        // CẬP NHẬT NGAY LẬP TỨC DANH SÁCH ĐƠN NHẬP HÀNG (KHÔNG CẦN BẤM BACK RA VÀO LẠI)
+        if (typeof cachedPurchaseOrders !== 'undefined') {
+            cachedPurchaseOrders = [newPoRecord, ...cachedPurchaseOrders.filter(p => p.poCode !== poCode)];
+            if (typeof renderPoListScreen === 'function') renderPoListScreen(true);
+        }
+        const histModal = document.getElementById('po-history-modal');
+        if (histModal && !histModal.classList.contains('hidden')) {
+            openPoHistoryModal();
+        }
+
         closePurchaseOrderModal();
         alert(`✅ Đã hoàn tất Phiếu Nhập Hàng ${poCode}!\n- Tổng chuyến: ${formatmoney(grandTotal)}đ\n- Đã trả: ${formatmoney(paidAmount)}đ\n- Ghi vào Nợ Phải Trả NPP: ${formatmoney(remainDebt)}đ`);
     } catch (e) {
@@ -1680,8 +1692,9 @@ async function openPoHistoryModal() {
     tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải lịch sử nhập hàng...</td></tr>`;
 
     try {
-        const snap = await db.collection("purchase_orders").limit(60).get();
-        const pos = snap.docs.map(d => d.data()).sort((a, b) => b.createdAt - a.createdAt);
+        const snap = await db.collection("purchase_orders").limit(100).get();
+        const pos = snap.docs.map(d => d.data()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        cachedPurchaseOrders = pos;
         tbody.innerHTML = '';
 
         if (pos.length === 0) {
@@ -1695,17 +1708,21 @@ async function openPoHistoryModal() {
                 `<div>• <b>${i.productName}</b>: ${i.qty} ${i.unitName} (Giá nhập: ${formatmoney(i.importPrice)}đ/${i.unitName})</div>`
             ).join('');
 
+            const hasReturnBadge = (Array.isArray(po.returnHistory) && po.returnHistory.length > 0)
+                ? `<span class="ml-1 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-bold">Đã hoàn trả NPP</span>`
+                : '';
+
             tbody.innerHTML += `
-                <tr class="hover:bg-slate-50">
+                <tr onclick="openPoDetailModal('${po.poCode}')" class="hover:bg-blue-50/50 cursor-pointer transition" title="Bấm để xem Chi tiết phiếu nhập & Hoàn trả NPP">
                     <td class="p-2.5">
-                        <div class="font-bold text-emerald-700">${po.poCode}</div>
+                        <div class="font-bold text-emerald-700 flex items-center flex-wrap gap-1">${po.poCode} ${hasReturnBadge}</div>
                         <div class="text-xs text-slate-400">${dStr}</div>
                     </td>
                     <td class="p-2.5">
                         <div class="font-bold text-slate-800">${po.supplierName}</div>
                         <div class="text-xs text-slate-500">Số HĐ: ${po.invoiceNo || '---'}</div>
                     </td>
-                    <td class="p-2.5 text-xs text-slate-700 space-y-0.5">${itemsHtml}</td>
+                    <td class="p-2.5 text-xs text-slate-700 space-y-0.5">${itemsHtml || '<span class="italic text-slate-400">Đã hoàn trả hết hàng</span>'}</td>
                     <td class="p-2.5 text-right font-black text-slate-800">${formatmoney(po.totalAmount)} đ</td>
                     <td class="p-2.5 text-right font-semibold text-emerald-600">${formatmoney(po.paidAmount)} đ</td>
                     <td class="p-2.5 text-right font-bold text-red-600">${formatmoney(po.debtAmount)} đ</td>
@@ -2110,10 +2127,11 @@ async function saveStoreSettings() {
 }
 
 // ==========================================
-// MÀN HÌNH ĐỘC LẬP TRONG MENU SẢN PHẨM: ĐƠN NHẬP HÀNG, NHÀ CUNG CẤP, KIỂM HÀNG (MODULE 6.3)
+// MÀN HÌNH ĐỘC LẬP TRONG MENU SẢN PHẨM: ĐƠN NHẬP HÀNG, CHI TIẾT & HOÀN TRẢ NPP (MODULE 6.3)
 // ==========================================
 let cachedPurchaseOrders = [];
 let poScreenLimit = 40;
+let currentViewingPo = null;
 
 async function openPoListScreen() {
     document.getElementById('po-list-screen-modal').classList.remove('hidden');
@@ -2155,23 +2173,645 @@ function renderPoListScreen(reset = false) {
         const dStr = new Date(po.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
         const hasDebt = (Number(po.debtAmount) || 0) > 0;
         const statusBadge = hasDebt
-            ? `<span class="text-[11px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Chưa thanh toán (${formatmoney(po.debtAmount)}đ)</span>`
+            ? `<span class="text-[11px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Nợ NPP: ${formatmoney(po.debtAmount)}đ</span>`
             : `<span class="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Hoàn thành</span>`;
 
+        const returnBadge = (Array.isArray(po.returnHistory) && po.returnHistory.length > 0)
+            ? `<span class="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded ml-1">Đã hoàn trả</span>`
+            : '';
+
+        const itemCount = Array.isArray(po.items) ? po.items.length : 0;
+
         return `
-            <div class="p-3.5 flex justify-between items-center active:bg-slate-50">
+            <div onclick="openPoDetailModal('${po.poCode}')" class="p-3.5 flex justify-between items-center hover:bg-blue-50/40 active:bg-slate-100 cursor-pointer transition">
                 <div class="space-y-0.5">
-                    <div class="font-bold text-slate-800 text-sm">${po.poCode}</div>
-                    <div class="text-xs text-slate-600 font-medium">${po.supplierName || 'Nhà cung cấp lẻ'}</div>
+                    <div class="font-bold text-slate-800 text-sm flex items-center flex-wrap gap-1">
+                        <span>${po.poCode}</span>
+                        ${returnBadge}
+                    </div>
+                    <div class="text-xs text-slate-600 font-medium">${po.supplierName || 'Nhà cung cấp lẻ'} <span class="text-slate-400 font-normal">(${itemCount} món)</span></div>
                     <div class="text-[11px] text-slate-400">${dStr}</div>
                 </div>
-                <div class="text-right space-y-1">
-                    <div class="font-bold text-slate-800 text-sm">${formatmoney(po.totalAmount)} đ</div>
-                    <div>${statusBadge}</div>
+                <div class="text-right space-y-1 flex items-center gap-2">
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm">${formatmoney(po.totalAmount)} đ</div>
+                        <div>${statusBadge}</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-slate-300 text-xs"></i>
                 </div>
             </div>
         `;
     }).join('');
+}
+
+// Mở trang Chi Tiết Phiếu Nhập khi click vào 1 phiếu bất kỳ
+async function openPoDetailModal(poCode) {
+    let po = cachedPurchaseOrders.find(p => p.poCode === poCode);
+    if (!po) {
+        try {
+            const docSnap = await db.collection("purchase_orders").doc(poCode).get();
+            if (docSnap.exists) po = docSnap.data();
+        } catch (e) {}
+    }
+    if (!po) return alert("Không tìm thấy dữ liệu phiếu nhập này!");
+
+    currentViewingPo = po;
+    const dStr = new Date(po.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    document.getElementById('pod-code').innerText = po.poCode || '';
+    document.getElementById('pod-date').innerText = dStr;
+    document.getElementById('pod-supplier').innerText = po.supplierName || 'Nhà Cung Cấp Lẻ';
+    document.getElementById('pod-invoice-no').innerText = po.invoiceNo || po.poCode || '---';
+
+    const items = Array.isArray(po.items) ? po.items : [];
+    const tbody = document.getElementById('pod-items-tbody');
+
+    if (items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 italic">Tất cả mặt hàng trong phiếu này đã được hoàn trả hết cho Nhà Cung Cấp.</td></tr>`;
+    } else {
+        tbody.innerHTML = items.map((item, idx) => {
+            const rate = Math.max(1, Number(item.conversionRate) || 1);
+            const bUnit = item.baseUnit || item.unitName || 'Cái';
+            const baseQty = Number(item.baseQty) || (Number(item.qty) * rate);
+            const rateNote = rate > 1
+                ? `<div class="text-[10px] text-emerald-700 font-normal">Quy đổi: 1 ${item.unitName} = ${rate} ${bUnit} (+${baseQty} ${bUnit})</div>`
+                : '';
+            const retNote = (Number(item.returnedQty) || 0) > 0
+                ? `<div class="text-[10px] text-amber-700 font-semibold">Đã trả NPP: ${item.returnedQty} ${item.unitName}</div>`
+                : '';
+
+            return `
+                <tr class="hover:bg-slate-50">
+                    <td class="p-2 text-center font-semibold text-slate-500">${idx + 1}</td>
+                    <td class="p-2 font-bold text-slate-800">
+                        <div>${item.productName}</div>
+                        ${rateNote}
+                        ${retNote}
+                    </td>
+                    <td class="p-2 text-center font-semibold text-inni-blue">${item.unitName}</td>
+                    <td class="p-2 text-center font-black text-slate-800">${item.qty}</td>
+                    <td class="p-2 text-right font-medium text-slate-700">${formatmoney(item.importPrice)} đ</td>
+                    <td class="p-2 text-right font-black text-red-600">${formatmoney(item.totalCost)} đ</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Hiển thị lịch sử các lần hoàn trả trước đó (Có nút Sửa & Xóa phiếu hoàn cho nhẹ dữ liệu)
+    const retBox = document.getElementById('pod-return-history-box');
+    const retList = document.getElementById('pod-return-history-list');
+    if (Array.isArray(po.returnHistory) && po.returnHistory.length > 0) {
+        retBox.classList.remove('hidden');
+        retList.innerHTML = po.returnHistory.map((rh, rIdx) => {
+            const rTime = new Date(rh.returnedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+            return `
+                <div class="flex items-center justify-between gap-2 bg-white/80 px-2.5 py-1.5 rounded-lg border border-amber-200/80">
+                    <div class="flex-1 min-w-0">
+                        <span class="font-bold text-amber-900">[${rh.returnCode || 'Hoàn #' + (rIdx + 1)}]</span>
+                        <span class="text-slate-400 text-[10px] ml-1">${rTime}</span>
+                        <div class="text-slate-700">Đã trả: <b>${rh.summaryText}</b> — Hoàn: <b class="text-red-600">${formatmoney(rh.refundAmount)}đ</b> (${rh.reason || 'Trả hàng'})</div>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button type="button" onclick="editPoReturnHistoryEntry('${po.poCode}', ${rIdx})" title="Sửa nội dung phiếu hoàn này" class="px-2 py-1 bg-amber-100 hover:bg-amber-500 text-amber-800 hover:text-white rounded text-[10px] font-bold transition">
+                            <i class="fa-solid fa-pen"></i> Sửa
+                        </button>
+                        <button type="button" onclick="deletePoReturnHistoryEntry('${po.poCode}', ${rIdx})" title="Xóa phiếu hoàn này cho nhẹ dữ liệu" class="px-2 py-1 bg-red-100 hover:bg-red-600 text-red-600 hover:text-white rounded text-[10px] font-bold transition">
+                            <i class="fa-solid fa-trash-can"></i> Xóa
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } else {
+        retBox.classList.add('hidden');
+    }
+
+    document.getElementById('pod-total-amount').innerText = `${formatmoney(po.totalAmount || 0)} đ`;
+    document.getElementById('pod-paid-amount').innerText = `${formatmoney(po.paidAmount || 0)} đ`;
+    document.getElementById('pod-debt-amount').innerText = `${formatmoney(po.debtAmount || 0)} đ`;
+
+    const btnOpenRet = document.getElementById('btn-open-po-return');
+    if (btnOpenRet) btnOpenRet.classList.toggle('hidden', items.length === 0);
+
+    switchPoDetailToViewMode();
+    document.getElementById('po-detail-modal').classList.remove('hidden');
+}
+
+function closePoDetailModal() {
+    document.getElementById('po-detail-modal').classList.add('hidden');
+}
+
+// 1. SỬA DÒNG LỊCH SỬ PHIẾU HOÀN TRẢ NHÀ CUNG CẤP
+async function editPoReturnHistoryEntry(poCode, retIdx) {
+    const po = currentViewingPo && currentViewingPo.poCode === poCode
+        ? currentViewingPo
+        : cachedPurchaseOrders.find(p => p.poCode === poCode);
+    if (!po || !Array.isArray(po.returnHistory) || !po.returnHistory[retIdx]) return;
+
+    const entry = po.returnHistory[retIdx];
+    const newSummary = prompt("Sửa chi tiết mặt hàng đã hoàn trả:", entry.summaryText || "");
+    if (newSummary === null) return;
+
+    const newRefundRaw = prompt("Sửa số tiền Nhà Cung Cấp hoàn lại (VNĐ):", entry.refundAmount || 0);
+    if (newRefundRaw === null) return;
+    const newRefundAmount = parseInt(newRefundRaw.toString().replace(/\./g, '').replace(/\D/g, ''), 10) || 0;
+
+    const newReason = prompt("Sửa lý do hoàn trả:", entry.reason || "");
+    if (newReason === null) return;
+
+    const updatedHistory = [...po.returnHistory];
+    updatedHistory[retIdx] = {
+        ...entry,
+        summaryText: newSummary.trim() || entry.summaryText,
+        refundAmount: newRefundAmount,
+        reason: newReason.trim()
+    };
+
+    try {
+        await db.collection("purchase_orders").doc(po.poCode).update({ returnHistory: updatedHistory });
+        po.returnHistory = updatedHistory;
+        const cIdx = cachedPurchaseOrders.findIndex(x => x.poCode === po.poCode);
+        if (cIdx !== -1) cachedPurchaseOrders[cIdx].returnHistory = updatedHistory;
+
+        openPoDetailModal(po.poCode);
+        renderPoListScreen(false);
+        const histModal = document.getElementById('po-history-modal');
+        if (histModal && !histModal.classList.contains('hidden')) openPoHistoryModal();
+    } catch (e) {
+        alert("Lỗi khi sửa lịch sử hoàn trả: " + e.message);
+    }
+}
+
+// 2. XÓA DÒNG LỊCH SỬ PHIẾU HOÀN TRẢ NHÀ CUNG CẤP (SAU KHI ĐÃ LÀM MINH CHỨNG XONG)
+async function deletePoReturnHistoryEntry(poCode, retIdx) {
+    const po = currentViewingPo && currentViewingPo.poCode === poCode
+        ? currentViewingPo
+        : cachedPurchaseOrders.find(p => p.poCode === poCode);
+    if (!po || !Array.isArray(po.returnHistory) || !po.returnHistory[retIdx]) return;
+
+    const entry = po.returnHistory[retIdx];
+    if (!confirm(`Bạn muốn XÓA phiếu hoàn trả "${entry.returnCode || ''}" (${entry.summaryText} - ${formatmoney(entry.refundAmount)}đ) khỏi lịch sử cho nhẹ dữ liệu?`)) {
+        return;
+    }
+
+    const updatedHistory = po.returnHistory.filter((_, idx) => idx !== retIdx);
+
+    try {
+        await db.collection("purchase_orders").doc(po.poCode).update({ returnHistory: updatedHistory });
+
+        // Dọn dẹp luôn bản ghi log liên quan của mã phiếu hoàn này (nếu có) cho nhẹ dữ liệu Firestore
+        if (entry.returnCode) {
+            const [cbSnap, debtSnap] = await Promise.all([
+                db.collection("cashbook").where("voucherCode", "==", entry.returnCode).get(),
+                db.collection("debts").where("referenceId", "==", entry.returnCode).get()
+            ]);
+            cbSnap.docs.forEach(d => d.ref.delete());
+            debtSnap.docs.forEach(d => d.ref.delete());
+        }
+
+        po.returnHistory = updatedHistory;
+        const cIdx = cachedPurchaseOrders.findIndex(x => x.poCode === po.poCode);
+        if (cIdx !== -1) cachedPurchaseOrders[cIdx].returnHistory = updatedHistory;
+
+        openPoDetailModal(po.poCode);
+        renderPoListScreen(false);
+        const histModal = document.getElementById('po-history-modal');
+        if (histModal && !histModal.classList.contains('hidden')) openPoHistoryModal();
+    } catch (e) {
+        alert("Lỗi khi xóa phiếu hoàn trả: " + e.message);
+    }
+}
+
+// 3. SỬA THÔNG TIN PHIẾU NHẬP HÀNG (SỐ HÓA ĐƠN, TIỀN ĐÃ TRẢ, TỔNG TIỀN)
+async function editCurrentPoMetadata() {
+    if (!currentViewingPo) return;
+    const po = currentViewingPo;
+
+    const newInvoiceNo = prompt("Sửa Số hóa đơn gốc của NPP:", po.invoiceNo || po.poCode || "");
+    if (newInvoiceNo === null) return;
+
+    const newTotalRaw = prompt("Sửa Tổng tiền hàng của phiếu nhập (VNĐ):", po.totalAmount || 0);
+    if (newTotalRaw === null) return;
+    const newTotal = parseInt(newTotalRaw.toString().replace(/\./g, '').replace(/\D/g, ''), 10) || 0;
+
+    const newPaidRaw = prompt("Sửa Số tiền ĐÃ THANH TOÁN cho NPP (VNĐ):", po.paidAmount || 0);
+    if (newPaidRaw === null) return;
+    const newPaid = parseInt(newPaidRaw.toString().replace(/\./g, '').replace(/\D/g, ''), 10) || 0;
+
+    const newDebt = Math.max(0, newTotal - newPaid);
+    const updatedFields = {
+        invoiceNo: newInvoiceNo.trim() || po.poCode,
+        totalAmount: newTotal,
+        paidAmount: newPaid,
+        debtAmount: newDebt
+    };
+
+    try {
+        await db.collection("purchase_orders").doc(po.poCode).update(updatedFields);
+        Object.assign(po, updatedFields);
+        const cIdx = cachedPurchaseOrders.findIndex(x => x.poCode === po.poCode);
+        if (cIdx !== -1) Object.assign(cachedPurchaseOrders[cIdx], updatedFields);
+
+        openPoDetailModal(po.poCode);
+        renderPoListScreen(false);
+        const histModal = document.getElementById('po-history-modal');
+        if (histModal && !histModal.classList.contains('hidden')) openPoHistoryModal();
+        alert("✅ Đã cập nhật thông tin Phiếu Nhập thành công!");
+    } catch (e) {
+        alert("Lỗi khi sửa phiếu nhập: " + e.message);
+    }
+}
+
+// 4. XÓA HẲN PHIẾU NHẬP HÀNG KHỎI LỊCH SỬ (CÓ TÙY CHỌN CHỈ XÓA LỊCH SỬ CHO NHẸ DỮ LIỆU HOẶC TRỪ NGƯỢC KHO)
+async function deleteCurrentPurchaseOrder() {
+    if (!currentViewingPo) return;
+    const po = currentViewingPo;
+
+    const mode = prompt(
+        `XÓA PHIẾU NHẬP HÀNG "${po.poCode}" (${po.supplierName}):\n` +
+        `Nhập số để chọn cách xóa:\n` +
+        `1 - Chỉ xóa lịch sử phiếu nhập cho nhẹ dữ liệu (Giữ nguyên tồn kho & công nợ hiện tại)\n` +
+        `2 - Xóa phiếu nhập VÀ trừ ngược lại số lượng tồn kho, công nợ, sổ quỹ đã nhập`,
+        "1"
+    );
+
+    if (mode !== "1" && mode !== "2") return;
+
+    try {
+        if (mode === "2") {
+            // Đảo ngược tồn kho của các mặt hàng còn trong phiếu
+            for (const item of (po.items || [])) {
+                const dbProd = inventory.find(i => i.id === item.productId) ||
+                               inventory.find(i => (i.name || '').toLowerCase() === (item.productName || '').toLowerCase());
+                if (dbProd) {
+                    const rate = Math.max(1, Number(item.conversionRate) || 1);
+                    const deductBase = Number(item.baseQty) || ((Number(item.qty) || 0) * rate);
+                    const startStock = Number(dbProd.stock) || 0;
+                    const endStock = startStock - deductBase;
+                    await db.collection("inventory").doc(dbProd.id).update({ stock: endStock });
+                    await writeInventoryLog(
+                        dbProd.id, dbProd.name, "ADJUST", `XÓA-${po.poCode}`,
+                        `Trừ kho do xóa phiếu nhập ${po.poCode}`, startStock, -deductBase, endStock
+                    );
+                }
+            }
+
+            // Đảo ngược công nợ NPP (nếu có)
+            if (po.supplierId && po.supplierId !== 'GENERAL' && (Number(po.debtAmount) || 0) > 0) {
+                const sup = (typeof customers !== 'undefined' ? customers : []).find(c => c.id === po.supplierId);
+                if (sup) {
+                    const newSupDebt = Math.max(0, (Number(sup.currentDebt) || 0) - (Number(po.debtAmount) || 0));
+                    await db.collection("customers").doc(sup.id).update({ currentDebt: newSupDebt, updatedAt: Date.now() });
+                }
+            }
+
+            const [cbSnap, debtSnap] = await Promise.all([
+                db.collection("cashbook").where("referenceId", "==", po.poCode).get(),
+                db.collection("debts").where("referenceId", "==", po.poCode).get()
+            ]);
+            cbSnap.docs.forEach(d => d.ref.delete());
+            debtSnap.docs.forEach(d => d.ref.delete());
+        }
+
+        await db.collection("purchase_orders").doc(po.poCode).delete();
+        cachedPurchaseOrders = cachedPurchaseOrders.filter(x => x.poCode !== po.poCode);
+
+        closePoDetailModal();
+        renderPoListScreen(false);
+        const histModal = document.getElementById('po-history-modal');
+        if (histModal && !histModal.classList.contains('hidden')) openPoHistoryModal();
+        alert(`✅ Đã xóa phiếu nhập ${po.poCode} thành công!`);
+    } catch (e) {
+        alert("Lỗi khi xóa phiếu nhập: " + e.message);
+    }
+}
+
+function switchPoDetailToViewMode() {
+    if (!currentViewingPo) return;
+    document.getElementById('pod-header-title').innerHTML = `<i class="fa-solid fa-file-invoice"></i> Chi Tiết Phiếu Nhập: ${currentViewingPo.poCode}`;
+    document.getElementById('pod-header-subtitle').innerText = `Nhà cung cấp: ${currentViewingPo.supplierName || 'Nhà cung cấp lẻ'}`;
+    document.getElementById('pod-view-section').classList.remove('hidden');
+    document.getElementById('pod-view-footer').classList.remove('hidden');
+    document.getElementById('pod-return-section').classList.add('hidden');
+    document.getElementById('pod-return-footer').classList.add('hidden');
+}
+
+// Chuyển sang giao diện Hoàn Trả Nhà Cung Cấp (có nút [-] [+] chọn số lượng trả)
+function switchPoDetailToReturnMode() {
+    if (!currentViewingPo) return;
+    const items = Array.isArray(currentViewingPo.items) ? currentViewingPo.items : [];
+    if (items.length === 0) return alert("Phiếu nhập này không còn mặt hàng nào để hoàn trả!");
+
+    document.getElementById('pod-header-title').innerHTML = `<i class="fa-solid fa-rotate-left text-amber-300"></i> Hoàn Trả Nhà Cung Cấp (${currentViewingPo.poCode})`;
+    document.getElementById('pod-header-subtitle').innerText = `Chọn số lượng hàng lỗi / cận date muốn xuất trả lại cho ${currentViewingPo.supplierName || 'NPP'}`;
+
+    const refundModeSel = document.getElementById('pod-ret-refund-mode');
+    if (refundModeSel) {
+        if ((Number(currentViewingPo.debtAmount) || 0) > 0) {
+            refundModeSel.value = 'DEBT_OFFSET';
+        } else if (currentViewingPo.paymentMethod === 'BANK') {
+            refundModeSel.value = 'BANK_REFUND';
+        } else {
+            refundModeSel.value = 'CASH_REFUND';
+        }
+    }
+
+    const listEl = document.getElementById('pod-return-items-list');
+    listEl.innerHTML = items.map((item, idx) => {
+        const rate = Math.max(1, Number(item.conversionRate) || 1);
+        const bUnit = item.baseUnit || item.unitName || 'Cái';
+        const maxQty = Number(item.qty) || 0;
+
+        return `
+            <div class="p-3 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-slate-800 text-xs sm:text-sm truncate">${item.productName}</div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">
+                        Giá nhập: <b class="text-emerald-700">${formatmoney(item.importPrice)}đ/${item.unitName}</b>
+                        • Đã nhập: <b class="text-slate-800">${maxQty} ${item.unitName}</b>
+                        ${rate > 1 ? `<span class="text-slate-400">(1 ${item.unitName} = ${rate}${bUnit})</span>` : ''}
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                    <!-- Cụm nút [-] [Số lượng] [+] -->
+                    <div class="flex items-center gap-1">
+                        <button type="button" onclick="changePoReturnQty(${idx}, -1)" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-black flex items-center justify-center border border-slate-300">
+                            <i class="fa-solid fa-minus text-xs"></i>
+                        </button>
+                        <input type="number" id="pod-ret-qty-${idx}" data-idx="${idx}" min="0" max="${maxQty}" value="0"
+                            oninput="changePoReturnQty(${idx}, 0, this.value)"
+                            class="pod-ret-qty-inp w-14 h-8 border-2 border-amber-400 rounded-lg text-center font-black text-sm text-red-600 bg-white focus:outline-none">
+                        <button type="button" onclick="changePoReturnQty(${idx}, 1)" class="w-8 h-8 rounded-lg bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-black flex items-center justify-center shadow-sm">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                        </button>
+                    </div>
+
+                    <div class="text-right min-w-[105px]">
+                        <div class="font-black text-red-600 text-xs sm:text-sm" id="pod-ret-line-money-${idx}">0 đ</div>
+                        <div class="text-[10px] text-slate-400 font-semibold" id="pod-ret-line-stock-${idx}">Trừ kho: 0 ${bUnit}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    calcPoReturnTotal();
+    document.getElementById('pod-view-section').classList.add('hidden');
+    document.getElementById('pod-view-footer').classList.add('hidden');
+    document.getElementById('pod-return-section').classList.remove('hidden');
+    document.getElementById('pod-return-footer').classList.remove('hidden');
+}
+
+function changePoReturnQty(idx, delta, exactVal = null) {
+    if (!currentViewingPo || !currentViewingPo.items[idx]) return;
+    const item = currentViewingPo.items[idx];
+    const maxQty = Number(item.qty) || 0;
+    const inp = document.getElementById(`pod-ret-qty-${idx}`);
+    if (!inp) return;
+
+    let newQty = exactVal !== null ? (parseInt(exactVal, 10) || 0) : ((parseInt(inp.value, 10) || 0) + delta);
+    if (newQty < 0) newQty = 0;
+    if (newQty > maxQty) newQty = maxQty;
+
+    inp.value = newQty;
+    calcPoReturnTotal();
+}
+
+function calcPoReturnTotal() {
+    if (!currentViewingPo) return 0;
+    let totalRefund = 0;
+    const stockDeductParts = [];
+
+    (currentViewingPo.items || []).forEach((item, idx) => {
+        const inp = document.getElementById(`pod-ret-qty-${idx}`);
+        let rQty = inp ? (parseInt(inp.value, 10) || 0) : 0;
+        const maxQty = Number(item.qty) || 0;
+        if (rQty > maxQty) { rQty = maxQty; if (inp) inp.value = rQty; }
+        if (rQty < 0) { rQty = 0; if (inp) inp.value = 0; }
+
+        const rate = Math.max(1, Number(item.conversionRate) || 1);
+        const bUnit = item.baseUnit || item.unitName || 'Cái';
+        const baseDeduct = rQty * rate;
+        const lineMoney = rQty * (Number(item.importPrice) || 0);
+
+        totalRefund += lineMoney;
+        if (rQty > 0) {
+            stockDeductParts.push(`-${baseDeduct} ${bUnit} (${item.productName})`);
+        }
+
+        const moneyEl = document.getElementById(`pod-ret-line-money-${idx}`);
+        if (moneyEl) moneyEl.innerText = `${formatmoney(lineMoney)} đ`;
+        const stockEl = document.getElementById(`pod-ret-line-stock-${idx}`);
+        if (stockEl) {
+            stockEl.innerText = `Trừ kho: -${baseDeduct} ${bUnit}`;
+            stockEl.className = rQty > 0 ? "text-[10px] text-red-600 font-bold" : "text-[10px] text-slate-400 font-semibold";
+        }
+    });
+
+    const totalEl = document.getElementById('pod-ret-total-refund');
+    if (totalEl) totalEl.innerText = `${formatmoney(totalRefund)} đ`;
+
+    const sumStockEl = document.getElementById('pod-ret-stock-summary');
+    if (sumStockEl) {
+        sumStockEl.innerText = stockDeductParts.length > 0
+            ? `Tự động trừ kho: ${stockDeductParts.join(', ')}`
+            : `Chưa chọn mặt hàng nào để trả`;
+    }
+
+    return totalRefund;
+}
+
+// Xác nhận Hoàn Trả Nhà Cung Cấp: Tự động tính tiền hoàn, Tự động TRỪ TỒN KHO, cập nhật Phiếu Nhập & Công nợ NPP
+async function submitPoReturnToSupplier() {
+    if (!currentViewingPo) return;
+    const po = currentViewingPo;
+    const items = Array.isArray(po.items) ? po.items : [];
+
+    const returnedItems = [];
+    const remainingItems = [];
+    let totalRefundAmount = 0;
+
+    items.forEach((origItem, idx) => {
+        const inp = document.getElementById(`pod-ret-qty-${idx}`);
+        const rQty = inp ? Math.max(0, Math.min(Number(origItem.qty) || 0, parseInt(inp.value, 10) || 0)) : 0;
+        const rate = Math.max(1, Number(origItem.conversionRate) || 1);
+        const bUnit = origItem.baseUnit || origItem.unitName || 'Cái';
+
+        if (rQty > 0) {
+            const baseQtyDeduct = rQty * rate;
+            const lineRefund = rQty * (Number(origItem.importPrice) || 0);
+            totalRefundAmount += lineRefund;
+            returnedItems.push({
+                ...origItem,
+                returnQty: rQty,
+                baseQtyDeduct: baseQtyDeduct,
+                baseUnit: bUnit,
+                lineRefund: lineRefund
+            });
+        }
+
+        const leftQty = (Number(origItem.qty) || 0) - rQty;
+        if (leftQty > 0) {
+            remainingItems.push({
+                ...origItem,
+                qty: leftQty,
+                baseQty: leftQty * rate,
+                totalCost: leftQty * (Number(origItem.importPrice) || 0),
+                returnedQty: (Number(origItem.returnedQty) || 0) + rQty
+            });
+        }
+    });
+
+    if (returnedItems.length === 0) {
+        return alert("Vui lòng bấm nút [+] chọn số lượng hoàn trả lớn hơn 0 ở ít nhất 1 mặt hàng!");
+    }
+
+    const refundMode = document.getElementById('pod-ret-refund-mode')?.value || 'DEBT_OFFSET';
+    const reason = (document.getElementById('pod-ret-reason')?.value || '').trim() || "Hoàn trả hàng lỗi / cận date cho NPP";
+
+    const summaryParts = returnedItems.map(r => `${r.productName} (${r.returnQty} ${r.unitName} = -${r.baseQtyDeduct} ${r.baseUnit})`);
+    if (!confirm(
+        `XÁC NHẬN HOÀN TRẢ NHÀ CUNG CẤP:\n` +
+        `- Phiếu nhập gốc: ${po.poCode} (${po.supplierName})\n` +
+        `- Hàng xuất trả: ${summaryParts.join(', ')}\n` +
+        `- Tổng tiền hoàn lại: ${formatmoney(totalRefundAmount)} đ\n\n` +
+        `Hệ thống sẽ tự động TRỪ TỒN KHO của các mặt hàng trên. Bạn có chắc chắn muốn thực hiện?`
+    )) return;
+
+    const btn = document.getElementById('btn-submit-po-return');
+    const origBtnHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang trừ kho & hoàn trả...`;
+    }
+
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const retVoucherCode = `THN-${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    try {
+        // 1. TỰ ĐỘNG TRỪ TỒN KHO CỦA CÁC MẶT HÀNG HOÀN TRẢ & GHI THẺ KHO
+        for (const rItem of returnedItems) {
+            const dbProd = inventory.find(i => i.id === rItem.productId) ||
+                           inventory.find(i => (i.name || '').toLowerCase() === (rItem.productName || '').toLowerCase());
+            if (dbProd) {
+                const startStock = Number(dbProd.stock) || 0;
+                const endStock = startStock - rItem.baseQtyDeduct;
+                await db.collection("inventory").doc(dbProd.id).update({ stock: endStock });
+                await writeInventoryLog(
+                    dbProd.id,
+                    dbProd.name,
+                    "ADJUST",
+                    `${retVoucherCode} (Hoàn NPP ${po.poCode})`,
+                    `Trả lại NPP: -${rItem.returnQty} ${rItem.unitName} (-${rItem.baseQtyDeduct} ${rItem.baseUnit})`,
+                    startStock,
+                    -rItem.baseQtyDeduct,
+                    endStock
+                );
+            }
+        }
+
+        // 2. XỬ LÝ TIỀN HOÀN LẠI (TRỪ CÔNG NỢ NHÀ CUNG CẤP HOẶC THU TIỀN VÀO SỔ QUỸ)
+        const supObj = (typeof customers !== 'undefined' ? customers : []).find(c => c.id === po.supplierId);
+        const curPoDebt = Number(po.debtAmount) || 0;
+        let debtReducedOnPo = 0;
+        let cashRefunded = 0;
+        let refundChannel = refundMode === 'BANK_REFUND' ? 'BANK' : 'CASH';
+
+        if (refundMode === 'DEBT_OFFSET') {
+            debtReducedOnPo = Math.min(curPoDebt, totalRefundAmount);
+            cashRefunded = totalRefundAmount - debtReducedOnPo;
+
+            if (supObj && (Number(supObj.currentDebt) || 0) > 0) {
+                const oldSupDebt = Number(supObj.currentDebt) || 0;
+                const offsetSup = Math.min(oldSupDebt, totalRefundAmount);
+                const afterSupDebt = Math.max(0, oldSupDebt - offsetSup);
+                await db.collection("customers").doc(supObj.id).update({ currentDebt: afterSupDebt, updatedAt: Date.now() });
+                await db.collection("debts").add({
+                    customerId: supObj.id,
+                    customerName: supObj.name,
+                    ledgerType: "PAYABLE",
+                    transactionType: "RETURN_OFFSET",
+                    referenceId: retVoucherCode,
+                    beforeDebt: oldSupDebt,
+                    changeAmount: -offsetSup,
+                    afterDebt: afterSupDebt,
+                    note: `Trừ nợ Phải trả NPP do hoàn hàng phiếu ${po.poCode} (${reason})`,
+                    createdAt: Date.now()
+                });
+            }
+        } else {
+            cashRefunded = totalRefundAmount;
+        }
+
+        if (cashRefunded > 0) {
+            await db.collection("cashbook").add({
+                voucherCode: retVoucherCode,
+                type: "INCOME",
+                channel: refundChannel,
+                category: "IMPORT_REFUND",
+                amount: cashRefunded,
+                referenceId: po.poCode,
+                note: `Thu tiền Nhà cung cấp (${po.supplierName}) hoàn trả hàng phiếu ${po.poCode} (${reason})`,
+                seller: document.getElementById('seller-name')?.value || "Chủ Quán",
+                dateStr,
+                createdAt: Date.now()
+            });
+        }
+
+        // 3. CẬP NHẬT LẠI PHIẾU NHẬP TRÊN FIRESTORE & BỘ NHỚ TẠM
+        const newTotalAmount = Math.max(0, (Number(po.totalAmount) || 0) - totalRefundAmount);
+        const newDebtAmount = Math.max(0, curPoDebt - debtReducedOnPo);
+        const newPaidAmount = Math.max(0, (Number(po.paidAmount) || 0) - cashRefunded);
+        const updatedHistory = [
+            ...(Array.isArray(po.returnHistory) ? po.returnHistory : []),
+            {
+                returnCode: retVoucherCode,
+                returnedAt: Date.now(),
+                refundAmount: totalRefundAmount,
+                reason: reason,
+                summaryText: returnedItems.map(r => `${r.productName} (x${r.returnQty} ${r.unitName})`).join(', ')
+            }
+        ];
+
+        const updatedPoFields = {
+            items: remainingItems,
+            totalAmount: newTotalAmount,
+            paidAmount: newPaidAmount,
+            debtAmount: newDebtAmount,
+            returnHistory: updatedHistory
+        };
+
+        await db.collection("purchase_orders").doc(po.poCode).update(updatedPoFields);
+
+        // Cập nhật ngay vào bộ nhớ tạm để UI làm mới tức thì không bị lag
+        Object.assign(po, updatedPoFields);
+        const cacheIdx = cachedPurchaseOrders.findIndex(x => x.poCode === po.poCode);
+        if (cacheIdx !== -1) {
+            cachedPurchaseOrders[cacheIdx] = { ...po };
+        }
+
+        renderPoListScreen(false);
+        const histModal = document.getElementById('po-history-modal');
+        if (histModal && !histModal.classList.contains('hidden')) {
+            openPoHistoryModal();
+        }
+
+        openPoDetailModal(po.poCode);
+        alert(
+            `✅ Đã hoàn trả Nhà Cung Cấp thành công (${retVoucherCode})!\n` +
+            `- Đã tự động TRỪ TỒN KHO: ${summaryParts.join(', ')}\n` +
+            `- Tổng tiền hoàn lại: ${formatmoney(totalRefundAmount)} đ`
+        );
+    } catch (e) {
+        alert("Lỗi khi hoàn trả nhà cung cấp: " + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origBtnHtml;
+        }
+    }
 }
 
 function openSuppliersScreen() {
