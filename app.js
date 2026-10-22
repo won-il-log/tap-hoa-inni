@@ -253,55 +253,73 @@ function switchTab(tabId) {
 }
 
 // ==========================================
-// 3. LẮNG NGHE DỮ LIỆU KHO HÀNG (ĐỒNG BỘ TRỰC TIẾP TỪ SERVER, CHỐNG KẸT GIÁ CŨ)
+// 3. LẮNG NGHE DỮ LIỆU KHO HÀNG (ĐỒNG BỘ TRỰC TIẾP TỪ SERVER, LUÔN LẤY GIÁ MỚI NHẤT)
 // ==========================================
-db.collection("inventory").onSnapshot({ includeMetadataChanges: true }, (snapshot) => {
-    inventory = snapshot.docs.map(doc => {
-        const d = doc.data();
-        const baseUnit = (d.baseUnit || "Cái").trim();
-        const basePrice = Number(d.basePrice ?? d.price ?? 0);
-        const wholesalePrice = Number(d.wholesalePrice ?? basePrice);
-        const costPrice = d.costPrice !== undefined && d.costPrice !== null && d.costPrice !== ""
-            ? Number(d.costPrice)
-            : Math.round(basePrice * 0.85);
+function mapInventoryDoc(doc) {
+    const d = doc.data();
+    const baseUnit = (d.baseUnit || "Cái").trim();
+    const basePrice = Number(d.basePrice ?? d.price ?? 0);
+    const wholesalePrice = Number(d.wholesalePrice ?? basePrice);
+    const costPrice = d.costPrice !== undefined && d.costPrice !== null && d.costPrice !== ""
+        ? Number(d.costPrice)
+        : Math.round(basePrice * 0.85);
 
-        // Đồng bộ lại đơn vị cơ sở (conversionRate === 1) trong mảng units để giá Lẻ & giá Sỉ luôn khớp 100% với basePrice/wholesalePrice mới sửa
-        let rawUnits = Array.isArray(d.units) && d.units.length > 0 ? d.units.map(u => ({ ...u })) : [];
-        const baseUnitObj = {
-            unitName: baseUnit,
-            conversionRate: 1,
-            sellingPrice: basePrice,
-            wholesalePrice: wholesalePrice,
-            barcode: d.barcode || ""
-        };
+    let rawUnits = Array.isArray(d.units) && d.units.length > 0 ? d.units.map(u => ({ ...u })) : [];
+    const baseUnitObj = {
+        unitName: baseUnit,
+        conversionRate: 1,
+        sellingPrice: basePrice,
+        wholesalePrice: wholesalePrice,
+        barcode: d.barcode || ""
+    };
 
-        const baseIdx = rawUnits.findIndex(u => Number(u.conversionRate) === 1);
-        if (baseIdx !== -1) {
-            rawUnits[baseIdx] = baseUnitObj;
-        } else {
-            rawUnits.unshift(baseUnitObj);
-        }
-
-        return {
-            id: doc.id,
-            name: d.name || "Chưa đặt tên",
-            category: d.category || "Khác",
-            barcode: d.barcode || "",
-            keywords: Array.isArray(d.keywords) ? d.keywords : [],
-            image: d.image || null,
-            baseUnit: baseUnit,
-            basePrice: basePrice,
-            wholesalePrice: wholesalePrice,
-            price: basePrice,
-            costPrice: costPrice,
-            stock: Number(d.stock ?? 0),
-            minStock: Number(d.minStock ?? 10),
-            units: rawUnits,
-            createdAt: d.createdAt || 0,
-            updatedAt: d.updatedAt || 0
-        };
+    // Giữ đúng 1 đơn vị gốc ở đầu và lấy giá mới nhất cho các đơn vị quy đổi (Lốc/Thùng)
+    const extraUnitsMap = new Map();
+    rawUnits.forEach((u, idx) => {
+        const uName = (u.unitName || "").trim();
+        const rate = Number(u.conversionRate) || 1;
+        if (!uName) return;
+        if (rate === 1 && (idx === 0 || uName.toLowerCase() === baseUnit.toLowerCase())) return;
+        extraUnitsMap.set(uName.toLowerCase(), {
+            unitName: uName,
+            conversionRate: rate,
+            sellingPrice: Number(u.sellingPrice ?? u.wholesalePrice ?? 0),
+            wholesalePrice: Number(u.wholesalePrice ?? u.sellingPrice ?? 0),
+            barcode: u.barcode || ""
+        });
     });
-    inventory.sort((a, b) => b.createdAt - a.createdAt);
+
+    return {
+        id: doc.id,
+        name: d.name || "Chưa đặt tên",
+        category: d.category || "Khác",
+        barcode: d.barcode || "",
+        keywords: Array.isArray(d.keywords) ? d.keywords : [],
+        image: d.image || null,
+        baseUnit: baseUnit,
+        basePrice: basePrice,
+        wholesalePrice: wholesalePrice,
+        price: basePrice,
+        costPrice: costPrice,
+        stock: Number(d.stock ?? 0),
+        minStock: Number(d.minStock ?? 10),
+        units: [baseUnitObj, ...Array.from(extraUnitsMap.values())],
+        createdAt: d.createdAt || 0,
+        updatedAt: d.updatedAt || d.createdAt || 0
+    };
+}
+
+// Ép lấy dữ liệu mới nhất trực tiếp từ Cloud Server khi mở App
+db.collection("inventory").get({ source: 'server' }).then((serverSnap) => {
+    inventory = serverSnap.docs.map(mapInventoryDoc);
+    inventory.sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+    renderInventory(false);
+    if (typeof renderSellGrid === 'function') renderSellGrid();
+}).catch(() => {});
+
+db.collection("inventory").onSnapshot((snapshot) => {
+    inventory = snapshot.docs.map(mapInventoryDoc);
+    inventory.sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
     renderInventory(false);
     if (typeof renderSellGrid === 'function') renderSellGrid();
 });
@@ -309,10 +327,9 @@ db.collection("inventory").onSnapshot({ includeMetadataChanges: true }, (snapsho
 // ==========================================
 // 4. HIỂN THỊ KHO HÀNG & ĐA ĐƠN VỊ TÍNH
 // ==========================================
-// Tách tổng số đơn vị nhỏ ra thành các đơn vị lớn -> nhỏ (VD: 1095 Lon -> 45 Thùng, 2 Lốc, 3 Lon)
 function breakdownStockByUnits(totalBaseStock, units) {
     let remaining = Math.max(0, totalBaseStock);
-    const sortedUnits = [...units].sort((a, b) => b.conversionRate - a.conversionRate);
+    const sortedUnits = [...units].filter(u => Number(u.conversionRate) > 0).sort((a, b) => b.conversionRate - a.conversionRate);
     return sortedUnits.map(u => {
         const count = Math.floor(remaining / u.conversionRate);
         remaining = remaining % u.conversionRate;
@@ -410,7 +427,7 @@ function renderInventory(resetLimit = true) {
             <div class="font-bold text-inni-blue text-xs mt-0.5">Sỉ: ${formatmoney(item.wholesalePrice || item.basePrice)}đ <span class="text-[10px] font-normal text-slate-500">/${item.baseUnit}</span></div>
         `;
 
-        const wholesaleUnits = item.units.filter(u => u.conversionRate > 1);
+        const wholesaleUnits = item.units.filter((u, idx) => idx > 0 || Number(u.conversionRate) > 1);
         const wholesaleHtml = wholesaleUnits.length > 0
             ? wholesaleUnits.map(u => `
                 <div class="mb-1 last:mb-0 bg-blue-50/80 border border-blue-200 px-2.5 py-1 rounded-lg flex items-center justify-between gap-2">
@@ -462,7 +479,7 @@ function renderInventory(resetLimit = true) {
         `;
         tbody.appendChild(tr);
 
-        // 2. Dữ liệu Thẻ Sản Phẩm (List Item 1 dòng chuẩn Sapo) trên Mobile (< 768px)
+        // 2. Dữ liệu Thẻ Sản Phẩm trên Mobile
         if (mobList) {
             let stockConvertedStr = `${item.stock} ${item.baseUnit}`;
             if (item.stock <= 0) {
@@ -476,6 +493,10 @@ function renderInventory(resetLimit = true) {
                 ? `<img src="${item.image}" class="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0">`
                 : `<div class="w-10 h-10 rounded-lg bg-slate-100 text-slate-400 flex items-center justify-center shrink-0 text-xs"><i class="fa-solid fa-box"></i></div>`;
 
+            const extraUnitsMob = wholesaleUnits.map(u =>
+                `<span class="inline-block bg-blue-50 text-[#0088FF] border border-blue-200 px-1.5 py-0.2 rounded text-[10px] font-bold mt-0.5 mr-1">${u.unitName}: ${formatmoney(u.sellingPrice)}</span>`
+            ).join('');
+
             mobList.innerHTML += `
                 <div class="flex items-center justify-between px-3.5 py-3 gap-2.5 active:bg-slate-50" onclick="openProductModal('${item.id}')">
                     <div class="flex items-center gap-2.5 min-w-0 flex-1">
@@ -483,6 +504,7 @@ function renderInventory(resetLimit = true) {
                         <div class="min-w-0 flex-1">
                             <div class="font-bold text-slate-800 text-[13px] truncate">${item.name}</div>
                             <div class="text-[11px] text-slate-400 truncate mt-0.5">${item.barcode || 'Chưa có SKU'}</div>
+                            ${extraUnitsMob ? `<div>${extraUnitsMob}</div>` : ''}
                         </div>
                     </div>
                     <div class="text-right shrink-0">
@@ -572,7 +594,6 @@ function openProductModal(id = null) {
         document.getElementById('prod-wholesale-price').value = '';
         document.getElementById('prod-stock').value = '0';
         document.getElementById('prod-min-stock').value = '24';
-        // Mở sẵn Cấp 2 (Lốc = 6) và Cấp 3 (Thùng = 24)
         addUnitRow('Lốc', 6, '', '', '');
         addUnitRow('Thùng', 24, '', '', '');
     } else {
@@ -591,7 +612,7 @@ function openProductModal(id = null) {
         document.getElementById('prod-stock').value = item.stock;
         document.getElementById('prod-min-stock').value = item.minStock;
 
-        const wholesaleUnits = item.units.filter(u => u.conversionRate > 1);
+        const wholesaleUnits = item.units.filter((u, idx) => idx > 0 || Number(u.conversionRate) > 1);
         if (wholesaleUnits.length > 0) {
             wholesaleUnits.forEach(u => addUnitRow(
                 u.unitName,
@@ -636,7 +657,6 @@ async function saveProduct() {
 
     const keywords = keywordsRaw.split(',').map(k => k.trim().toLowerCase()).filter(k => k);
     
-    // Luôn khởi tạo đơn vị gốc (cấp 1) với giá mới nhất vừa sửa
     const units = [{
         unitName: baseUnit,
         conversionRate: 1,
@@ -645,7 +665,6 @@ async function saveProduct() {
         barcode: barcode
     }];
 
-    // Quét toàn bộ các dòng đơn vị lớn (Lốc, Thùng, Bao...)
     document.querySelectorAll('#unit-rows-container .unit-row').forEach(row => {
         const uName = row.querySelector('.unit-name').value.trim();
         const uRate = parseInt(row.querySelector('.unit-rate').value, 10) || 0;
@@ -653,25 +672,26 @@ async function saveProduct() {
         const uWholesalePrice = getRawNum(row.querySelector('.unit-wholesale-price'));
         const uBarcode = row.querySelector('.unit-barcode').value.trim();
 
-        // Cho phép lưu mọi đơn vị phụ có tên và có nhập giá (nếu quên nhập hệ số quy đổi hoặc để <=1 thì tự lấy 1)
         if (uName && (uRetailPrice > 0 || uWholesalePrice > 0)) {
             const finalRate = uRate > 1 ? uRate : 1;
             const finalRetail = uRetailPrice > 0 ? uRetailPrice : uWholesalePrice;
             const finalWholesale = uWholesalePrice > 0 ? uWholesalePrice : uRetailPrice;
 
-            // Tránh trùng lặp với đơn vị gốc nếu khách lỡ gõ trùng tên đơn vị gốc với hệ số = 1
             if (finalRate === 1 && uName.toLowerCase() === baseUnit.toLowerCase()) {
                 units[0].sellingPrice = finalRetail;
                 units[0].wholesalePrice = finalWholesale;
                 if (uBarcode) units[0].barcode = uBarcode;
             } else {
-                units.push({
+                const existUIdx = units.findIndex((u, idx) => idx > 0 && u.unitName.toLowerCase() === uName.toLowerCase());
+                const unitObj = {
                     unitName: uName,
                     conversionRate: finalRate,
                     sellingPrice: finalRetail,
                     wholesalePrice: finalWholesale,
                     barcode: uBarcode
-                });
+                };
+                if (existUIdx !== -1) units[existUIdx] = unitObj;
+                else units.push(unitObj);
             }
         }
     });
@@ -680,8 +700,8 @@ async function saveProduct() {
     btn.disabled = true;
     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...`;
 
-    // Nếu người dùng có nhập ô Giá vốn (kể cả nhập 0) thì giữ đúng số đó, chỉ tự ước tính 85% khi bỏ trống hoàn toàn
     const finalCostPrice = costInputRaw !== '' ? costPrice : Math.round(basePrice * 0.85);
+    const nowTs = Date.now();
 
     const productData = {
         name,
@@ -696,7 +716,7 @@ async function saveProduct() {
         stock,
         minStock,
         units,
-        updatedAt: Date.now()
+        updatedAt: nowTs
     };
 
     if (imageInput.files.length > 0) {
@@ -709,11 +729,11 @@ async function saveProduct() {
     }
 
     try {
+        const normTargetName = name.toLowerCase().replace(/\s+/g, ' ');
+
         if (!id) {
-            productData.createdAt = Date.now();
+            productData.createdAt = nowTs;
             const docRef = await db.collection("inventory").add(productData);
-            
-            // Cập nhật ngay vào bộ nhớ RAM để UI hiện tức thì
             const newItemObj = { id: docRef.id, ...productData };
             const existIdx = inventory.findIndex(i => i.id === docRef.id);
             if (existIdx !== -1) inventory[existIdx] = newItemObj;
@@ -726,10 +746,8 @@ async function saveProduct() {
             const oldIdx = inventory.findIndex(i => i.id === id);
             const oldItem = oldIdx !== -1 ? inventory[oldIdx] : null;
 
-            // Dùng set(..., { merge: true }) thay vì update() để đảm bảo ghi đè toàn bộ trường giá lên Firestore bền vững
             await db.collection("inventory").doc(id).set(productData, { merge: true });
 
-            // Cập nhật trực tiếp vào mảng inventory trên RAM ngay lập tức (không chờ cache)
             if (oldIdx !== -1) {
                 inventory[oldIdx] = {
                     ...inventory[oldIdx],
@@ -739,7 +757,22 @@ async function saveProduct() {
                 };
             }
 
-            // Cập nhật lại giá trong Giỏ hàng POS (nếu món hàng này đang nằm trong giỏ chưa thanh toán)
+            // Tự động cập nhật ngầm giá mới nhất lên Cloud cho mọi bản ghi cùng tên (nếu có)
+            const sameNameItems = inventory.filter(i => i.id !== id && (i.name || '').trim().toLowerCase().replace(/\s+/g, ' ') === normTargetName);
+            for (const sameItem of sameNameItems) {
+                const syncPricePayload = {
+                    baseUnit: baseUnit,
+                    costPrice: finalCostPrice,
+                    basePrice: basePrice,
+                    wholesalePrice: wholesalePrice,
+                    price: basePrice,
+                    units: units,
+                    updatedAt: nowTs
+                };
+                await db.collection("inventory").doc(sameItem.id).set(syncPricePayload, { merge: true });
+                Object.assign(sameItem, syncPricePayload);
+            }
+
             if (typeof cart !== 'undefined') {
                 const isWholesaleMode = (typeof currentActivePosTierWholesale !== 'undefined' && currentActivePosTierWholesale) ||
                                         (typeof isCurrentCustomerWholesale === 'function' && isCurrentCustomerWholesale());
@@ -762,7 +795,6 @@ async function saveProduct() {
             }
         }
 
-        // Vẽ lại giao diện Kho và POS ngay lập tức với giá mới
         renderInventory(false);
         if (typeof renderSellGrid === 'function') renderSellGrid();
         closeProductModal();
