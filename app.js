@@ -10,11 +10,14 @@ const firebaseConfig = {
     appId: "1:162996670712:web:188d90a03ba81759c42b0d",
     measurementId: "G-6CP67CR75J"
 };
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-    console.warn("Cache Persistence notice:", err.code);
+// Cấu hình ưu tiên đồng bộ mạng chuẩn xác, tránh kẹt giá cũ trong IndexedDB khi thoát ra vào lại
+db.settings({
+    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+    merge: true
 });
 
 const CATEGORIES = [
@@ -250,14 +253,35 @@ function switchTab(tabId) {
 }
 
 // ==========================================
-// 3. LẮNG NGHE DỮ LIỆU KHO HÀNG (CÓ GIÁ LẺ & GIÁ SỈ)
+// 3. LẮNG NGHE DỮ LIỆU KHO HÀNG (ĐỒNG BỘ TRỰC TIẾP TỪ SERVER, CHỐNG KẸT GIÁ CŨ)
 // ==========================================
-db.collection("inventory").onSnapshot((snapshot) => {
+db.collection("inventory").onSnapshot({ includeMetadataChanges: true }, (snapshot) => {
     inventory = snapshot.docs.map(doc => {
         const d = doc.data();
+        const baseUnit = (d.baseUnit || "Cái").trim();
         const basePrice = Number(d.basePrice ?? d.price ?? 0);
         const wholesalePrice = Number(d.wholesalePrice ?? basePrice);
-        const baseUnit = d.baseUnit || "Cái";
+        const costPrice = d.costPrice !== undefined && d.costPrice !== null && d.costPrice !== ""
+            ? Number(d.costPrice)
+            : Math.round(basePrice * 0.85);
+
+        // Đồng bộ lại đơn vị cơ sở (conversionRate === 1) trong mảng units để giá Lẻ & giá Sỉ luôn khớp 100% với basePrice/wholesalePrice mới sửa
+        let rawUnits = Array.isArray(d.units) && d.units.length > 0 ? d.units.map(u => ({ ...u })) : [];
+        const baseUnitObj = {
+            unitName: baseUnit,
+            conversionRate: 1,
+            sellingPrice: basePrice,
+            wholesalePrice: wholesalePrice,
+            barcode: d.barcode || ""
+        };
+
+        const baseIdx = rawUnits.findIndex(u => Number(u.conversionRate) === 1);
+        if (baseIdx !== -1) {
+            rawUnits[baseIdx] = baseUnitObj;
+        } else {
+            rawUnits.unshift(baseUnitObj);
+        }
+
         return {
             id: doc.id,
             name: d.name || "Chưa đặt tên",
@@ -269,17 +293,16 @@ db.collection("inventory").onSnapshot((snapshot) => {
             basePrice: basePrice,
             wholesalePrice: wholesalePrice,
             price: basePrice,
-            costPrice: Number(d.costPrice ?? Math.round(basePrice * 0.85)),
+            costPrice: costPrice,
             stock: Number(d.stock ?? 0),
             minStock: Number(d.minStock ?? 10),
-            units: Array.isArray(d.units) && d.units.length > 0 ? d.units : [
-                { unitName: baseUnit, conversionRate: 1, sellingPrice: basePrice, wholesalePrice: wholesalePrice, barcode: d.barcode || "" }
-            ],
-            createdAt: d.createdAt || 0
+            units: rawUnits,
+            createdAt: d.createdAt || 0,
+            updatedAt: d.updatedAt || 0
         };
     });
     inventory.sort((a, b) => b.createdAt - a.createdAt);
-    renderInventory();
+    renderInventory(false);
     if (typeof renderSellGrid === 'function') renderSellGrid();
 });
 
@@ -590,15 +613,19 @@ function closeProductModal() {
 }
 
 async function saveProduct() {
-    const id = document.getElementById('prod-id').value;
+    const id = document.getElementById('prod-id').value.trim();
     const name = document.getElementById('prod-name').value.trim();
     const category = document.getElementById('prod-category').value;
     const keywordsRaw = document.getElementById('prod-keywords').value;
     const barcode = document.getElementById('prod-barcode').value.trim();
     const baseUnit = document.getElementById('prod-base-unit').value.trim() || 'Cái';
+    
+    const costInputRaw = document.getElementById('prod-cost-price')?.value.trim() || '';
     const costPrice = getRawNum('prod-cost-price');
     const basePrice = getRawNum('prod-base-price');
-    const wholesalePrice = getRawNum('prod-wholesale-price') || basePrice;
+    const wholesaleInputRaw = document.getElementById('prod-wholesale-price')?.value.trim() || '';
+    const wholesalePrice = wholesaleInputRaw !== '' ? getRawNum('prod-wholesale-price') : basePrice;
+    
     const stock = parseInt(document.getElementById('prod-stock').value, 10) || 0;
     const minStock = parseInt(document.getElementById('prod-min-stock').value, 10) || 0;
     const imageInput = document.getElementById('prod-image');
@@ -608,24 +635,44 @@ async function saveProduct() {
     }
 
     const keywords = keywordsRaw.split(',').map(k => k.trim().toLowerCase()).filter(k => k);
-    const units = [{ unitName: baseUnit, conversionRate: 1, sellingPrice: basePrice, wholesalePrice: wholesalePrice, barcode: barcode }];
+    
+    // Luôn khởi tạo đơn vị gốc (cấp 1) với giá mới nhất vừa sửa
+    const units = [{
+        unitName: baseUnit,
+        conversionRate: 1,
+        sellingPrice: basePrice,
+        wholesalePrice: wholesalePrice,
+        barcode: barcode
+    }];
 
+    // Quét toàn bộ các dòng đơn vị lớn (Lốc, Thùng, Bao...)
     document.querySelectorAll('#unit-rows-container .unit-row').forEach(row => {
         const uName = row.querySelector('.unit-name').value.trim();
         const uRate = parseInt(row.querySelector('.unit-rate').value, 10) || 0;
         const uRetailPrice = getRawNum(row.querySelector('.unit-price'));
         const uWholesalePrice = getRawNum(row.querySelector('.unit-wholesale-price'));
         const uBarcode = row.querySelector('.unit-barcode').value.trim();
-        if (uName && uRate > 1 && (uRetailPrice > 0 || uWholesalePrice > 0)) {
+
+        // Cho phép lưu mọi đơn vị phụ có tên và có nhập giá (nếu quên nhập hệ số quy đổi hoặc để <=1 thì tự lấy 1)
+        if (uName && (uRetailPrice > 0 || uWholesalePrice > 0)) {
+            const finalRate = uRate > 1 ? uRate : 1;
             const finalRetail = uRetailPrice > 0 ? uRetailPrice : uWholesalePrice;
             const finalWholesale = uWholesalePrice > 0 ? uWholesalePrice : uRetailPrice;
-            units.push({
-                unitName: uName,
-                conversionRate: uRate,
-                sellingPrice: finalRetail,
-                wholesalePrice: finalWholesale,
-                barcode: uBarcode
-            });
+
+            // Tránh trùng lặp với đơn vị gốc nếu khách lỡ gõ trùng tên đơn vị gốc với hệ số = 1
+            if (finalRate === 1 && uName.toLowerCase() === baseUnit.toLowerCase()) {
+                units[0].sellingPrice = finalRetail;
+                units[0].wholesalePrice = finalWholesale;
+                if (uBarcode) units[0].barcode = uBarcode;
+            } else {
+                units.push({
+                    unitName: uName,
+                    conversionRate: finalRate,
+                    sellingPrice: finalRetail,
+                    wholesalePrice: finalWholesale,
+                    barcode: uBarcode
+                });
+            }
         }
     });
 
@@ -633,11 +680,23 @@ async function saveProduct() {
     btn.disabled = true;
     btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang lưu...`;
 
+    // Nếu người dùng có nhập ô Giá vốn (kể cả nhập 0) thì giữ đúng số đó, chỉ tự ước tính 85% khi bỏ trống hoàn toàn
+    const finalCostPrice = costInputRaw !== '' ? costPrice : Math.round(basePrice * 0.85);
+
     const productData = {
-        name, category, keywords, barcode, baseUnit,
-        costPrice: costPrice > 0 ? costPrice : Math.round(basePrice * 0.85),
-        basePrice, wholesalePrice, price: basePrice,
-        stock, minStock, units
+        name,
+        category,
+        keywords,
+        barcode,
+        baseUnit,
+        costPrice: finalCostPrice,
+        basePrice: basePrice,
+        wholesalePrice: wholesalePrice,
+        price: basePrice,
+        stock,
+        minStock,
+        units,
+        updatedAt: Date.now()
     };
 
     if (imageInput.files.length > 0) {
@@ -653,20 +712,62 @@ async function saveProduct() {
         if (!id) {
             productData.createdAt = Date.now();
             const docRef = await db.collection("inventory").add(productData);
+            
+            // Cập nhật ngay vào bộ nhớ RAM để UI hiện tức thì
+            const newItemObj = { id: docRef.id, ...productData };
+            const existIdx = inventory.findIndex(i => i.id === docRef.id);
+            if (existIdx !== -1) inventory[existIdx] = newItemObj;
+            else inventory.unshift(newItemObj);
+
             if (stock > 0) {
                 await writeInventoryLog(docRef.id, name, "IMPORT", "KHỞI-TẠO", `${stock} ${baseUnit}`, 0, stock, stock);
             }
         } else {
-            const oldItem = inventory.find(i => i.id === id);
-            await db.collection("inventory").doc(id).update(productData);
+            const oldIdx = inventory.findIndex(i => i.id === id);
+            const oldItem = oldIdx !== -1 ? inventory[oldIdx] : null;
+
+            // Dùng set(..., { merge: true }) thay vì update() để đảm bảo ghi đè toàn bộ trường giá lên Firestore bền vững
+            await db.collection("inventory").doc(id).set(productData, { merge: true });
+
+            // Cập nhật trực tiếp vào mảng inventory trên RAM ngay lập tức (không chờ cache)
+            if (oldIdx !== -1) {
+                inventory[oldIdx] = {
+                    ...inventory[oldIdx],
+                    ...productData,
+                    id: id,
+                    image: productData.image !== undefined ? productData.image : inventory[oldIdx].image
+                };
+            }
+
+            // Cập nhật lại giá trong Giỏ hàng POS (nếu món hàng này đang nằm trong giỏ chưa thanh toán)
+            if (typeof cart !== 'undefined') {
+                const isWholesaleMode = (typeof currentActivePosTierWholesale !== 'undefined' && currentActivePosTierWholesale) ||
+                                        (typeof isCurrentCustomerWholesale === 'function' && isCurrentCustomerWholesale());
+                for (const cKey in cart) {
+                    if (cart[cKey].productId === id && !cart[cKey].isGift && !cart[cKey].manualPriceEdited) {
+                        const uIdx = cart[cKey].unitIndex || 0;
+                        const updatedProd = inventory[oldIdx];
+                        if (updatedProd && typeof getStandardUnitPrice === 'function') {
+                            cart[cKey].price = getStandardUnitPrice(updatedProd, uIdx, isWholesaleMode);
+                            cart[cKey].originalPrice = cart[cKey].price;
+                            cart[cKey].costPricePerBase = finalCostPrice;
+                        }
+                    }
+                }
+            }
+
             if (oldItem && oldItem.stock !== stock) {
                 const diff = stock - oldItem.stock;
                 await writeInventoryLog(id, name, "ADJUST", "SỬA-TỒN", `${diff > 0 ? '+' : ''}${diff} ${baseUnit}`, oldItem.stock, diff, stock);
             }
         }
+
+        // Vẽ lại giao diện Kho và POS ngay lập tức với giá mới
+        renderInventory(false);
+        if (typeof renderSellGrid === 'function') renderSellGrid();
         closeProductModal();
     } catch (e) {
-        alert("Lỗi khi lưu: " + e.message);
+        alert("Lỗi khi lưu sản phẩm lên Cloud: " + e.message);
     }
 
     btn.disabled = false;
