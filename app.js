@@ -249,7 +249,7 @@ function switchTab(tabId) {
         mobBtn.classList.add('text-inni-blue', 'font-bold');
     }
 
-    if (tabId === 'tab-inventory') renderInventory();
+    if (tabId === 'tab-inventory') renderInventory(false);
 }
 
 // ==========================================
