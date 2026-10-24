@@ -111,14 +111,36 @@ window.addEventListener('load', () => {
     }, 1000);
 });
 
+let sharedAudioCtx = null;
+
+function getSharedAudioContext() {
+    if (!sharedAudioCtx) {
+        sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume();
+    }
+    return sharedAudioCtx;
+}
+
+// Tự động mở khóa âm thanh Safari ngay cú chạm tay đầu tiên trên iPhone
+window.addEventListener('touchstart', () => {
+    try {
+        const ctx = getSharedAudioContext();
+        if (ctx && ctx.state === 'suspended') {
+            ctx.resume();
+        }
+    } catch (e) {}
+}, { once: true });
+
 function playBeepSound() {
     try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = getSharedAudioContext();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = "sine";
         osc.frequency.setValueAtTime(1200, ctx.currentTime);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start();
