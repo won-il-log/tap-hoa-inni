@@ -1330,23 +1330,24 @@ function renderSellGrid() {
             if (!matchName && !matchKw && !matchBc) continue;
         }
         count++;
-        if (count > 60) continue; // Giới hạn DOM tối đa 60 thẻ trên màn hình POS để cuộn mượt
+        if (count > 60) continue;
 
         const isOut = item.stock <= 0;
         const isLow = item.stock > 0 && item.stock <= item.minStock;
-        const stockLabel = `Tồn: ${item.stock}`;
+        const stockBadgeClass = isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800');
+        const stockLabel = `Tồn: ${item.stock} ${item.baseUnit}`;
 
         const imgTag = item.image 
-            ? `<div class="w-full h-16 md:h-20 bg-white rounded-lg mb-1.5 border border-slate-100 flex items-center justify-center overflow-hidden relative">
+            ? `<div class="w-12 h-12 md:w-full md:h-20 bg-white rounded-xl md:rounded-lg md:mb-1.5 border border-slate-200 md:border-slate-100 flex items-center justify-center overflow-hidden relative shrink-0">
                     <img src="${item.image}" class="max-w-full max-h-full object-contain">
-                    <span class="absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800')}">
-                        ${stockLabel}
+                    <span class="hidden md:inline-block absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${stockBadgeClass}">
+                        Tồn: ${item.stock}
                     </span>
                </div>`
-            : `<div class="w-full h-16 md:h-20 bg-slate-50 rounded-lg mb-1.5 flex items-center justify-center text-slate-300 border border-slate-100 relative">
-                    <i class="fa-solid fa-box text-xl"></i>
-                    <span class="absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${isOut ? 'bg-red-600 text-white' : (isLow ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800')}">
-                        ${stockLabel}
+            : `<div class="w-12 h-12 md:w-full md:h-20 bg-slate-50 rounded-xl md:rounded-lg md:mb-1.5 flex items-center justify-center text-slate-300 border border-slate-200 md:border-slate-100 relative shrink-0">
+                    <i class="fa-solid fa-box text-lg md:text-xl"></i>
+                    <span class="hidden md:inline-block absolute top-1 right-1 text-[10px] font-bold px-1.5 py-0.2 rounded ${stockBadgeClass}">
+                        Tồn: ${item.stock}
                     </span>
                </div>`;
 
@@ -1361,25 +1362,30 @@ function renderSellGrid() {
                 ? 'bg-[#0088FF] hover:bg-blue-700 text-white font-bold shadow-sm' 
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200';
             return `
-                <button onclick="posTapAddToCart('${item.id}', ${uIdx})" class="relative w-full py-1.5 px-2 rounded-lg text-[11px] flex flex-col items-stretch transition scale-active ${btnStyle}">
-                    <span data-pos-badge="${item.id}|${uIdx}" class="hidden absolute -top-2 -right-1.5 min-w-[22px] h-[22px] px-1 rounded-full bg-red-600 text-white font-black text-xs items-center justify-center shadow ring-2 ring-white z-10">0</span>
-                    <div class="flex justify-between items-center w-full">
+                <button onclick="posTapAddToCart('${item.id}', ${uIdx})" class="relative flex-1 md:w-full py-1.5 px-2.5 rounded-lg text-[11px] flex flex-col items-stretch transition scale-active ${btnStyle}">
+                    <span data-pos-badge="${item.id}|${uIdx}" class="hidden absolute -top-2 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-red-600 text-white font-black text-[11px] items-center justify-center shadow ring-2 ring-white z-10">0</span>
+                    <div class="flex justify-between items-center w-full gap-1">
                         <span class="truncate">+1 ${u.unitName}${isBigUnit ? ` (${u.conversionRate})` : ''}</span>
-                        <span class="${isBigUnit ? 'text-amber-200 font-black' : 'text-red-600 font-bold'} ml-1">${formatmoney(displayPrice)}đ</span>
+                        <span class="${isBigUnit ? 'text-amber-200 font-black' : 'text-red-600 font-bold'} whitespace-nowrap">${formatmoney(displayPrice)}đ</span>
                     </div>
                     ${costSubText}
                 </button>
             `;
         }).join('');
 
-        // Đã gỡ bỏ pointer-events-none để cho phép Bán âm kho bình thường khi tồn <= 0
         grid.innerHTML += `
-            <div id="pos-card-${item.id}" class="bg-white border border-slate-200 rounded-xl p-2 shadow-sm flex flex-col justify-between hover:border-inni-blue transition">
-                <div>
+            <div id="pos-card-${item.id}" class="bg-white border border-slate-200 rounded-xl p-2.5 md:p-2 shadow-sm flex flex-col justify-between hover:border-inni-blue transition">
+                <div class="flex md:flex-col items-center md:items-stretch gap-2.5 md:gap-0 mb-2 md:mb-0">
                     ${imgTag}
-                    <div class="font-bold text-slate-800 text-xs line-clamp-2 leading-snug h-8 mb-1.5" title="${item.name}">${item.name}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-bold text-slate-800 text-[13px] md:text-xs line-clamp-2 leading-snug md:h-8 md:mb-1.5" title="${item.name}">${item.name}</div>
+                        <div class="flex md:hidden items-center gap-2 mt-0.5">
+                            <span class="text-[10px] font-bold px-1.5 py-0.2 rounded ${stockBadgeClass}">${stockLabel}</span>
+                            ${item.barcode ? `<span class="text-[10px] text-slate-400 truncate">SKU: ${item.barcode}</span>` : ''}
+                        </div>
+                    </div>
                 </div>
-                <div class="space-y-1 mt-auto">
+                <div class="flex flex-wrap md:flex-col gap-1.5 md:gap-1 mt-auto">
                     ${unitButtonsHtml}
                 </div>
             </div>
@@ -1395,7 +1401,6 @@ function renderSellGrid() {
             const nameInp = document.getElementById('qc-prod-name');
             if (nameInp) nameInp.value = rawSearch;
             qcWrap.classList.remove('hidden');
-            // Trên Mobile: thu tấm bảng trắng rỗng xuống để lộ thanh [+ Tạo nhanh] ngay dưới ô tìm kiếm
             if (window.innerWidth < 768) {
                 document.getElementById('pos-product-grid-wrapper')?.classList.remove('mobile-picker-open');
             }
@@ -1743,6 +1748,11 @@ function updateCartTotalsOnly() {
     }
 
     document.getElementById('cart-total').innerText = `${formatmoney(subtotal)} đ`;
+
+    const pickerCntEl = document.getElementById('picker-cart-count');
+    const pickerTotEl = document.getElementById('picker-cart-total');
+    if (pickerCntEl) pickerCntEl.innerText = Object.keys(cart).length;
+    if (pickerTotEl) pickerTotEl.innerText = `${formatmoney(subtotal)} đ`;
 }
 
 function togglePosCustomerSearchBox() {
@@ -2103,6 +2113,14 @@ function openOrdersWithFilter(filterVal) {
     document.body.classList.remove('pos-fullscreen-active');
     const sel = document.getElementById('ord-filter-type');
     if (sel) sel.value = filterVal;
+
+    const mobTitle = document.getElementById('ord-mobile-header-title');
+    if (mobTitle) {
+        mobTitle.innerText = filterVal === 'RETURN'
+            ? 'Khách trả hàng'
+            : (filterVal === 'PROCESSING' ? 'Đơn đang vận chuyển' : 'Danh sách đơn hàng');
+    }
+
     switchTab('tab-orders');
     loadOrdersModule();
 

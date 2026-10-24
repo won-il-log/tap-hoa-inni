@@ -93,12 +93,36 @@
             -webkit-tap-highlight-color: transparent;
         }
 
+        /* NÚT TRÒN DẤU CỘNG (FAB) ĐỒNG BỘ KÍCH THƯỚC & VỊ TRÍ TRÊN IPHONE */
+        .sapo-fab {
+            position: fixed !important;
+            right: 16px !important;
+            width: 50px !important;
+            height: 50px !important;
+            border-radius: 9999px !important;
+            background-color: #0088FF !important;
+            color: #ffffff !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 20px !important;
+            box-shadow: 0 6px 16px rgba(0, 136, 255, 0.38) !important;
+            z-index: 45 !important;
+        }
+        /* Vị trí cố định ngay trên thanh menu đáy cho các tab chính */
+        .sapo-fab-with-nav {
+            bottom: calc(env(safe-area-inset-bottom) + 74px) !important;
+        }
+        /* Vị trí cố định góc dưới phải cho các màn hình độc lập (Nhập hàng, Nhà cung cấp) */
+        .sapo-fab-modal {
+            bottom: calc(env(safe-area-inset-bottom) + 24px) !important;
+        }
+
         @media (max-width: 767px) {
             body { background-color: #F4F6F8 !important; }
             body.pos-fullscreen-active nav#mobile-bottom-nav { display: none !important; }
             body.pos-fullscreen-active main { padding: 0 !important; padding-bottom: 0 !important; }
             
-            /* Tắt transform trên #tab-sell để thanh fixed dưới đáy không bị trôi lên giữa màn hình khi cuộn */
             body.pos-fullscreen-active #tab-sell,
             #tab-sell {
                 transform: none !important;
@@ -114,22 +138,32 @@
             main p.text-xs.text-slate-500 { display: none !important; }
             .mobile-hide-col { display: none !important; }
 
-            /* Ẩn lưới sản phẩm mặc định trên Mobile, chỉ bật thành Bottom Sheet khi chọn/tìm hàng */
+            /* Khung chọn sản phẩm POS trên iPhone: Mở dạng danh sách 1 cột dọc chuẩn Sapo */
             #pos-product-grid-wrapper { display: none !important; }
             #pos-product-grid-wrapper.mobile-picker-open {
                 display: flex !important;
                 flex-direction: column;
                 position: fixed;
-                left: 0; right: 0; bottom: 0; top: 108px;
-                z-index: 65;
+                left: 0; right: 0; bottom: 0; top: 104px;
+                z-index: 105;
                 background: #ffffff;
-                border-radius: 20px 20px 0 0;
-                box-shadow: 0 -8px 25px rgba(15, 23, 42, 0.18);
-                padding: 12px;
-                padding-bottom: 150px !important;
+                border-radius: 18px 18px 0 0;
+                box-shadow: 0 -8px 25px rgba(15, 23, 42, 0.2);
+                padding: 10px 12px 0 12px;
             }
-            #sell-grid { max-height: 100% !important; gap: 8px !important; padding-bottom: 150px !important; }
-            #sell-grid > div { border-radius: 12px !important; padding: 8px !important; border-color: #e2e8f0 !important; }
+            /* Ép lưới sản phẩm thành 1 CỘT DỌC trên iPhone */
+            #sell-grid {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 6px !important;
+                max-height: 100% !important;
+                padding-bottom: 90px !important;
+            }
+            #sell-grid > div {
+                border-radius: 12px !important;
+                padding: 10px !important;
+                border-color: #e2e8f0 !important;
+            }
             #cart-list { min-height: 180px !important; max-height: none !important; padding-bottom: 12px !important; }
 
             /* Thanh chốt đơn ghim cố định sát đáy màn hình iPhone */
@@ -147,6 +181,7 @@
             .modal-overlay { align-items: flex-end !important; padding: 0 !important; }
             .modal-overlay > div { border-radius: 20px 20px 0 0 !important; max-height: 92dvh !important; }
         }
+
     </style>
 </head>
 <body class="bg-[#F4F6F8] md:bg-slate-100 font-sans text-slate-800 flex flex-col md:flex-row h-[100dvh] overflow-hidden print-mode-A5">
@@ -505,17 +540,27 @@
                         </div>
                     </div>
 
-                    <!-- Khung lưới sản phẩm: Mặc định ẩn trên Mobile, chỉ hiện dạng Bottom Sheet khi tìm/chọn hàng -->
+                    <!-- Khung danh sách sản phẩm: 1 cột dọc trên iPhone + Thanh Giỏ hàng nổi dưới đáy -->
                     <div id="pos-product-grid-wrapper" class="flex-1 flex flex-col overflow-hidden md:mt-3">
-                        <div class="flex md:hidden justify-between items-center pb-2.5 mb-2 border-b border-slate-100 shrink-0">
-                            <span class="font-bold text-xs text-slate-700">Chọn sản phẩm thêm vào đơn</span>
-                            <button type="button" onclick="closeMobileProductSelector()" class="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">
-                                Đóng <i class="fa-solid fa-xmark ml-1"></i>
+                        <div class="flex md:hidden justify-between items-center pb-2 mb-1.5 border-b border-slate-100 shrink-0">
+                            <span class="font-bold text-xs text-slate-700"><i class="fa-solid fa-list-ul text-[#0088FF] mr-1"></i>Chọn sản phẩm vào đơn</span>
+                            <button type="button" onclick="closeMobileProductSelector()" class="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-lg">
+                                Thu gọn <i class="fa-solid fa-chevron-down ml-1"></i>
                             </button>
                         </div>
-                        <div id="sell-grid" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 overflow-y-auto flex-1 content-start pr-1 pb-2"></div>
+                        <div id="sell-grid" class="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 overflow-y-auto flex-1 content-start pr-0.5 pb-2"></div>
                         <div id="sell-no-result" class="hidden text-center p-8 text-slate-400 italic text-xs">
                             Không tìm thấy sản phẩm khớp từ khóa!
+                        </div>
+                        <!-- Thanh Giỏ hàng nổi cố định dưới đáy tấm chọn hàng trên iPhone -->
+                        <div class="md:hidden shrink-0 bg-white border-t border-slate-200 pt-2.5 pb-[calc(env(safe-area-inset-bottom)+10px)] flex items-center justify-between gap-2">
+                            <div>
+                                <div class="text-[11px] text-slate-500 font-medium">Đã chọn: <b id="picker-cart-count" class="text-[#0088FF]">0</b> món</div>
+                                <div id="picker-cart-total" class="text-base font-black text-red-600 leading-tight">0 đ</div>
+                            </div>
+                            <button type="button" onclick="closeMobileProductSelector()" class="bg-[#0088FF] active:bg-blue-700 text-white font-black px-5 py-2.5 rounded-xl text-xs shadow-md scale-active flex items-center gap-1.5">
+                                <i class="fa-solid fa-cart-shopping"></i> Xem Giỏ Hàng & Chốt
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -634,18 +679,15 @@
         <!-- TAB 2: MÀN HÌNH DANH SÁCH ĐƠN HÀNG (FLAT LIST TRÊN MOBILE) -->
         <!-- ========================================== -->
         <section id="tab-orders" class="tab-content hidden animate-fade-in">
-            <!-- Thanh công cụ cố định trên Mobile của Tab Đơn hàng -->
-            <div class="flex md:hidden items-center justify-between gap-2 mb-3 bg-white p-2.5 rounded-xl shadow-sm border border-slate-200 sticky top-0 z-30">
+            <!-- Thanh công cụ trên Mobile của Tab Đơn hàng / Khách trả hàng (Đã bỏ nút + Tạo đơn ở trên) -->
+            <div class="flex md:hidden items-center justify-between gap-2 mb-3 bg-white p-2.5 rounded-xl shadow-sm border border-slate-200">
                 <div class="flex items-center gap-2">
                     <button onclick="switchTab('tab-orders-hub')" class="w-7 h-7 flex items-center justify-center text-slate-700 text-base"><i class="fa-solid fa-chevron-left"></i></button>
-                    <h2 class="font-black text-sm text-slate-800">Đơn hàng</h2>
+                    <h2 id="ord-mobile-header-title" class="font-black text-sm text-slate-800">Danh sách đơn hàng</h2>
                 </div>
                 <div class="flex items-center gap-1.5">
-                    <button onclick="openPosScreen('DELIVERY')" class="bg-[#0088FF] text-white font-black py-2 px-3 rounded-lg text-xs flex items-center gap-1 shadow-sm scale-active">
-                        <i class="fa-solid fa-plus"></i> Tạo đơn
-                    </button>
                     <button onclick="exportOrdersToCSV()" class="bg-emerald-600 text-white font-bold py-2 px-2.5 rounded-lg text-[11px] flex items-center gap-1">
-                        <i class="fa-solid fa-file-excel"></i>
+                        <i class="fa-solid fa-file-excel"></i> Xuất Excel
                     </button>
                 </div>
             </div>
@@ -710,8 +752,8 @@
                 <div id="orders-empty" class="hidden text-center p-10 text-slate-400 italic">Chưa có hóa đơn nào.</div>
             </div>
 
-            <!-- Nút tròn xanh (+) nổi góc dưới phải trên Mobile -->
-            <button onclick="openPosScreen('DELIVERY')" class="md:hidden fixed right-4 bottom-20 z-30 w-12 h-12 rounded-full bg-[#0088FF] text-white shadow-lg flex items-center justify-center text-xl scale-active">
+            <!-- Nút tròn xanh (+) đồng bộ cố định góc dưới phải trên Mobile -->
+            <button onclick="openPosScreen('DELIVERY')" class="md:hidden sapo-fab sapo-fab-with-nav scale-active">
                 <i class="fa-solid fa-plus"></i>
             </button>
         </section>
@@ -720,21 +762,18 @@
         <!-- TAB 3: MÀN HÌNH QUẢN LÝ KHO (FLAT LIST TRÊN MOBILE, KHÔNG DÙNG TABLE) -->
         <!-- ========================================== -->
         <section id="tab-inventory" class="tab-content hidden animate-fade-in">
-            <!-- Thanh công cụ cố định trên Mobile: Có nút + Thêm hàng luôn đứng yên trên đầu tab -->
-            <div class="flex md:hidden items-center justify-between gap-1.5 mb-3 bg-white p-2.5 rounded-xl shadow-sm border border-slate-200 sticky top-0 z-30">
+            <!-- Thanh công cụ trên Mobile: Đứng ở đầu trang (không lướt theo), đã bỏ nút + Thêm hàng ở trên -->
+            <div class="flex md:hidden items-center justify-between gap-1.5 mb-3 bg-white p-2.5 rounded-xl shadow-sm border border-slate-200">
                 <div class="flex items-center gap-2 min-w-0">
                     <button onclick="switchTab('tab-products-hub')" class="w-7 h-7 flex items-center justify-center text-slate-700 text-base shrink-0"><i class="fa-solid fa-chevron-left"></i></button>
-                    <h2 class="font-black text-sm text-slate-800 truncate">Kho hàng</h2>
+                    <h2 class="font-black text-sm text-slate-800 truncate">Danh sách sản phẩm</h2>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                    <button onclick="openProductModal()" class="bg-[#0088FF] active:bg-blue-700 text-white font-black py-2 px-3 rounded-lg text-xs flex items-center gap-1 shadow-sm scale-active">
-                        <i class="fa-solid fa-plus"></i> Thêm hàng
+                    <button onclick="document.getElementById('excel-product-input').click()" class="bg-teal-600 text-white font-bold py-2 px-2.5 rounded-lg text-[11px] flex items-center gap-1" title="Nhập Excel">
+                        <i class="fa-solid fa-file-import"></i> Nhập
                     </button>
-                    <button onclick="document.getElementById('excel-product-input').click()" class="bg-teal-600 text-white font-bold py-2 px-2 rounded-lg text-[11px] flex items-center gap-1" title="Nhập Excel">
-                        <i class="fa-solid fa-file-import"></i>
-                    </button>
-                    <button onclick="exportProductsToExcel()" class="bg-indigo-600 text-white font-bold py-2 px-2 rounded-lg text-[11px] flex items-center gap-1" title="Xuất Excel">
-                        <i class="fa-solid fa-file-export"></i>
+                    <button onclick="exportProductsToExcel()" class="bg-indigo-600 text-white font-bold py-2 px-2.5 rounded-lg text-[11px] flex items-center gap-1" title="Xuất Excel">
+                        <i class="fa-solid fa-file-export"></i> Xuất
                     </button>
                 </div>
             </div>
@@ -767,7 +806,7 @@
                 </div>
             </div>
 
-            <!-- Thanh cảnh báo Sắp hết / Hết hàng riêng cho iPhone / Mobile (Bấm vào để lọc ngay giống PC) -->
+            <!-- Thanh cảnh báo Sắp hết / Hết hàng riêng cho iPhone / Mobile -->
             <div onclick="toggleLowStockFilter()" class="md:hidden mb-2.5 bg-red-50 active:bg-red-100 border border-red-200 rounded-xl p-2.5 flex items-center justify-between cursor-pointer shadow-sm">
                 <div class="flex items-center gap-2">
                     <div class="w-7 h-7 rounded-lg bg-red-600 text-white flex items-center justify-center text-xs shrink-0 animate-pulse">
@@ -801,7 +840,7 @@
                 </div>
             </div>
 
-            <!-- Ô tìm kiếm & Bộ lọc trạng thái tồn (Hiện trên cả iPhone & PC) -->
+            <!-- Ô tìm kiếm & Bộ lọc trạng thái tồn -->
             <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 mb-2">
                 <div class="flex flex-col md:flex-row gap-2">
                     <div class="relative flex-1">
@@ -828,7 +867,7 @@
             <div class="text-xs font-semibold text-slate-500 px-1 mb-2" id="inv-mobile-count-label">0 sản phẩm</div>
 
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <!-- Bảng PC (Ẩn hoàn toàn trên Mobile < 768px) -->
+                <!-- Bảng PC -->
                 <div class="hidden md:block overflow-x-auto">
                     <table class="w-full text-left border-collapse min-w-[850px]">
                         <thead>
@@ -846,7 +885,7 @@
                     </table>
                 </div>
 
-                <!-- Danh sách Thẻ Sản Phẩm (List Item 1 dòng chuẩn Sapo) trên Mobile -->
+                <!-- Danh sách Thẻ Sản Phẩm trên Mobile -->
                 <div id="inventory-mobile-list" class="md:hidden divide-y divide-slate-100 bg-white"></div>
 
                 <div id="inv-load-more-wrap" class="hidden p-3 text-center border-t border-slate-100">
@@ -857,26 +896,28 @@
                     Không tìm thấy sản phẩm phù hợp!
                 </div>
             </div>
+
+            <!-- Nút tròn xanh (+) cố định góc dưới bên phải trang Danh sách sản phẩm -->
+            <button onclick="openProductModal()" class="md:hidden sapo-fab sapo-fab-with-nav scale-active">
+                <i class="fa-solid fa-plus"></i>
+            </button>
         </section>
 
         <!-- ========================================== -->
         <!-- TAB 4: KHÁCH HÀNG & NHÀ CUNG CẤP -->
         <!-- ========================================== -->
         <section id="tab-crm" class="tab-content hidden animate-fade-in">
-            <div class="flex md:hidden items-center justify-between gap-1.5 mb-3 bg-white p-2.5 rounded-xl shadow-sm border border-slate-200 sticky top-0 z-30">
+            <div class="flex md:hidden items-center justify-between gap-1.5 mb-3 bg-white p-2.5 rounded-xl shadow-sm border border-slate-200">
                 <div class="flex items-center gap-2 min-w-0">
                     <button onclick="switchTab('tab-more')" class="w-7 h-7 flex items-center justify-center text-slate-700 text-base shrink-0"><i class="fa-solid fa-chevron-left"></i></button>
                     <h2 class="font-black text-sm text-slate-800 truncate">Khách & NCC</h2>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                    <button onclick="openCustomerModal()" class="bg-[#0088FF] text-white font-black py-2 px-3 rounded-lg text-xs flex items-center gap-1 shadow-sm scale-active">
-                        <i class="fa-solid fa-plus"></i> Thêm mới
+                    <button onclick="document.getElementById('excel-customer-input').click()" class="bg-teal-600 text-white font-bold py-2 px-2.5 rounded-lg text-[11px] flex items-center gap-1">
+                        <i class="fa-solid fa-file-import"></i> Nhập
                     </button>
-                    <button onclick="document.getElementById('excel-customer-input').click()" class="bg-teal-600 text-white font-bold py-2 px-2 rounded-lg text-[11px] flex items-center gap-1">
-                        <i class="fa-solid fa-file-import"></i>
-                    </button>
-                    <button onclick="exportCustomersToExcel()" class="bg-indigo-600 text-white font-bold py-2 px-2 rounded-lg text-[11px] flex items-center gap-1">
-                        <i class="fa-solid fa-file-export"></i>
+                    <button onclick="exportCustomersToExcel()" class="bg-indigo-600 text-white font-bold py-2 px-2.5 rounded-lg text-[11px] flex items-center gap-1">
+                        <i class="fa-solid fa-file-export"></i> Xuất
                     </button>
                 </div>
             </div>
@@ -956,7 +997,7 @@
                 <div id="crm-empty" class="hidden text-center p-10 text-slate-400 italic">Chưa có khách hàng nào.</div>
             </div>
 
-            <button onclick="openCustomerModal()" class="md:hidden fixed right-4 bottom-20 z-30 w-12 h-12 rounded-full bg-[#0088FF] text-white shadow-lg flex items-center justify-center text-xl scale-active">
+            <button onclick="openCustomerModal()" class="md:hidden sapo-fab sapo-fab-with-nav scale-active">
                 <i class="fa-solid fa-plus"></i>
             </button>
         </section>
@@ -1306,9 +1347,6 @@
                 <span>Đơn nhập hàng</span>
                 <span class="text-[11px] font-semibold text-slate-400 ml-1">(<span id="po-screen-count">0 phiếu</span>)</span>
             </button>
-            <button type="button" onclick="openPurchaseOrderModal()" class="bg-[#0088FF] active:bg-blue-700 text-white font-black py-2 px-3.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm scale-active">
-                <i class="fa-solid fa-plus"></i> Tạo phiếu nhập
-            </button>
         </div>
         <div class="p-3 bg-white border-b border-slate-100 shrink-0">
             <div class="relative">
@@ -1316,7 +1354,10 @@
                 <input type="text" id="po-screen-search" oninput="renderPoListScreen(true)" placeholder="Tìm mã phiếu nhập (PN-...), tên nhà cung cấp..." class="w-full bg-[#F4F6F8] p-2 pl-9 rounded-full text-xs focus:outline-none">
             </div>
         </div>
-        <div class="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white" id="po-screen-flat-list"></div>
+        <div class="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white pb-24" id="po-screen-flat-list"></div>
+        <button type="button" onclick="openPurchaseOrderModal()" class="sapo-fab sapo-fab-modal scale-active" title="Tạo phiếu nhập">
+            <i class="fa-solid fa-plus"></i>
+        </button>
     </div>
 
     <!-- ========================================== -->
@@ -1329,9 +1370,6 @@
                 <span>Nhà cung cấp</span>
                 <span class="text-[11px] font-semibold text-slate-400 ml-1">(<span id="sup-screen-count">0 NCC</span>)</span>
             </button>
-            <button type="button" onclick="openSupplierCreateModal()" class="bg-[#0088FF] active:bg-blue-700 text-white font-black py-2 px-3.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm scale-active">
-                <i class="fa-solid fa-plus"></i> Thêm NPP
-            </button>
         </div>
         <div class="p-3 bg-white border-b border-slate-100 shrink-0">
             <div class="relative">
@@ -1339,7 +1377,10 @@
                 <input type="text" id="sup-screen-search" oninput="renderSuppliersScreen()" placeholder="Tìm tên nhà cung cấp, số điện thoại, địa chỉ..." class="w-full bg-[#F4F6F8] p-2 pl-9 rounded-full text-xs focus:outline-none">
             </div>
         </div>
-        <div class="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white" id="sup-screen-flat-list"></div>
+        <div class="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white pb-24" id="sup-screen-flat-list"></div>
+        <button type="button" onclick="openSupplierCreateModal()" class="sapo-fab sapo-fab-modal scale-active" title="Thêm Nhà Phân Phối">
+            <i class="fa-solid fa-plus"></i>
+        </button>
     </div>
 
     <!-- ========================================== -->
