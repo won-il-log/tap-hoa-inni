@@ -1361,7 +1361,8 @@ function renderSellGrid() {
                 ? 'bg-[#0088FF] hover:bg-blue-700 text-white font-bold shadow-sm' 
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold border border-slate-200';
             return `
-                <button onclick="addToCartWithUnit('${item.id}', ${uIdx}, 1, false)" class="w-full py-1.5 px-2 rounded-lg text-[11px] flex flex-col items-stretch transition scale-active ${btnStyle}">
+                <button onclick="posTapAddToCart('${item.id}', ${uIdx})" class="relative w-full py-1.5 px-2 rounded-lg text-[11px] flex flex-col items-stretch transition scale-active ${btnStyle}">
+                    <span data-pos-badge="${item.id}|${uIdx}" class="hidden absolute -top-2 -right-1.5 min-w-[22px] h-[22px] px-1 rounded-full bg-red-600 text-white font-black text-xs items-center justify-center shadow ring-2 ring-white z-10">0</span>
                     <div class="flex justify-between items-center w-full">
                         <span class="truncate">+1 ${u.unitName}${isBigUnit ? ` (${u.conversionRate})` : ''}</span>
                         <span class="${isBigUnit ? 'text-amber-200 font-black' : 'text-red-600 font-bold'} ml-1">${formatmoney(displayPrice)}đ</span>
@@ -1413,6 +1414,49 @@ function renderSellGrid() {
     renderCart();
 }
 
+// Bấm vào ĐVT trên thẻ sản phẩm: tít 1 tiếng + cộng vào giỏ
+function posTapAddToCart(productId, unitIndex) {
+    playBeepSound();
+    addToCartWithUnit(productId, unitIndex, 1, false);
+}
+
+// Cập nhật số lượng trên từng ô sản phẩm theo giỏ hàng hiện tại.
+// Giỏ trống (sau thanh toán / xóa giỏ / cất đơn) => số và viền xanh tự biến mất.
+function syncPosGridBadges() {
+    const grid = document.getElementById('sell-grid');
+    if (!grid) return;
+
+    const qtyMap = {};
+    const prodHasItem = {};
+    for (const key in cart) {
+        const c = cart[key];
+        const k = `${c.productId}|${c.unitIndex}`;
+        qtyMap[k] = (qtyMap[k] || 0) + (Number(c.qty) || 0);
+        prodHasItem[c.productId] = true;
+    }
+
+    grid.querySelectorAll('[data-pos-badge]').forEach(el => {
+        const q = qtyMap[el.getAttribute('data-pos-badge')] || 0;
+        if (q > 0) {
+            el.textContent = q;
+            el.classList.remove('hidden');
+            el.classList.add('flex');
+        } else {
+            el.classList.add('hidden');
+            el.classList.remove('flex');
+        }
+    });
+
+    grid.querySelectorAll('[id^="pos-card-"]').forEach(card => {
+        const pid = card.id.slice('pos-card-'.length);
+        const on = !!prodHasItem[pid];
+        card.classList.toggle('border-[#0088FF]', on);
+        card.classList.toggle('bg-blue-50/50', on);
+        card.classList.toggle('border-slate-200', !on);
+        card.classList.toggle('bg-white', !on);
+    });
+}
+
 function getTotalBaseQtyInCart(productId, excludeKey = null) {
     let totalBase = 0;
     for (const key in cart) {
@@ -1456,16 +1500,6 @@ function addToCartWithUnit(productId, unitIndex = 0, addQty = 1, isGift = false,
     }
 
     cart[cartKey].qty += addQty;
-
-    // Trên Mobile: Sau khi chọn sản phẩm xong -> Tự động đóng danh sách chọn hàng và trở về giao diện giỏ hàng
-    if (window.innerWidth < 768) {
-        closeMobileProductSelector();
-        const sInp = document.getElementById('sell-search-name');
-        if (sInp) sInp.value = '';
-        document.getElementById('btn-clear-pos-search')?.classList.add('hidden');
-        document.getElementById('pos-quick-create-wrap')?.classList.add('hidden');
-        hidePosQuickCreateInlineForm();
-    }
 
     renderCart();
 }
@@ -1673,6 +1707,7 @@ function renderCart() {
 }
 
 function updateCartTotalsOnly() {
+    syncPosGridBadges();
     let subtotal = 0;
     for (const key in cart) {
         const item = cart[key];
