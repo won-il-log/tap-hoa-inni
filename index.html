@@ -1615,53 +1615,25 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                        <div class="sm:col-span-4">
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Chọn mặt hàng</label>
-                            <input type="text" id="po-product-filter" oninput="filterPoProductDropdown()" placeholder="Gõ tên hàng hoặc mã vạch để lọc..." class="w-full border border-slate-300 p-1.5 mb-1 rounded-lg bg-white text-xs">
-                            <select id="po-product-id" onchange="onChangePoProduct()" class="w-full border border-slate-300 p-2 rounded-lg bg-white font-bold text-xs"></select>
-                        </div>
-                        <div class="sm:col-span-2">
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Đơn vị nhập</label>
-                            <select id="po-unit-select" onchange="onChangePoUnit()" class="w-full border border-slate-300 p-2 rounded-lg bg-white font-bold text-inni-blue text-xs"></select>
-                        </div>
-                        <div class="sm:col-span-2">
-                            <label class="block text-[11px] font-bold text-amber-800 mb-0.5" title="1 Đơn vị nhập bằng bao nhiêu ĐVT gốc?">Hệ số quy đổi *</label>
-                            <input type="number" id="po-conversion-rate" value="1" min="1" oninput="onChangePoConversionRate()" class="w-full border-2 border-amber-400 p-1.5 rounded-lg font-black text-center text-xs bg-white text-amber-900" title="VD: 1 Bao = 8 Lốc thì điền 8">
-                        </div>
-                        <div class="sm:col-span-1">
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">SL Nhập</label>
-                            <input type="number" id="po-qty" value="1" min="1" class="w-full border border-slate-300 p-2 rounded-lg font-bold text-center text-xs bg-white">
-                        </div>
-                        <div class="sm:col-span-2">
-                            <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">Đơn giá nhập</label>
-                            <input type="text" id="po-import-price" oninput="formatCurrencyInput(this)" placeholder="310.000" class="w-full border border-slate-300 p-2 rounded-lg font-bold text-emerald-700 text-xs bg-white">
-                        </div>
-                        <div class="sm:col-span-1">
-                            <button type="button" onclick="addPoItemToList()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold p-2 rounded-lg text-xs shadow scale-active">
-                                Thêm
-                            </button>
-                        </div>
-                    </div>
+                    <!-- Thanh tìm kiếm duy nhất mở Màn hình chọn nhiều sản phẩm chuẩn Sapo -->
+                    <button type="button" onclick="openPoProductPickerModal()" class="w-full bg-white hover:bg-blue-50/40 border-2 border-emerald-400 focus:border-inni-blue rounded-xl p-3 text-left flex items-center justify-between shadow-sm transition scale-active">
+                        <span class="flex items-center gap-2.5 text-sm font-bold text-slate-600">
+                            <i class="fa-solid fa-magnifying-glass text-emerald-600 text-base"></i>
+                            <span>Tìm và thêm sản phẩm vào đơn...</span>
+                        </span>
+                        <span class="bg-emerald-600 text-white text-xs font-bold px-3 py-1 rounded-lg shadow-sm shrink-0">
+                            + Chọn hàng
+                        </span>
+                    </button>
                 </div>
 
-                <!-- Bảng danh sách các mặt hàng trong chuyến nhập -->
-                <div class="border border-slate-200 rounded-xl overflow-hidden">
-                    <table class="w-full text-left border-collapse text-xs">
-                        <thead>
-                            <tr class="bg-slate-100 text-slate-600 border-b">
-                                <th class="p-2.5">STT</th>
-                                <th class="p-2.5">Tên hàng hóa</th>
-                                <th class="p-2.5 text-center">Đơn vị nhập</th>
-                                <th class="p-2.5 text-center">SL Nhập</th>
-                                <th class="p-2.5 text-center">Quy đổi cộng kho</th>
-                                <th class="p-2.5 text-right">Đơn giá nhập</th>
-                                <th class="p-2.5 text-right">Thành tiền</th>
-                                <th class="p-2.5 text-center">Xóa</th>
-                            </tr>
-                        </thead>
-                        <tbody id="po-items-tbody" class="divide-y divide-slate-100"></tbody>
-                    </table>
+                <!-- Danh sách mặt hàng trong chuyến nhập (Thiết kế Thẻ dòng Card Row chuẩn Sapo) -->
+                <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                    <div class="bg-slate-100 px-3.5 py-2 border-b border-slate-200 flex justify-between items-center text-xs font-bold text-slate-700">
+                        <span>DANH SÁCH HÀNG NHẬP (<span id="po-total-lines-count" class="text-inni-blue">0</span> món)</span>
+                        <span id="po-total-qty-summary" class="text-emerald-700">Tổng SL: 0</span>
+                    </div>
+                    <div id="po-items-tbody" class="divide-y divide-slate-200 max-h-[42vh] overflow-y-auto"></div>
                 </div>
 
                 <!-- Khu vực Thanh toán & Ghi nợ Nhà Cung Cấp -->
@@ -1691,6 +1663,59 @@
                 <button onclick="closePurchaseOrderModal()" class="px-4 py-2 bg-slate-200 rounded-lg font-bold text-sm">Hủy</button>
                 <button onclick="submitPurchaseOrder()" id="btn-submit-po" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-sm shadow-md scale-active">
                     <i class="fa-solid fa-check-double mr-1"></i> Chốt Phiếu Nhập & Cộng Kho
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- MÀN HÌNH CHỌN SẢN PHẨM NHẬP HÀNG (CHỌN NHIỀU MÓN CÙNG LÚC GIỐNG SAPO) -->
+    <!-- ========================================== -->
+    <div id="po-product-picker-modal" class="fixed inset-0 bg-[#F4F6F8] z-[88] hidden flex flex-col overflow-hidden animate-fade-in">
+        <!-- Header cố định trên cùng -->
+        <div class="bg-white border-b border-slate-200 px-3.5 py-2.5 shrink-0 space-y-2.5 shadow-sm">
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="closePoProductPickerModal()" class="w-9 h-9 rounded-full hover:bg-slate-100 active:bg-slate-200 flex items-center justify-center text-slate-700 text-lg shrink-0">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div class="relative flex-1">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+                    <input type="text" id="po-picker-search" oninput="onPoPickerSearchInput()" placeholder="Tìm tên hàng, mã SKU, Barcode, từ khóa Zalo..." autocomplete="off" class="w-full bg-[#F4F6F8] border border-slate-300 focus:border-[#0088FF] focus:bg-white rounded-xl py-2 pl-9 pr-8 text-sm font-medium focus:outline-none">
+                    <button type="button" id="btn-clear-po-picker-search" onclick="clearPoPickerSearch()" class="hidden absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 w-6 h-6 flex items-center justify-center">
+                        <i class="fa-solid fa-circle-xmark text-base"></i>
+                    </button>
+                </div>
+                <button type="button" onclick="startBarcodeScanner('po-picker-search')" class="bg-slate-800 text-amber-400 px-3 py-2 rounded-xl text-xs font-bold shrink-0 flex items-center gap-1 scale-active">
+                    <i class="fa-solid fa-barcode text-sm"></i>
+                </button>
+            </div>
+
+            <!-- Nút lọc loại sản phẩm (Trái) & Công tắc gạt Chọn nhiều (Phải) -->
+            <div class="flex items-center justify-between gap-2 pt-0.5">
+                <select id="po-picker-cat" onchange="renderPoProductPickerList()" class="border border-slate-200 bg-[#F4F6F8] text-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold focus:outline-none max-w-[58%] truncate">
+                    <option value="all">Tất cả loại sản phẩm</option>
+                </select>
+
+                <label class="inline-flex items-center gap-2 cursor-pointer select-none">
+                    <span class="text-xs font-bold text-slate-700">Chọn nhiều</span>
+                    <input type="checkbox" id="po-picker-multi-toggle" checked onchange="onTogglePoPickerMultiMode(this.checked)" class="sr-only peer">
+                    <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all relative peer-checked:bg-[#0088FF]"></div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Danh sách sản phẩm ở giữa -->
+        <div id="po-picker-list" class="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white max-w-4xl w-full mx-auto"></div>
+
+        <!-- Footer cố định dưới đáy: [Chọn lại] & [Xong] -->
+        <div class="bg-white border-t border-slate-200 px-4 py-3 pb-safe shrink-0 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+            <div class="max-w-4xl mx-auto grid grid-cols-12 gap-3">
+                <button type="button" onclick="resetPoProductPickerSelection()" class="col-span-4 py-3 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs sm:text-sm scale-active">
+                    Chọn lại
+                </button>
+                <button type="button" id="btn-po-picker-done" onclick="confirmPoProductPickerSelection()" class="col-span-8 py-3 rounded-xl bg-[#0088FF] hover:bg-blue-600 text-white font-black text-xs sm:text-sm shadow-md scale-active flex items-center justify-center gap-1.5">
+                    <span>Xong</span>
+                    <span id="po-picker-selected-badge" class="bg-white/20 px-2 py-0.5 rounded-full text-xs">0 món</span>
                 </button>
             </div>
         </div>

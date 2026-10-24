@@ -1084,175 +1084,314 @@ async function quickAddSupplierFromPo() {
     setTimeout(() => renderPoSupplierSelect(docRef.id), 300);
 }
 
+// Biến lưu trạng thái tích chọn nhiều sản phẩm trong Màn hình chọn hàng Sapo
+let poPickerSelectedMap = {}; // { [productId]: qty }
+let poPickerMultiMode = true;
+
 function openPurchaseOrderModal() {
     currentPoItems = [];
     renderPoSupplierSelect();
     document.getElementById('po-invoice-no').value = '';
     document.getElementById('po-paid-input').value = '';
-
-    // Xóa trắng ô lọc tìm kiếm mặt hàng mỗi khi mở lại Phiếu Nhập
-    if (document.getElementById('po-product-filter')) {
-        document.getElementById('po-product-filter').value = '';
-    }
-
-    const prodSel = document.getElementById('po-product-id');
-    if (prodSel) {
-        prodSel.innerHTML = inventory.map(i => `<option value="${i.id}">${i.name} (Tồn: ${i.stock} ${i.baseUnit})</option>`).join('');
-    }
-    onChangePoProduct();
     renderPoItemsTable();
     document.getElementById('po-modal').classList.remove('hidden');
-}
-
-function filterPoProductDropdown() {
-    const kw = (document.getElementById('po-product-filter')?.value || '').toLowerCase().trim();
-    const prodSel = document.getElementById('po-product-id');
-    if (!prodSel) return;
-    const filtered = inventory.filter(i => 
-        !kw || i.name.toLowerCase().includes(kw) || (i.barcode && i.barcode.toLowerCase().includes(kw))
-    );
-    prodSel.innerHTML = filtered.slice(0, 150).map(i => `<option value="${i.id}">${i.name} (Tồn: ${i.stock} ${i.baseUnit})</option>`).join('');
-    onChangePoProduct();
 }
 
 function closePurchaseOrderModal() {
     document.getElementById('po-modal').classList.add('hidden');
 }
 
-function onChangePoProduct() {
-    const prodId = document.getElementById('po-product-id')?.value;
-    const item = inventory.find(i => i.id === prodId);
-    const unitSel = document.getElementById('po-unit-select');
-    if (!item || !unitSel) {
-        if (unitSel) unitSel.innerHTML = '';
-        return;
+// --- MÀN HÌNH CHỌN SẢN PHẨM NHẬP HÀNG (CHỌN NHIỀU MÓN CÙNG LÚC CHUẨN SAPO) ---
+function getDefaultPoUnitForProduct(item) {
+    if (!item || !Array.isArray(item.units) || item.units.length === 0) {
+        return { unitName: item?.baseUnit || 'Cái', conversionRate: 1 };
     }
-
-    unitSel.innerHTML = item.units.map((u, idx) => `<option value="${idx}">${u.unitName} (${u.conversionRate} ${item.baseUnit})</option>`).join('') +
-        `<option value="CUSTOM">+ Đơn vị lớn khác (Bao/Thùng...)</option>`;
-    if (item.units.length > 1) unitSel.selectedIndex = item.units.length - 1;
-    onChangePoUnit();
+    // Mặc định ưu tiên đơn vị lớn nhất (Thùng/Bao/Lốc) khi nhập sỉ, nếu chỉ có 1 ĐVT thì lấy ĐVT gốc
+    return item.units.length > 1 ? item.units[item.units.length - 1] : item.units[0];
 }
 
-function onChangePoUnit() {
-    const prodId = document.getElementById('po-product-id')?.value;
-    const item = inventory.find(i => i.id === prodId);
-    const unitVal = document.getElementById('po-unit-select')?.value;
-    const rateInp = document.getElementById('po-conversion-rate');
-    if (!item) return;
+function openPoProductPickerModal() {
+    poPickerSelectedMap = {};
+    poPickerMultiMode = true;
 
-    if (unitVal === 'CUSTOM') {
-        const customUName = prompt(`Nhập tên Đơn Vị Nhập mới cho "${item.name}" (VD: Bao, Thùng, Kiện...):`, "Bao");
-        if (!customUName || !customUName.trim()) {
-            document.getElementById('po-unit-select').selectedIndex = 0;
-            return onChangePoUnit();
+    const catSel = document.getElementById('po-picker-cat');
+    if (catSel && catSel.options.length <= 1) {
+        catSel.innerHTML = `<option value="all">Tất cả loại sản phẩm</option>` +
+            CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+    if (catSel) catSel.value = 'all';
+
+    const searchInp = document.getElementById('po-picker-search');
+    if (searchInp) searchInp.value = '';
+    document.getElementById('btn-clear-po-picker-search')?.classList.add('hidden');
+
+    const multiChk = document.getElementById('po-picker-multi-toggle');
+    if (multiChk) multiChk.checked = true;
+
+    renderPoProductPickerList();
+    document.getElementById('po-product-picker-modal').classList.remove('hidden');
+    setTimeout(() => searchInp?.focus(), 80);
+}
+
+function closePoProductPickerModal() {
+    document.getElementById('po-product-picker-modal').classList.add('hidden');
+}
+
+function onPoPickerSearchInput() {
+    const inp = document.getElementById('po-picker-search');
+    const clearBtn = document.getElementById('btn-clear-po-picker-search');
+    if (clearBtn) clearBtn.classList.toggle('hidden', !(inp?.value || '').trim());
+    renderPoProductPickerList();
+}
+
+function clearPoPickerSearch() {
+    const inp = document.getElementById('po-picker-search');
+    if (inp) {
+        inp.value = '';
+        inp.focus();
+    }
+    document.getElementById('btn-clear-po-picker-search')?.classList.add('hidden');
+    renderPoProductPickerList();
+}
+
+function onTogglePoPickerMultiMode(isChecked) {
+    poPickerMultiMode = !!isChecked;
+}
+
+function resetPoProductPickerSelection() {
+    const selectedCount = Object.keys(poPickerSelectedMap).filter(id => poPickerSelectedMap[id] > 0).length;
+    if (selectedCount === 0) return;
+    if (confirm(`Bạn có chắc muốn bỏ chọn toàn bộ ${selectedCount} món đang chọn để chọn lại từ đầu không?`)) {
+        poPickerSelectedMap = {};
+        renderPoProductPickerList();
+    }
+}
+
+function togglePickPoProduct(prodId) {
+    if (!prodId) return;
+    if (!poPickerMultiMode) {
+        poPickerSelectedMap = { [prodId]: 1 };
+        confirmPoProductPickerSelection();
+        return;
+    }
+    poPickerSelectedMap[prodId] = (poPickerSelectedMap[prodId] || 0) + 1;
+    playBeepSound();
+    renderPoProductPickerList();
+}
+
+function increasePickPoProduct(event, prodId) {
+    if (event) event.stopPropagation();
+    if (!prodId) return;
+    poPickerSelectedMap[prodId] = (poPickerSelectedMap[prodId] || 0) + 1;
+    playBeepSound();
+    renderPoProductPickerList();
+}
+
+function decreasePickPoProduct(event, prodId) {
+    if (event) event.stopPropagation();
+    if (!poPickerSelectedMap[prodId]) return;
+    poPickerSelectedMap[prodId] -= 1;
+    if (poPickerSelectedMap[prodId] <= 0) {
+        delete poPickerSelectedMap[prodId];
+    }
+    renderPoProductPickerList();
+}
+
+// 1. Hủy riêng 1 món đang chọn (VD: Hủy hết 9 bịch kẹo, giữ nguyên 4 bánh & 5 bia)
+function removeSinglePickPoProduct(event, prodId) {
+    if (event) event.stopPropagation();
+    if (!poPickerSelectedMap[prodId]) return;
+    delete poPickerSelectedMap[prodId];
+    renderPoProductPickerList();
+}
+
+// 2. Gõ đổi trực tiếp số lượng của riêng 1 món (VD: Đang 9 bịch gõ thẳng thành 5 bịch)
+function setPickPoProductQty(event, prodId, rawVal, shouldReRender = false) {
+    if (event) event.stopPropagation();
+    const parsed = parseInt(rawVal, 10);
+
+    if (isNaN(parsed) || parsed <= 0) {
+        if (shouldReRender) {
+            delete poPickerSelectedMap[prodId];
+            renderPoProductPickerList();
         }
-        const customRateRaw = prompt(`1 ${customUName.trim()} bằng bao nhiêu ${item.baseUnit} (Hệ số quy đổi)?`, "8");
-        const customRate = Math.max(1, parseInt(customRateRaw, 10) || 1);
-
-        const unitSel = document.getElementById('po-unit-select');
-        const newOpt = document.createElement('option');
-        newOpt.value = `NEW_${customUName.trim()}_${customRate}`;
-        newOpt.text = `${customUName.trim()} (${customRate} ${item.baseUnit})`;
-        newOpt.dataset.unitName = customUName.trim();
-        newOpt.dataset.rate = customRate;
-        unitSel.insertBefore(newOpt, unitSel.lastElementChild);
-        unitSel.value = newOpt.value;
-
-        if (rateInp) rateInp.value = customRate;
-        const suggestedCost = (Number(item.costPrice) || 0) * customRate;
-        document.getElementById('po-import-price').value = suggestedCost > 0 ? formatmoney(suggestedCost) : '';
         return;
     }
 
-    if (unitVal && unitVal.startsWith('NEW_')) {
-        const selOpt = document.getElementById('po-unit-select').selectedOptions[0];
-        const cRate = Math.max(1, parseInt(selOpt?.dataset?.rate, 10) || 1);
-        if (rateInp) rateInp.value = cRate;
-        const suggestedCost = (Number(item.costPrice) || 0) * cRate;
-        document.getElementById('po-import-price').value = suggestedCost > 0 ? formatmoney(suggestedCost) : '';
+    poPickerSelectedMap[prodId] = parsed;
+    const badgeEl = document.getElementById(`po-pick-badge-${prodId}`);
+    if (badgeEl) badgeEl.innerText = parsed;
+    updatePoPickerFooterBadge();
+
+    if (shouldReRender) {
+        renderPoProductPickerList();
+    }
+}
+
+function updatePoPickerFooterBadge() {
+    const selectedIds = Object.keys(poPickerSelectedMap).filter(id => poPickerSelectedMap[id] > 0);
+    const totalSelectedQty = selectedIds.reduce((sum, id) => sum + poPickerSelectedMap[id], 0);
+    const badgeEl = document.getElementById('po-picker-selected-badge');
+    if (badgeEl) {
+        badgeEl.innerText = selectedIds.length > 0 ? `${selectedIds.length} món (${totalSelectedQty})` : `0 món`;
+    }
+}
+
+function renderPoProductPickerList() {
+    const listEl = document.getElementById('po-picker-list');
+    if (!listEl) return;
+
+    const rawSearch = (document.getElementById('po-picker-search')?.value || '').trim().toLowerCase();
+    const normSearch = typeof removeVN === 'function' ? removeVN(rawSearch) : rawSearch;
+    const catFilter = document.getElementById('po-picker-cat')?.value || 'all';
+
+    const matched = inventory.filter(item => {
+        if (catFilter !== 'all' && item.category !== catFilter) return false;
+        if (!rawSearch) return true;
+        const nameMatch = item.name.toLowerCase().includes(rawSearch) ||
+            (typeof removeVN === 'function' && removeVN(item.name).includes(normSearch));
+        const bcMatch = (item.barcode && item.barcode.toLowerCase().includes(rawSearch)) ||
+            (Array.isArray(item.units) && item.units.some(u => u.barcode && u.barcode.toLowerCase().includes(rawSearch)));
+        const kwMatch = Array.isArray(item.keywords) && item.keywords.some(k =>
+            k.toLowerCase().includes(rawSearch) || (typeof removeVN === 'function' && removeVN(k).includes(normSearch))
+        );
+        return nameMatch || bcMatch || kwMatch;
+    });
+
+    updatePoPickerFooterBadge();
+
+    if (matched.length === 0) {
+        listEl.innerHTML = `<div class="p-10 text-center text-slate-400 italic text-xs">Không tìm thấy sản phẩm nào khớp từ khóa!</div>`;
         return;
     }
 
-    const uIdx = parseInt(unitVal, 10) || 0;
-    const u = item.units[uIdx] || item.units[0];
-    if (!u) return;
+    listEl.innerHTML = matched.slice(0, 120).map(item => {
+        const pickedQty = poPickerSelectedMap[item.id] || 0;
+        const defUnit = getDefaultPoUnitForProduct(item);
+        const rate = Math.max(1, Number(defUnit.conversionRate) || 1);
+        const defImportPrice = Math.round((Number(item.costPrice) || 0) * rate);
 
-    const rate = Math.max(1, Number(u.conversionRate) || 1);
-    if (rateInp) rateInp.value = rate;
-    const suggestedCost = (Number(item.costPrice) || 0) * rate;
-    document.getElementById('po-import-price').value = suggestedCost > 0 ? formatmoney(suggestedCost) : '';
+        const thumbHtml = item.image
+            ? `<img src="${item.image}" class="w-12 h-12 rounded-xl object-contain border border-slate-200 bg-white p-0.5">`
+            : `<div class="w-12 h-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center text-base border border-slate-200"><i class="fa-solid fa-box"></i></div>`;
+
+        const qtyBadgeHtml = pickedQty > 0
+            ? `<span id="po-pick-badge-${item.id}" class="absolute -top-1.5 -right-1.5 min-w-[22px] h-[22px] px-1 rounded-full bg-[#0088FF] text-white font-black text-xs flex items-center justify-center shadow ring-2 ring-white">${pickedQty}</span>`
+            : '';
+
+        // Cụm điều khiển khi món hàng đã được chọn: [-] [Ô nhập số trực tiếp] [+] và nút [X Hủy món]
+        const actionControlsHtml = pickedQty > 0
+            ? `<div onclick="event.stopPropagation()" class="mt-1.5 flex items-center gap-1 bg-white p-1 rounded-lg border border-blue-300 shadow-sm">
+                   <button type="button" onclick="decreasePickPoProduct(event, '${item.id}')" title="Giảm 1" class="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-black flex items-center justify-center text-xs">
+                       <i class="fa-solid fa-minus text-[10px]"></i>
+                   </button>
+                   <input type="number" min="1" value="${pickedQty}"
+                       onclick="event.stopPropagation(); this.select();"
+                       oninput="setPickPoProductQty(event, '${item.id}', this.value, false)"
+                       onchange="setPickPoProductQty(event, '${item.id}', this.value, true)"
+                       class="w-11 h-6 border border-slate-300 focus:border-[#0088FF] rounded text-center font-black text-xs text-[#0088FF] bg-white focus:outline-none">
+                   <button type="button" onclick="increasePickPoProduct(event, '${item.id}')" title="Tăng 1" class="w-6 h-6 rounded bg-[#0088FF] hover:bg-blue-600 text-white font-black flex items-center justify-center text-xs">
+                       <i class="fa-solid fa-plus text-[10px]"></i>
+                   </button>
+                   <button type="button" onclick="removeSinglePickPoProduct(event, '${item.id}')" title="Hủy không lấy món này nữa" class="ml-0.5 px-1.5 h-6 rounded bg-red-50 hover:bg-red-500 text-red-600 hover:text-white border border-red-200 text-[10px] font-bold flex items-center gap-0.5 transition">
+                       <i class="fa-solid fa-xmark"></i> Hủy
+                   </button>
+               </div>`
+            : '';
+
+        const unitLabel = rate > 1
+            ? `${defUnit.unitName} (${rate} ${item.baseUnit})`
+            : `${defUnit.unitName}`;
+
+        return `
+            <div onclick="togglePickPoProduct('${item.id}')" class="p-3 flex items-center justify-between gap-3 cursor-pointer transition select-none ${pickedQty > 0 ? 'bg-blue-50/60' : 'hover:bg-slate-50 active:bg-slate-100'}">
+                <!-- Trái: Icon/Ảnh + Badge số lượng -->
+                <div class="relative shrink-0">
+                    ${thumbHtml}
+                    ${qtyBadgeHtml}
+                </div>
+
+                <!-- Giữa: Tên hàng + SKU + ĐVT mặc định -->
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-slate-800 text-xs sm:text-sm leading-snug truncate">${item.name}</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5 truncate">
+                        SKU: <span class="font-semibold text-slate-600">${item.barcode || '---'}</span>
+                    </div>
+                    <div class="mt-0.5">
+                        <span class="inline-block bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.2 rounded text-[10px] font-bold">
+                            ĐVT mặc định: ${unitLabel}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Phải: Giá nhập + Tồn kho hiện tại + Cụm sửa số lượng / Hủy riêng món -->
+                <div class="text-right shrink-0 flex flex-col items-end">
+                    <div class="font-black text-emerald-700 text-xs sm:text-sm">${formatmoney(defImportPrice)} đ<span class="text-[10px] font-normal text-slate-400">/${defUnit.unitName}</span></div>
+                    <div class="text-[11px] ${item.stock <= 0 ? 'text-red-500 font-bold' : 'text-slate-500'} mt-0.5">
+                        Tồn: <b>${item.stock}</b> ${item.baseUnit}
+                    </div>
+                    ${actionControlsHtml}
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
-function onChangePoConversionRate() {
-    const prodId = document.getElementById('po-product-id')?.value;
-    const item = inventory.find(i => i.id === prodId);
-    const rate = Math.max(1, parseInt(document.getElementById('po-conversion-rate')?.value, 10) || 1);
-    if (item && item.costPrice > 0) {
-        document.getElementById('po-import-price').value = formatmoney(item.costPrice * rate);
-    }
-}
-
-function addPoItemToList() {
-    const prodId = document.getElementById('po-product-id')?.value;
-    const item = inventory.find(i => i.id === prodId);
-    const unitSel = document.getElementById('po-unit-select');
-    const unitVal = unitSel?.value || '0';
-    const qty = parseInt(document.getElementById('po-qty')?.value, 10) || 0;
-    const importPrice = getRawNum('po-import-price');
-    const manualRate = Math.max(1, parseInt(document.getElementById('po-conversion-rate')?.value, 10) || 1);
-
-    if (!item || qty <= 0 || importPrice <= 0) {
-        return alert("Vui lòng nhập số lượng và đơn giá nhập hợp lệ!");
+function confirmPoProductPickerSelection() {
+    const selectedIds = Object.keys(poPickerSelectedMap).filter(id => poPickerSelectedMap[id] > 0);
+    if (selectedIds.length === 0) {
+        closePoProductPickerModal();
+        return;
     }
 
-    let unitName = item.baseUnit;
-    if (unitVal.startsWith('NEW_')) {
-        unitName = unitSel.selectedOptions[0]?.dataset?.unitName || "Bao";
-    } else {
-        const uIdx = parseInt(unitVal, 10) || 0;
-        unitName = item.units[uIdx] ? item.units[uIdx].unitName : item.baseUnit;
-    }
+    selectedIds.forEach(prodId => {
+        const qty = poPickerSelectedMap[prodId];
+        const item = inventory.find(i => i.id === prodId);
+        if (!item || qty <= 0) return;
 
-    const conversionRate = manualRate;
-    // Công thức chuẩn bán sỉ:
-    // 1. Tồn kho cộng thêm = [Số Lượng Nhập] x [Hệ Số Quy Đổi]
-    const baseQty = qty * conversionRate;
-    // 2. Giá vốn nhập (của ĐVT gốc) = [Đơn Giá Nhập] / [Hệ Số Quy Đổi]
-    const costPerBaseAtImport = Math.round(importPrice / conversionRate);
-    const totalCost = qty * importPrice;
+        const defUnit = getDefaultPoUnitForProduct(item);
+        const unitName = defUnit.unitName || item.baseUnit || 'Cái';
+        const conversionRate = Math.max(1, Number(defUnit.conversionRate) || 1);
+        const importPrice = Math.round((Number(item.costPrice) || 0) * conversionRate);
+        const baseQty = qty * conversionRate;
+        const costPerBaseAtImport = Math.round(importPrice / conversionRate);
+        const totalCost = qty * importPrice;
 
-    const existingIdx = currentPoItems.findIndex(x => x.productId === item.id && x.unitName.toLowerCase() === unitName.toLowerCase() && Number(x.conversionRate) === conversionRate);
-    if (existingIdx !== -1) {
-        currentPoItems[existingIdx].qty += qty;
-        currentPoItems[existingIdx].baseQty = currentPoItems[existingIdx].qty * conversionRate;
-        currentPoItems[existingIdx].importPrice = importPrice;
-        currentPoItems[existingIdx].costPerBaseAtImport = costPerBaseAtImport;
-        currentPoItems[existingIdx].totalCost = currentPoItems[existingIdx].qty * importPrice;
-    } else {
-        currentPoItems.push({
-            productId: item.id,
-            barcode: item.barcode || "",
-            productName: item.name,
-            baseUnit: item.baseUnit,
-            unitName: unitName,
-            conversionRate: conversionRate,
-            qty,
-            baseQty,
-            importPrice,
-            costPerBaseAtImport,
-            totalCost,
-            isNewProduct: false
-        });
-    }
+        const existingIdx = currentPoItems.findIndex(
+            x => x.productId === item.id &&
+                 x.unitName.toLowerCase() === unitName.toLowerCase() &&
+                 Number(x.conversionRate) === conversionRate
+        );
 
-    document.getElementById('po-qty').value = 1;
+        if (existingIdx !== -1) {
+            currentPoItems[existingIdx].qty += qty;
+            currentPoItems[existingIdx].baseQty = currentPoItems[existingIdx].qty * conversionRate;
+            currentPoItems[existingIdx].totalCost = currentPoItems[existingIdx].qty * currentPoItems[existingIdx].importPrice;
+        } else {
+            currentPoItems.push({
+                productId: item.id,
+                barcode: item.barcode || "",
+                productName: item.name,
+                baseUnit: item.baseUnit,
+                unitName: unitName,
+                conversionRate: conversionRate,
+                qty: qty,
+                baseQty: baseQty,
+                importPrice: importPrice,
+                costPerBaseAtImport: costPerBaseAtImport,
+                totalCost: totalCost,
+                isNewProduct: false
+            });
+        }
+    });
+
+    closePoProductPickerModal();
     renderPoItemsTable();
 }
 
 function clearPoItemsList() {
     if (currentPoItems.length === 0) return;
-    if (confirm("Xóa toàn bộ mặt hàng đang có trong bảng danh sách phiếu nhập này?")) {
+    if (confirm("Xóa toàn bộ mặt hàng đang có trong danh sách phiếu nhập này?")) {
         currentPoItems = [];
         renderPoItemsTable();
     }
@@ -1263,27 +1402,54 @@ function removePoItem(idx) {
     renderPoItemsTable();
 }
 
-// Cho phép sửa trực tiếp Tên ĐVT nhập, Hệ số quy đổi, SL nhập và Đơn giá nhập ngay trên bảng
-function updatePoTableItemUnitName(idx, newUnitName) {
+// Đổi nhanh ĐVT (Thùng / Lốc / Lẻ / ĐVT khác) ngay trên Thẻ dòng (Card Row)
+function changePoCardItemUnit(idx, selectedVal) {
     const row = currentPoItems[idx];
     if (!row) return;
-    row.unitName = (newUnitName || '').trim() || row.baseUnit || 'Cái';
+    const prod = inventory.find(i => i.id === row.productId);
+
+    if (selectedVal === 'CUSTOM') {
+        const customUName = prompt(`Nhập tên Đơn Vị Nhập mới cho "${row.productName}" (VD: Bao, Thùng, Kiện...):`, row.unitName || "Bao");
+        if (!customUName || !customUName.trim()) {
+            renderPoItemsTable();
+            return;
+        }
+        const customRateRaw = prompt(`1 ${customUName.trim()} bằng bao nhiêu ${row.baseUnit} (Hệ số quy đổi)?`, row.conversionRate || "8");
+        const customRate = Math.max(1, parseInt(customRateRaw, 10) || 1);
+        const baseCost = prod ? (Number(prod.costPrice) || row.costPerBaseAtImport || 0) : (row.costPerBaseAtImport || 0);
+
+        row.unitName = customUName.trim();
+        row.conversionRate = customRate;
+        row.importPrice = Math.round(baseCost * customRate);
+        row.baseQty = row.qty * customRate;
+        row.costPerBaseAtImport = Math.round(row.importPrice / customRate);
+        row.totalCost = row.qty * row.importPrice;
+        renderPoItemsTable();
+        return;
+    }
+
+    // Định dạng selectedVal: "unitName||conversionRate"
+    const [uName, uRateStr] = selectedVal.split('||');
+    const newRate = Math.max(1, parseInt(uRateStr, 10) || 1);
+    const baseCost = prod ? (Number(prod.costPrice) || row.costPerBaseAtImport || 0) : (row.costPerBaseAtImport || 0);
+
+    row.unitName = (uName || row.baseUnit || 'Cái').trim();
+    row.conversionRate = newRate;
+    row.importPrice = Math.round(baseCost * newRate);
+    row.baseQty = row.qty * newRate;
+    row.costPerBaseAtImport = Math.round(row.importPrice / newRate);
+    row.totalCost = row.qty * row.importPrice;
     renderPoItemsTable();
 }
 
-function updatePoTableItemRate(idx, newRateVal) {
+function stepPoCardItemQty(idx, delta) {
     const row = currentPoItems[idx];
     if (!row) return;
-    const rate = Math.max(1, parseInt(newRateVal, 10) || 1);
-    row.conversionRate = rate;
-    // Tính lại Tồn kho cộng thêm = SL Nhập x Hệ Số Quy Đổi
-    row.baseQty = row.qty * rate;
-    // Tính lại Giá vốn của ĐVT gốc = Đơn Giá Nhập / Hệ Số Quy Đổi
-    row.costPerBaseAtImport = Math.round((Number(row.importPrice) || 0) / rate);
-    renderPoItemsTable();
+    const newQty = Math.max(1, (parseInt(row.qty, 10) || 1) + delta);
+    updatePoTableItemQty(idx, newQty, true);
 }
 
-function updatePoTableItemQty(idx, val) {
+function updatePoTableItemQty(idx, val, reRender = false) {
     const row = currentPoItems[idx];
     if (!row) return;
     const newQty = Math.max(1, parseInt(val, 10) || 1);
@@ -1291,7 +1457,17 @@ function updatePoTableItemQty(idx, val) {
     row.qty = newQty;
     row.baseQty = newQty * rate;
     row.totalCost = newQty * (Number(row.importPrice) || 0);
-    renderPoItemsTable();
+
+    if (reRender) {
+        renderPoItemsTable();
+        return;
+    }
+
+    const baseBadgeEl = document.getElementById(`po-base-qty-badge-${idx}`);
+    if (baseBadgeEl) baseBadgeEl.innerText = `+${row.baseQty} ${row.baseUnit}`;
+    const lineTotalEl = document.getElementById(`po-line-total-${idx}`);
+    if (lineTotalEl) lineTotalEl.innerText = `${formatmoney(row.totalCost)} đ`;
+    updatePoSummaryRealtime();
 }
 
 function updatePoTableItemPrice(idx, inputEl) {
@@ -1308,9 +1484,24 @@ function updatePoTableItemPrice(idx, inputEl) {
     const lineTotalEl = document.getElementById(`po-line-total-${idx}`);
     if (lineTotalEl) lineTotalEl.innerText = `${formatmoney(row.totalCost)} đ`;
     const baseCostEl = document.getElementById(`po-base-cost-${idx}`);
-    if (baseCostEl) baseCostEl.innerText = `Vốn ĐVT gốc: ${formatmoney(row.costPerBaseAtImport)}đ/${row.baseUnit}`;
+    if (baseCostEl) baseCostEl.innerText = `Vốn gốc: ${formatmoney(row.costPerBaseAtImport)}đ/${row.baseUnit}`;
 
-    const grandTotal = currentPoItems.reduce((s, i) => s + i.totalCost, 0);
+    updatePoSummaryRealtime();
+}
+
+function updatePoSummaryRealtime() {
+    const grandTotal = currentPoItems.reduce((s, i) => s + (Number(i.totalCost) || 0), 0);
+    const totalQty = currentPoItems.reduce((s, i) => s + (Number(i.qty) || 0), 0);
+    const totalBaseQty = currentPoItems.reduce((s, i) => s + (Number(i.baseQty) || 0), 0);
+
+    const linesCntEl = document.getElementById('po-total-lines-count');
+    if (linesCntEl) linesCntEl.innerText = currentPoItems.length;
+
+    const qtySumEl = document.getElementById('po-total-qty-summary');
+    if (qtySumEl) {
+        qtySumEl.innerText = `Tổng SL: ${formatmoney(totalQty)} (Quy đổi: +${formatmoney(totalBaseQty)})`;
+    }
+
     document.getElementById('po-grand-total').innerText = `${formatmoney(grandTotal)} đ`;
     document.getElementById('po-paid-input').value = formatmoney(grandTotal);
     calcPoDebtPreview();
@@ -1321,62 +1512,108 @@ function renderPoItemsTable() {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    let grandTotal = 0;
     if (currentPoItems.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400 italic">Chưa có mặt hàng nào trong phiếu nhập. Hãy chọn mặt hàng ở trên hoặc bấm <b>"Import File Excel"</b>!</td></tr>`;
-    } else {
-        currentPoItems.forEach((row, idx) => {
-            grandTotal += row.totalCost;
-            const rate = Math.max(1, Number(row.conversionRate) || 1);
-            const newBadge = row.isNewProduct
-                ? `<span class="ml-1.5 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-bold">Mới (Tự tạo trong kho)</span>`
-                : '';
-
-            tbody.innerHTML += `
-                <tr class="hover:bg-slate-50">
-                    <td class="p-2 text-center font-bold">${idx + 1}</td>
-                    <td class="p-2 font-bold text-slate-800">
-                        <div>${row.productName}${newBadge}</div>
-                        <div class="text-[10.5px] text-slate-500 font-normal">
-                            ĐVT gốc trên web: <b class="text-slate-700">${row.baseUnit}</b>
-                            ${row.barcode ? ` • <i class="fa-solid fa-barcode mr-0.5"></i>${row.barcode}` : ''}
-                        </div>
-                    </td>
-                    <td class="p-2 text-center">
-                        <div class="flex flex-col items-center gap-1">
-                            <input type="text" value="${row.unitName}" onchange="updatePoTableItemUnitName(${idx}, this.value)" class="w-20 border border-slate-300 rounded p-1 text-center text-xs font-bold text-inni-blue bg-white" title="Đơn vị nhập trên hóa đơn NPP">
-                            <div class="flex items-center gap-1 text-[10px] text-amber-800 font-bold">
-                                <span>×</span>
-                                <input type="number" min="1" value="${rate}" onchange="updatePoTableItemRate(${idx}, this.value)" class="w-12 border border-amber-400 bg-amber-50 rounded px-1 py-0.5 text-center font-black text-amber-900" title="Hệ số quy đổi ra ${row.baseUnit}">
-                                <span>${row.baseUnit}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="p-2 text-center">
-                        <input type="number" min="1" value="${row.qty}" onchange="updatePoTableItemQty(${idx}, this.value)" class="w-14 border border-slate-300 rounded p-1 text-center font-black text-xs bg-white">
-                    </td>
-                    <td class="p-2 text-center">
-                        <div class="text-emerald-700 font-black whitespace-nowrap">+${row.baseQty} ${row.baseUnit}</div>
-                        <div class="text-[10px] text-slate-400">(${row.qty} ${row.unitName} × ${rate})</div>
-                    </td>
-                    <td class="p-2 text-right">
-                        <input type="text" value="${formatmoney(row.importPrice)}" oninput="updatePoTableItemPrice(${idx}, this)" class="w-24 border border-emerald-400 bg-emerald-50/30 focus:bg-white rounded p-1 text-right font-bold text-emerald-700 text-xs focus:outline-none">
-                        <div class="text-[10px] text-slate-500 mt-0.5 whitespace-nowrap" id="po-base-cost-${idx}">
-                            Vốn ĐVT gốc: <b class="text-slate-700">${formatmoney(row.costPerBaseAtImport)}đ/${row.baseUnit}</b>
-                        </div>
-                    </td>
-                    <td class="p-2 text-right font-black text-red-600 whitespace-nowrap" id="po-line-total-${idx}">${formatmoney(row.totalCost)} đ</td>
-                    <td class="p-2 text-center">
-                        <button onclick="removePoItem(${idx})" class="text-red-500 hover:text-red-700 px-1.5 py-1"><i class="fa-solid fa-trash-can"></i></button>
-                    </td>
-                </tr>
-            `;
-        });
+        tbody.innerHTML = `
+            <div class="p-8 text-center flex flex-col items-center justify-center gap-2.5">
+                <div class="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl">
+                    <i class="fa-solid fa-boxes-packing"></i>
+                </div>
+                <div class="text-slate-400 text-xs italic">Phiếu nhập chưa có sản phẩm nào</div>
+                <button type="button" onclick="openPoProductPickerModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2 rounded-xl text-xs shadow-sm scale-active">
+                    + Chọn sản phẩm
+                </button>
+            </div>`;
+        updatePoSummaryRealtime();
+        return;
     }
 
-    document.getElementById('po-grand-total').innerText = `${formatmoney(grandTotal)} đ`;
-    document.getElementById('po-paid-input').value = formatmoney(grandTotal);
-    calcPoDebtPreview();
+    currentPoItems.forEach((row, idx) => {
+        const rate = Math.max(1, Number(row.conversionRate) || 1);
+        const prod = inventory.find(i => i.id === row.productId);
+
+        // Tập hợp các đơn vị tính (Thùng/Lốc/Lẻ) của mặt hàng để đổi nhanh trên Dropdown
+        const unitChoices = [];
+        if (prod && Array.isArray(prod.units)) {
+            prod.units.forEach(u => {
+                const r = Math.max(1, Number(u.conversionRate) || 1);
+                unitChoices.push({ unitName: u.unitName, conversionRate: r });
+            });
+        }
+        if (!unitChoices.some(u => u.unitName.toLowerCase() === (row.unitName || '').toLowerCase() && u.conversionRate === rate)) {
+            unitChoices.push({ unitName: row.unitName || row.baseUnit || 'Cái', conversionRate: rate });
+        }
+
+        const unitOptionsHtml = unitChoices.map(u => {
+            const val = `${u.unitName}||${u.conversionRate}`;
+            const isSel = u.unitName.toLowerCase() === (row.unitName || '').toLowerCase() && u.conversionRate === rate;
+            const label = u.conversionRate > 1 ? `${u.unitName} (×${u.conversionRate} ${row.baseUnit})` : `${u.unitName}`;
+            return `<option value="${val}" ${isSel ? 'selected' : ''}>${label}</option>`;
+        }).join('') + `<option value="CUSTOM">+ ĐVT khác...</option>`;
+
+        const newBadge = row.isNewProduct
+            ? `<span class="ml-1 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-bold">Mới</span>`
+            : '';
+
+        tbody.innerHTML += `
+            <div class="p-3 hover:bg-slate-50/80 transition flex items-center justify-between gap-2.5">
+                <!-- Nửa bên trái: Tên hàng + Nút xóa (x) + Dropdown ĐVT kèm quy đổi + Ô sửa Đơn giá nhập -->
+                <div class="flex-1 min-w-0 space-y-1.5">
+                    <div class="flex items-start justify-between gap-1.5">
+                        <div class="font-bold text-slate-800 text-xs sm:text-sm leading-snug break-words">
+                            <span class="text-slate-400 mr-1">#${idx + 1}</span>${row.productName}${newBadge}
+                        </div>
+                        <button type="button" onclick="removePoItem(${idx})" title="Xóa món này" class="text-slate-400 hover:text-red-600 px-1.5 -mt-0.5 shrink-0">
+                            <i class="fa-solid fa-xmark text-sm"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <select onchange="changePoCardItemUnit(${idx}, this.value)" class="border border-blue-300 bg-blue-50/60 text-inni-blue rounded-lg px-2 py-1 text-xs font-bold focus:outline-none">
+                            ${unitOptionsHtml}
+                        </select>
+                        <span id="po-base-qty-badge-${idx}" class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-lg text-[11px] font-black whitespace-nowrap">
+                            +${row.baseQty} ${row.baseUnit}
+                        </span>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="relative w-32 sm:w-36">
+                            <input type="text" value="${formatmoney(row.importPrice)}" oninput="updatePoTableItemPrice(${idx}, this)" placeholder="Đơn giá nhập" class="w-full border border-emerald-400 bg-emerald-50/30 focus:bg-white rounded-lg py-1 pl-2 pr-5 text-xs font-black text-emerald-700 text-right focus:outline-none">
+                            <i class="fa-solid fa-pen text-[9px] text-emerald-500 absolute right-1.5 top-2 pointer-events-none"></i>
+                        </div>
+                        <span id="po-base-cost-${idx}" class="text-[10.5px] text-slate-500 font-medium whitespace-nowrap">
+                            Vốn gốc: ${formatmoney(row.costPerBaseAtImport)}đ/${row.baseUnit}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Nửa bên phải: Cụm nút tăng giảm SL to dễ bấm [-] [SL] [+] + Thành tiền nổi bật -->
+                <div class="shrink-0 flex flex-col items-end justify-between gap-2 pl-2 border-l border-slate-100">
+                    <div class="flex items-center gap-1">
+                        <button type="button" onclick="stepPoCardItemQty(${idx}, -1)" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 active:bg-slate-300 border border-slate-300 text-slate-700 font-black flex items-center justify-center scale-active">
+                            <i class="fa-solid fa-minus text-xs"></i>
+                        </button>
+                        <input type="number" id="po-card-qty-${idx}" min="1" value="${row.qty}"
+                            oninput="updatePoTableItemQty(${idx}, this.value, false)"
+                            onchange="updatePoTableItemQty(${idx}, this.value, true)"
+                            class="w-12 h-8 border-2 border-slate-300 focus:border-[#0088FF] rounded-lg text-center font-black text-sm text-slate-800 bg-white focus:outline-none">
+                        <button type="button" onclick="stepPoCardItemQty(${idx}, 1)" class="w-8 h-8 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black flex items-center justify-center shadow-sm scale-active">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                        </button>
+                    </div>
+
+                    <div class="text-right">
+                        <div class="text-[10px] text-slate-400 font-semibold">Thành tiền</div>
+                        <div id="po-line-total-${idx}" class="font-black text-red-600 text-sm sm:text-base whitespace-nowrap">
+                            ${formatmoney(row.totalCost)} đ
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    updatePoSummaryRealtime();
 }
 
 // 1. Sửa lại File Excel mẫu Phiếu Nhập: Bắt buộc có cột "Hệ Số Quy Đổi" và ví dụ thực tế Snack 5k (1 Bao = 8 Lốc)
