@@ -41,10 +41,14 @@ window.addEventListener('load', () => {
 
 function initOrderDateFilter() {
     const today = new Date();
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     
-    ['ord-date-from', 'cb-date-from', 'rep-date-from'].forEach(id => {
+    const ordFromEl = document.getElementById('ord-date-from');
+    if (ordFromEl) ordFromEl.value = fmt(thirtyDaysAgo);
+
+    ['cb-date-from', 'rep-date-from'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = fmt(firstDay);
     });
@@ -3099,6 +3103,15 @@ let ordFetchLimit = 50;
 
 function loadMoreOrders() {
     ordFetchLimit += 50;
+    // Tự động lùi thêm 60 ngày về quá khứ khi khách bấm "Xem thêm đơn cũ" để xem được cả đơn tháng trước
+    const fromEl = document.getElementById('ord-date-from');
+    if (fromEl && fromEl.value) {
+        const curFrom = new Date(fromEl.value + 'T00:00:00');
+        if (!isNaN(curFrom.getTime())) {
+            const olderDate = new Date(curFrom.getTime() - 60 * 24 * 60 * 60 * 1000);
+            fromEl.value = `${olderDate.getFullYear()}-${String(olderDate.getMonth() + 1).padStart(2, '0')}-${String(olderDate.getDate()).padStart(2, '0')}`;
+        }
+    }
     loadOrdersModule(false);
 }
 
@@ -3107,12 +3120,13 @@ async function loadOrdersModule(resetLimit = true) {
     const fromStr = document.getElementById('ord-date-from')?.value || '2024-01-01';
     const toStr = document.getElementById('ord-date-to')?.value || '2060-12-31';
     const tbody = document.getElementById('orders-tbody');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải danh sách đơn hàng...</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải danh sách đơn hàng (30 ngày gần nhất)...</td></tr>`;
 
     try {
         const snap = await db.collection("orders")
             .where("dateStr", ">=", fromStr)
             .where("dateStr", "<=", toStr)
+            .orderBy("dateStr", "desc")
             .limit(ordFetchLimit)
             .get();
 
@@ -3221,7 +3235,7 @@ function renderOrdersList() {
     const cntLabel = document.getElementById('ord-count-label');
     if (cntLabel) cntLabel.innerText = `${count} đơn hàng`;
     const moreWrap = document.getElementById('ord-load-more-wrap');
-    if (moreWrap) moreWrap.classList.toggle('hidden', ordersList.length < ordFetchLimit);
+    if (moreWrap) moreWrap.classList.toggle('hidden', ordersList.length === 0);
 
     if (count === 0) emptyEl.classList.remove('hidden');
     else emptyEl.classList.add('hidden');

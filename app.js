@@ -60,7 +60,8 @@ const DEFAULT_STORE_SETTINGS = {
     printSize: "A5",
     bankId: "MB",
     bankAcc: "",
-    bankOwner: ""
+    bankOwner: "",
+    shopPin: "6868"
 };
 
 let storeSettings = (() => {
@@ -2499,6 +2500,8 @@ function openSettingsModal() {
     document.getElementById('set-bank-id').value = storeSettings.bankId || 'MB';
     document.getElementById('set-bank-acc').value = storeSettings.bankAcc || '';
     document.getElementById('set-bank-owner').value = storeSettings.bankOwner || '';
+    const pinInp = document.getElementById('set-shop-pin');
+    if (pinInp) pinInp.value = storeSettings.shopPin || localStorage.getItem('hh_shop_pin') || '6868';
     document.getElementById('settings-modal').classList.remove('hidden');
 }
 
@@ -2507,14 +2510,19 @@ function closeSettingsModal() {
 }
 
 async function saveStoreSettings() {
+    const rawPin = document.getElementById('set-shop-pin')?.value.trim();
+    const finalPin = rawPin || storeSettings.shopPin || localStorage.getItem('hh_shop_pin') || "6868";
+    localStorage.setItem('hh_shop_pin', finalPin);
+
     const newSettings = {
-        storeName: document.getElementById('set-store-name').value.trim() || " Đại Lý HỒNG ĐIỆP",
+        storeName: document.getElementById('set-store-name').value.trim() || "Đại Lý HỒNG ĐIỆP",
         phone: document.getElementById('set-store-phone').value.trim(),
         address: document.getElementById('set-store-address').value.trim(),
         printSize: document.getElementById('set-print-size').value || "A5",
         bankId: document.getElementById('set-bank-id').value || "MB",
         bankAcc: document.getElementById('set-bank-acc').value.trim(),
         bankOwner: document.getElementById('set-bank-owner').value.trim().toUpperCase(),
+        shopPin: finalPin,
         updatedAt: Date.now()
     };
     storeSettings = { ...storeSettings, ...newSettings };
@@ -3408,8 +3416,6 @@ function initInventoryInfiniteScroll() {
 // ==========================================
 // 9. BẢO MẬT MÃ PIN & SAO LƯU TOÀN BỘ DỮ LIỆU (FULL BACKUP)
 // ==========================================
-const SHOP_PIN_CODE = localStorage.getItem('hh_shop_pin') || "1234";
-
 window.addEventListener('DOMContentLoaded', () => {
     const isAuth = localStorage.getItem('hh_auth_remember') === 'true' || sessionStorage.getItem('hh_auth_session') === 'true';
     if (!isAuth) {
@@ -3420,7 +3426,8 @@ window.addEventListener('DOMContentLoaded', () => {
 function verifyShopPin() {
     const inp = document.getElementById('auth-pin-input')?.value.trim();
     const remember = document.getElementById('auth-remember-chk')?.checked;
-    if (inp === SHOP_PIN_CODE) {
+    const activePin = storeSettings.shopPin || localStorage.getItem('hh_shop_pin') || "6868";
+    if (inp === activePin) {
         sessionStorage.setItem('hh_auth_session', 'true');
         if (remember) localStorage.setItem('hh_auth_remember', 'true');
         document.getElementById('auth-lock-modal')?.classList.add('hidden');
@@ -3450,7 +3457,7 @@ async function exportFullBackupData() {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cbSnap.docs.map(d => d.data())), "So_Quy");
 
         const dateStr = new Date().toISOString().slice(0, 10);
-        XLSX.writeFile(wb, `Full_Backup_Huy_Hoang_${dateStr}.xlsx`);
+        XLSX.writeFile(wb, `Sao_Luu_Hong_Diep_${dateStr}.xlsx`);
     } catch (e) {
         alert("Lỗi khi tải bản sao lưu: " + e.message);
     }
