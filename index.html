@@ -206,7 +206,7 @@
             </div>
             <div>
                 <h3 class="font-bold text-base text-slate-800">Bảo Mật Cửa Hàng</h3>
-                <p class="text-xs text-slate-500 mt-0.5">Nhập mã PIN chủ tiệm để mở khóa (Mặc định: 1234)</p>
+                <p class="text-xs text-slate-500 mt-0.5">Vui lòng nhập mã PIN chủ tiệm để mở khóa</p>
             </div>
             <input type="password" id="auth-pin-input" inputmode="numeric" placeholder="Nhập mã PIN..." onkeydown="if(event.key==='Enter') verifyShopPin()" class="w-full border border-slate-300 rounded-xl p-3 text-center text-lg font-black tracking-widest focus:outline-none focus:border-[#0088FF]">
             <label class="flex items-center justify-center gap-2 text-xs text-slate-600 cursor-pointer">
@@ -252,9 +252,12 @@
             </button>
         </nav>
 
-        <div class="p-3 border-t border-slate-800">
+        <div class="p-3 border-t border-slate-800 space-y-1.5">
+            <button onclick="exportFullBackupData()" class="w-full flex items-center gap-3 p-2.5 rounded-lg text-xs font-bold bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 transition scale-active">
+                <i class="fa-solid fa-cloud-arrow-down text-emerald-400"></i> Tải File Sao Lưu (Backup)
+            </button>
             <button onclick="openSettingsModal()" class="w-full flex items-center gap-3 p-2.5 rounded-lg text-xs font-bold text-slate-300 hover:bg-slate-800 transition scale-active">
-                <i class="fa-solid fa-sliders text-blue-400"></i> Cài đặt Bill & VietQR
+                <i class="fa-solid fa-sliders text-blue-400"></i> Cài đặt Bill, VietQR & PIN
             </button>
         </div>
     </aside>
@@ -746,8 +749,10 @@
                 <!-- Danh sách dòng phẳng (Flat List) trên Mobile -->
                 <div id="orders-mobile-list" class="md:hidden divide-y divide-slate-100 bg-white"></div>
 
-                <div id="ord-load-more-wrap" class="hidden p-3 text-center border-t border-slate-100">
-                    <button onclick="loadMoreOrders()" class="text-xs font-bold text-[#0088FF] px-4 py-2 rounded-lg bg-blue-50">Tải thêm đơn hàng...</button>
+                <div id="ord-load-more-wrap" class="hidden p-3.5 text-center border-t border-slate-100 bg-slate-50/50">
+                    <button onclick="loadMoreOrders()" class="text-xs font-bold text-[#0088FF] hover:bg-blue-100 px-5 py-2.5 rounded-xl bg-blue-50 border border-blue-200 shadow-sm scale-active">
+                        <i class="fa-solid fa-clock-rotate-left mr-1"></i> Xem thêm đơn cũ...
+                    </button>
                 </div>
                 <div id="orders-empty" class="hidden text-center p-10 text-slate-400 italic">Chưa có hóa đơn nào.</div>
             </div>
@@ -2182,11 +2187,11 @@
                     <div id="unit-rows-container" class="space-y-2"></div>
                 </div>
 
-                <div class="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div class="hidden items-center gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
                     <i class="fa-solid fa-image text-2xl text-slate-400"></i>
                     <div class="flex-1">
-                        <label class="block text-xs font-bold text-slate-700">Ảnh sản phẩm (Tự động nén nhẹ 15KB)</label>
-                        <input type="file" id="prod-image" accept="image/*" class="w-full text-xs mt-1 file:mr-3 file:py-1 file:px-3 file:rounded-full file:border-0 file:bg-blue-100 file:text-inni-blue file:font-bold">
+                        <label class="block text-xs font-bold text-slate-700">Ảnh sản phẩm</label>
+                        <input type="file" id="prod-image" accept="image/*" class="w-full text-xs mt-1">
                     </div>
                 </div>
             </div>
@@ -2503,7 +2508,14 @@
                     </div>
                     <div>
                         <label class="block text-[11px] font-bold text-slate-600 mb-1">Tên chủ tài khoản (Không dấu)</label>
-                        <input type="text" id="set-bank-owner" placeholder="VD: NGUYEN MINH NHAT" class="w-full border border-slate-300 p-2 rounded-lg uppercase">
+                        <input type="text" id="set-bank-owner" placeholder="VD: HONG DIEP" class="w-full border border-slate-300 p-2 rounded-lg uppercase">
+                    </div>
+                </div>
+                <div class="border-t pt-3 mt-2">
+                    <div class="font-bold text-xs text-red-600 uppercase mb-1.5"><i class="fa-solid fa-lock mr-1"></i>Bảo mật mã PIN mở Web</div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Đổi mã PIN riêng của chủ tiệm (4–6 số)</label>
+                        <input type="password" id="set-shop-pin" inputmode="numeric" placeholder="Nhập mã PIN mới..." class="w-full border border-slate-300 p-2 rounded-lg font-black tracking-widest text-slate-800">
                     </div>
                 </div>
             </div>
